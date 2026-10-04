@@ -23,7 +23,7 @@ COLORS = {
 BADGE_COLORS = {"strong": "#f5b942", "good": "#3fbf74", "warn": "#f0803c", "info": "#3d4a5c", "you": "#5ec8ff"}
 PARTY_COLORS = ["#b36bff", "#2ec4b6", "#ffb347", "#6c8cff"]
 MATCHUP_COLORS = {"good": "#2f9e5b", "bad": "#d64545", "even": "#3d4a5c"}
-ITEM_SLOT_COLORS = {"weapon": "#d98a2b", "vitality": "#4fae4f", "spirit": "#9b6ef0"}  # the shop's three categories
+ITEM_SLOT_COLORS = {"weapon": "#ec981a", "vitality": "#6aa11a", "spirit": "#a977d2"}  # the shop's three categories, sampled from the game
 
 
 def text_color_for(background: str) -> str:

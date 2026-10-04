@@ -94,25 +94,29 @@ def hero_card(hero: str, height: int):
 
 
 def item_icon_pil(item: Dict, size: int) -> Image.Image:
-    """An item as the shop shows it: its white symbol on a rounded square in its category's colour
-    (just the square if the symbol isn't downloaded)."""
+    """An item as the game shows it: its artwork in a rounded square, with its category's colour in
+    the top-right corner. Items without artwork get their white symbol on the category colour, and
+    an item not downloaded yet is just the coloured square."""
     big = size * 4  # drawn large, then scaled down, for smooth corners
-    tile = Image.new("RGBA", (big, big), (0, 0, 0, 0))
-    fill = shade(ITEM_SLOT_COLORS.get(item.get("slot"), "#4a5a6a"), 0.8)  # a little darker, so white stands out
-    ImageDraw.Draw(tile).rounded_rectangle((0, 0, big - 1, big - 1), radius=big // 5, fill=fill)
-    tile = tile.resize((size, size), Image.LANCZOS)
+    color = ITEM_SLOT_COLORS.get(item.get("slot"), "#4a5a6a")
+    rounded = Image.new("L", (big, big), 0)
+    ImageDraw.Draw(rounded).rounded_rectangle((0, 0, big - 1, big - 1), radius=big // 5, fill=255)
+    rounded = rounded.resize((size, size), Image.LANCZOS)
+    tile = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    tile.paste(Image.new("RGBA", (size, size), shade(color, 0.8)), (0, 0), rounded)
     picture = assets.get(item.get("image"))
-    if picture is None:
-        return tile
-    if not item.get("symbol", True):  # shop artwork instead of a symbol: fill the square with it
-        art = picture.resize((size, size), Image.LANCZOS)
-        rounded = Image.new("L", (big, big), 0)
-        ImageDraw.Draw(rounded).rounded_rectangle((0, 0, big - 1, big - 1), radius=big // 5, fill=255)
-        tile.paste(art, (0, 0), rounded.resize((size, size), Image.LANCZOS))
-        return tile
-    inner = picture.resize((round(size * 0.72),) * 2, Image.LANCZOS)
-    offset = (size - inner.width) // 2
-    tile.alpha_composite(inner, (offset, offset))
+    if picture is not None and item.get("symbol"):
+        inner = picture.resize((round(size * 0.72),) * 2, Image.LANCZOS)
+        offset = (size - inner.width) // 2
+        tile.alpha_composite(inner, (offset, offset))
+    elif picture is not None:
+        tile.paste(picture.resize((size, size), Image.LANCZOS), (0, 0), rounded)
+        corner = Image.new("RGBA", (big, big), (0, 0, 0, 0))  # the category corner, like the game's
+        ImageDraw.Draw(corner).polygon([(big * 0.62, 0), (big, 0), (big, big * 0.38)], fill=color)
+        corner = corner.resize((size, size), Image.LANCZOS)
+        clipped = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        clipped.paste(corner, (0, 0), rounded)
+        tile.alpha_composite(clipped)
     return tile
 
 

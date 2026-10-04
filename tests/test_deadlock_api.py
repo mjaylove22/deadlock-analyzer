@@ -21,18 +21,19 @@ class SearchSteamProfilesTests(unittest.TestCase):
 
 
 class FetchItemsTests(unittest.TestCase):
-    def test_items_without_a_readable_symbol_use_their_shop_art(self):
+    def test_items_use_their_current_shop_art_and_fall_back_to_the_old_symbol(self):
         shop = {"type": "upgrade", "shopable": True}
-        raw = [dict(shop, id=1, name="A", image="a.png", shop_image="a_art.png"),
-               dict(shop, id=2, name="B", image="b.svg", shop_image="b_art.png"),  # Pillow can't read SVG
-               dict(shop, id=3, name="C", shop_image="c_art.png"),
-               {"id": 4, "name": "An ability", "type": "ability", "image": "d.png"}]
+        raw = [dict(shop, id=1, name="A", image="a_symbol.png", shop_image="a_art.png", shop_image_webp="a_art.webp"),
+               dict(shop, id=2, name="B", image="b_symbol.png", shop_image="b_art.png"),
+               dict(shop, id=3, name="C", image="c_symbol.png"),                     # no artwork
+               dict(shop, id=4, name="D", image="d.svg", shop_image="d_art.svg"),    # nothing Pillow can read
+               {"id": 5, "name": "An ability", "type": "ability", "image": "e.png"}]
         deadlock_api.fetch_items.cache_clear()
         self.addCleanup(deadlock_api.fetch_items.cache_clear)
         with patch.object(deadlock_api, "get_json", return_value=raw),                 patch.object(deadlock_api, "disk_cached", lambda name, build, max_age=0: build()):
             items = deadlock_api.fetch_items()
         self.assertEqual({i: (item["image"], item["symbol"]) for i, item in items.items()},
-                         {1: ("a.png", True), 2: ("b_art.png", False), 3: ("c_art.png", False)})
+                         {1: ("a_art.webp", False), 2: ("b_art.png", False), 3: ("c_symbol.png", True), 4: (None, True)})
 
 
 class ResponseCacheTests(unittest.TestCase):
