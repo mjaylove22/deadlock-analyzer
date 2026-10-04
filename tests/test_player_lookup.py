@@ -1,4 +1,4 @@
-"""Tests for player lookup logic. The Deadlock API is mocked, so these run offline.
+"""Tests for lobby lookup. The Deadlock API is mocked, so these run offline.
 
 Run from the project root:
     python -m unittest discover -s tests -v
@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 import player_lookup
-from player_lookup import lookup_player, pick_account
+from player_lookup import lookup_lobby
 
 PARADOX = 10
 GRAVES = 76
@@ -16,62 +16,74 @@ HERO_IDS = {"Paradox": PARADOX, "Graves": GRAVES, "Haze": 13}
 HERO_NAMES = {v: k for k, v in HERO_IDS.items()}
 
 
-def profile(account_id, name):
-    return {"account_id": account_id, "personaname": name, "profileurl": f"https://steam/{account_id}"}
+def profile(account_id, name, friends=()):
+    return {"account_id": account_id, "personaname": name, "profileurl": f"https://steam/{account_id}",
+            "friends": [{"account_id": f} for f in friends]}
 
 
 def stat(account_id, hero_id, matches, wins=0):
     return {"account_id": account_id, "hero_id": hero_id, "matches_played": matches, "wins": wins}
 
 
-class PickAccountTests(unittest.TestCase):
-    def test_single_candidate_is_used(self):
-        account, note = pick_account([profile(1, "A")], {}, PARADOX)
-        self.assertEqual(account["account_id"], 1)
-        self.assertEqual(note, "unique name")
-
-    def test_prefers_account_that_plays_current_hero(self):
-        candidates = [profile(1, "Grey Mirage"), profile(2, "grey mirage")]
-        stats = {1: [stat(1, GRAVES, 50)], 2: [stat(2, PARADOX, 8)]}
-        account, note = pick_account(candidates, stats, PARADOX)
-        self.assertEqual(account["account_id"], 2)
-        self.assertIn("8 matches", note)
-
-    def test_falls_back_to_api_order_and_says_it_is_a_guess(self):
-        candidates = [profile(1, "X"), profile(2, "X")]
-        account, note = pick_account(candidates, {}, PARADOX)
-        self.assertEqual(account["account_id"], 1)
-        self.assertIn("guess", note)
+def record(player, hero, team="friendly"):
+    return {"player": player, "hero": hero, "team": team}
 
 
-class LookupPlayerTests(unittest.TestCase):
+def fake_search(profiles_by_name):
+    return lambda name: profiles_by_name.get(name, [])
+
+
+class LookupLobbyTests(unittest.TestCase):
+    def run_lookup(self, records, profiles_by_name, stats=()):
+        api = player_lookup.deadlock_api
+        with patch.object(api, "search_steam_profiles", side_effect=fake_search(profiles_by_name)), \
+             patch.object(api, "get_hero_stats", return_value=list(stats)) as get_stats:
+            results, parties = lookup_lobby(records, HERO_IDS, HERO_NAMES)
+        return results, parties, get_stats
+
     def test_bot_named_after_its_hero_is_skipped_without_api_calls(self):
         with patch.object(player_lookup.deadlock_api, "search_steam_profiles") as search:
-            result = lookup_player({"player": "Haze", "hero": "Haze", "team": "enemy"}, HERO_IDS, HERO_NAMES)
-        self.assertEqual(result["status"], "skipped")
+            results, _ = lookup_lobby([record("Haze", "Haze")], HERO_IDS, HERO_NAMES)
+        self.assertEqual(results[0]["status"], "skipped")
         search.assert_not_called()
 
     def test_fuzzy_matches_are_not_trusted(self):
-        with patch.object(player_lookup.deadlock_api, "search_steam_profiles", return_value=[profile(1, "Nine Viscious")]):
-            result = lookup_player({"player": "Grey Mirage", "hero": "Paradox", "team": "friendly"}, HERO_IDS, HERO_NAMES)
-        self.assertEqual(result["status"], "not found")
-        self.assertIn("Nine Viscious", result["note"])
+        results, _, _ = self.run_lookup([record("Grey Mirage", "Paradox")],
+                                        {"Grey Mirage": [profile(1, "Nine Viscious")]})
+        self.assertEqual(results[0]["status"], "not found")
+        self.assertIn("Nine Viscious", results[0]["note"])
 
     def test_found_player_gets_top_heroes_sorted_by_matches(self):
         stats = [stat(2, PARADOX, 8, wins=4), stat(2, GRAVES, 20, wins=14)]
-        with patch.object(player_lookup.deadlock_api, "search_steam_profiles", return_value=[profile(2, "Grey Mirage")]), \
-             patch.object(player_lookup.deadlock_api, "get_hero_stats", return_value=stats):
-            result = lookup_player({"player": "Grey Mirage", "hero": "Paradox", "team": "friendly"}, HERO_IDS, HERO_NAMES)
-        self.assertEqual(result["status"], "found")
-        self.assertEqual(result["account_id"], 2)
-        self.assertEqual([h["hero"] for h in result["top_heroes"]], ["Graves", "Paradox"])
-        self.assertAlmostEqual(result["top_heroes"][0]["win_rate"], 0.7)
+        results, _, _ = self.run_lookup([record("Grey Mirage", "Paradox")],
+                                        {"Grey Mirage": [profile(2, "Grey Mirage")]}, stats)
+        self.assertEqual(results[0]["status"], "found")
+        self.assertEqual([h["hero"] for h in results[0]["top_heroes"]], ["Graves", "Paradox"])
+        self.assertAlmostEqual(results[0]["top_heroes"][0]["win_rate"], 0.7)
+
+    def test_whole_lobby_uses_one_stats_request(self):
+        profiles = {"A": [profile(1, "A")], "B": [profile(2, "B"), profile(3, "B")]}
+        _, _, get_stats = self.run_lookup([record("A", "Paradox"), record("B", "Graves")], profiles)
+        get_stats.assert_called_once()
+        self.assertEqual(sorted(get_stats.call_args.args[0]), [1, 2, 3])
+
+    def test_friend_link_picks_account_and_party_is_reported(self):
+        profiles = {
+            "PlayerA": [profile(1, "PlayerA")],
+            "PlayerB": [profile(20, "PlayerB"), profile(21, "PlayerB", friends={1})],
+        }
+        stats = [stat(20, PARADOX, 25)]  # the stranger has more games on the current hero
+        results, parties, _ = self.run_lookup(
+            [record("PlayerA", "Graves", "enemy"), record("PlayerB", "Paradox", "enemy")], profiles, stats)
+        self.assertEqual(results[1]["account_id"], 21)
+        self.assertEqual(results[1]["note"], "friends with PlayerA in this lobby")
+        self.assertEqual(parties, [[0, 1]])
 
     def test_network_error_is_reported_not_raised(self):
         with patch.object(player_lookup.deadlock_api, "search_steam_profiles", side_effect=OSError("timed out")):
-            result = lookup_player({"player": "Someone", "hero": "Paradox", "team": "enemy"}, HERO_IDS, HERO_NAMES)
-        self.assertEqual(result["status"], "error")
-        self.assertIn("timed out", result["note"])
+            results, _ = lookup_lobby([record("Someone", "Paradox")], HERO_IDS, HERO_NAMES)
+        self.assertEqual(results[0]["status"], "error")
+        self.assertIn("timed out", results[0]["note"])
 
 
 if __name__ == "__main__":

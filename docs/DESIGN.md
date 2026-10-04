@@ -24,7 +24,8 @@ screenshot ──► crop ──► Tesseract OCR ──► lines + positions �
 | `screenshot_manager.py` | Capture and save screenshots; find the latest one | `mss` |
 | `scoreboard_ocr.py` | Screenshot → player/hero/team records. Pure parsing logic is separated from OCR so it can be unit-tested without images | `pytesseract`, `Pillow`, `deadlock_api` (hero names) |
 | `deadlock_api.py` | Thin client: every HTTP call to the Deadlock API lives here | standard library only |
-| `player_lookup.py` | Name → Steam account → hero stats, plus the command-line report | `scoreboard_ocr`, `deadlock_api` |
+| `identity.py` | Decide which same-named account is which; detect parties. Pure logic, no network | standard library only |
+| `player_lookup.py` | Fetch candidates and stats for the whole lobby, then print the report | `scoreboard_ocr`, `deadlock_api`, `identity` |
 | `tests/` | Unit tests for parsing and lookup logic; the API is mocked | `unittest` (standard library) |
 | `utils/logger.py` | One place to configure logging to `logs/app.log` and the console | standard library |
 
@@ -77,11 +78,21 @@ What held on every screenshot: **player rows sit on a 60px grid, and the enemy h
 
 Cropping each team separately was also rejected early on: OCR on the smaller enemy crop misread `Vyper Level` as `Wyper Level`. One pass keeps the text that is known to be good.
 
-### 4.4 Steam names are not unique
-A name search for one test player returned **five accounts with exactly that name**. The lookup:
-1. Accepts **exact** (case-insensitive) matches only. Fuzzy matches are usually a different person or an OCR misread, so it reports "not found" with the closest name instead of guessing.
-2. If several accounts share the name, it fetches all their hero stats in **one batch request** and picks the account with the most matches on the hero being played right now. The API's own ranking (name similarity + recent activity) breaks ties.
-3. Every result says how confident it is (`unique name`, `picked the one with 16 matches on this hero`, or `this pick is a guess`).
+### 4.4 Steam names are not unique: resolve the whole lobby with evidence
+A name search for one test player returned **seven accounts with exactly that name**. Only **exact** (case-insensitive) matches are accepted; a fuzzy match is usually a different person or an OCR misread, so the report says "not found" and shows the closest name instead of guessing.
+
+When several accounts share a name, `identity.py` resolves the **whole lobby together**, using evidence in order of strength:
+1. **Unique name.** Settled outright.
+2. **Friend links to settled players.** The search response includes each account's Steam friends. A candidate who is friends with an already-settled player in the same lobby is almost certainly the right one. This repeats, because each newly settled player can settle another (in one real lobby: a unique name settled a second player, and those two together settled a third). A link counts if either side lists it, since friend lists can be private. Links between two *unsettled* guesses, or ties, don't count as evidence.
+3. **Hero history.** Most matches on the hero being played right now, with the runner-up shown so close calls are visible.
+
+All candidates' hero stats come from **one batch request** for the whole lobby.
+
+**Why friend links come before hero history.** In one Street Brawl lobby, hero history picked a "PlayerB" with 25 games on his hero. The "PlayerB" who was friends with two other players in that lobby, who were also friends with each other, had **0** games on it. Hero history fails exactly when someone tries an unfamiliar hero, which is common.
+
+**Party detection** falls out of the same data: settled players on the same team who are connected by friend links almost always queued together, so the report lists them ("Party of 3: …"). Friend lists are used only in memory for linking, and are never displayed or stored.
+
+Every result says how it was decided: `unique name`, `friends with X in this lobby`, `picked the one with 16 matches on this hero (next best: 8)`, or `this pick is a guess`.
 
 **A lesson from testing against a known answer.** The search endpoint hides accounts with fewer than 5 recorded matches in the last 30 days by default. Bot matches aren't recorded, so the author's own account was filtered out *before* the tie-breaker ran, and two screenshots confidently picked two different wrong accounts. Checking against a player whose real account was known exposed it. With the filter off there were 7 accounts with the exact name, and the tie-breaker picked the right one on both screenshots (16 vs 8 matches on one hero, 55 vs 7 on the other). A unit test now pins that parameter.
 
@@ -97,9 +108,10 @@ An early hardcoded list turned out to be largely invented, and a hand-verified l
 
 ## 5. Testing
 
-`python -m unittest discover -s tests -v` runs 22 tests in under a second:
+`python -m unittest discover -s tests -v` runs 32 tests in under a second:
 - **Parser tests** use OCR output actually produced from real screenshots, including a noisy version, plus edge cases: headers, noise-only lines, duplicate player names, multi-word heroes, hero lines with nothing above them.
-- **Lookup tests** mock the API to cover account selection, rejecting fuzzy matches, bot skipping, sorting favourite heroes, and network errors being reported instead of crashing the report.
+- **Identity tests** use plain data to cover settling by unique name, friend links (including links listed by only one side and chains of settled players), ties falling back to hero history, and party grouping.
+- **Lookup tests** mock the API to cover rejecting fuzzy matches, bot skipping, one stats request per lobby, favourite heroes, and network errors being reported instead of crashing the report.
 
 - **Screenshot regression tests** run the full OCR pipeline on real screenshots and compare against hand-checked `.expected.json` answers. Screenshots contain other players' names, so they stay in the gitignored `screenshots/` folder and the test skips on machines without them. This test exists because the unit tests alone missed an OCR failure on a new screenshot; with the fix disabled, it fails.
 

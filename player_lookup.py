@@ -1,6 +1,7 @@
-"""Look up players from a scoreboard screenshot on the public Deadlock API.
+"""Look up every player from a scoreboard screenshot on the public Deadlock API.
 
-Pipeline: screenshot -> OCR (scoreboard_ocr) -> Steam name search -> hero stats.
+Pipeline: screenshot -> OCR (scoreboard_ocr) -> Steam name search -> hero stats
+          -> identity resolution and party detection (identity) -> report.
 
 Usage:
     python player_lookup.py                      # latest screenshot in screenshots/
@@ -10,9 +11,10 @@ Usage:
 import logging
 import sys
 from collections import defaultdict
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
 import deadlock_api
+from identity import find_parties, resolve_lobby
 from scoreboard_ocr import FALLBACK_HERO_NAMES, read_scoreboard
 from screenshot_manager import get_screenshot_path
 from utils.logger import setup_logger
@@ -22,66 +24,36 @@ logger = logging.getLogger(__name__)
 TOP_HEROES_SHOWN = 3
 
 
-def pick_account(candidates: List[Dict[str, Any]], stats_by_account: Dict[int, List[Dict]], current_hero_id: int):
-    """Choose which same-named account is the player in the screenshot.
+def is_likely_bot(record: Dict[str, str]) -> bool:
+    """In bot lobbies, bots are named after their hero. Searching "Haze" would only find strangers."""
+    return record["player"].lower() == record["hero"].lower()
 
-    Steam names aren't unique, so when several accounts share the name, prefer the one
-    with the most matches on the hero they're playing right now. Ties keep the API's own
-    ranking (name similarity + recent activity), because candidates arrive in that order.
+
+def find_candidates(name: str) -> Tuple[List[Dict[str, Any]], str]:
+    """Accounts whose Steam name exactly matches, plus a note explaining an empty result.
+
+    Only exact matches are trusted: a fuzzy match is usually a different person, or a sign
+    that OCR misread the name. Friend lists are kept in memory for identity resolution only.
     """
-    if len(candidates) == 1:
-        return candidates[0], "unique name"
-
-    def matches_on_current_hero(candidate):
-        for entry in stats_by_account.get(candidate["account_id"], []):
-            if entry["hero_id"] == current_hero_id:
-                return entry["matches_played"]
-        return 0
-
-    best = max(candidates, key=matches_on_current_hero)  # max() keeps the first of equal items
-    best_matches = matches_on_current_hero(best)
-    runner_up = max(matches_on_current_hero(c) for c in candidates if c is not best)
-    if best_matches > 0:
-        # Show the runner-up so a close call (e.g. 8 vs 3) is visible, not just the winner
-        return best, (f"{len(candidates)} accounts share this name; picked the one with "
-                      f"{best_matches} matches on this hero (next best: {runner_up})")
-    return best, f"{len(candidates)} accounts share this name; none have played this hero, so this pick is a guess"
+    results = deadlock_api.search_steam_profiles(name)
+    exact = [
+        {
+            "account_id": c["account_id"],
+            "profile_url": c["profileurl"],
+            "friends": {f["account_id"] for f in (c.get("friends") or [])},
+        }
+        for c in results
+        if c["personaname"].strip().lower() == name.strip().lower()
+    ]
+    if exact:
+        return exact, ""
+    return [], f"closest name: {results[0]['personaname']!r}" if results else "no similar names"
 
 
-def lookup_player(record: Dict[str, str], hero_ids_by_name: Dict[str, int], hero_names_by_id: Dict[int, str]) -> Dict[str, Any]:
-    """Add Steam account and favourite-hero info to one {"player", "hero", "team"} record."""
-    result = dict(record, status=None, note="", account_id=None, profile_url=None, top_heroes=[])
-    name = record["player"]
-
-    # In bot lobbies, bots are named after their hero. Searching "Haze" would only find strangers.
-    if name.lower() == record["hero"].lower():
-        result.update(status="skipped", note="name matches hero, likely a bot")
-        return result
-
-    try:
-        candidates = deadlock_api.search_steam_profiles(name)
-
-        # Only trust exact name matches: a fuzzy match is usually a different person,
-        # or a sign that OCR misread the name.
-        exact = [c for c in candidates if c["personaname"].strip().lower() == name.strip().lower()]
-        if not exact:
-            closest = candidates[0]["personaname"] if candidates else None
-            result.update(status="not found", note=f"closest name: {closest!r}" if closest else "no similar names")
-            return result
-
-        # One batch request covers every candidate's hero stats
-        stats_by_account = defaultdict(list)
-        for entry in deadlock_api.get_hero_stats([c["account_id"] for c in exact]):
-            stats_by_account[entry["account_id"]].append(entry)
-
-        account, note = pick_account(exact, stats_by_account, hero_ids_by_name.get(record["hero"]))
-    except Exception as e:
-        result.update(status="error", note=str(e))
-        return result
-
-    # Favourite heroes = most matches played
-    played = sorted(stats_by_account.get(account["account_id"], []), key=lambda e: e["matches_played"], reverse=True)
-    top_heroes = [
+def top_heroes(entries: List[Dict], hero_names_by_id: Dict[int, str]) -> List[Dict[str, Any]]:
+    """Favourite heroes = most matches played."""
+    played = sorted(entries, key=lambda e: e["matches_played"], reverse=True)
+    return [
         {
             "hero": hero_names_by_id.get(e["hero_id"], f"hero #{e['hero_id']}"),
             "matches": e["matches_played"],
@@ -90,9 +62,56 @@ def lookup_player(record: Dict[str, str], hero_ids_by_name: Dict[str, int], hero
         for e in played[:TOP_HEROES_SHOWN]
     ]
 
-    result.update(status="found", note=note, account_id=account["account_id"],
-                  profile_url=account["profileurl"], top_heroes=top_heroes)
-    return result
+
+def lookup_lobby(records: List[Dict[str, str]], hero_ids_by_name: Dict[str, int],
+                 hero_names_by_id: Dict[int, str]) -> Tuple[List[Dict[str, Any]], List[List[int]]]:
+    """Resolve every {"player", "hero", "team"} record to an account with stats.
+
+    Returns (results, parties): one result per record, and parties as lists of record indexes.
+    The whole lobby is resolved together, because friend links between players are evidence.
+    """
+    results = [dict(r, status=None, note="", account_id=None, profile_url=None, top_heroes=[]) for r in records]
+
+    candidates_by_player = {}
+    for i, result in enumerate(results):
+        if is_likely_bot(result):
+            result.update(status="skipped", note="name matches hero, likely a bot")
+            continue
+        try:
+            candidates, note = find_candidates(result["player"])
+        except Exception as e:
+            result.update(status="error", note=str(e))
+            continue
+        if not candidates:
+            result.update(status="not found", note=note)
+            continue
+        candidates_by_player[i] = candidates
+
+    # One batch request covers every candidate in the lobby (the API accepts up to 1000 ids)
+    all_ids = list(dict.fromkeys(c["account_id"] for cs in candidates_by_player.values() for c in cs))
+    stats_by_account = defaultdict(list)
+    if all_ids:
+        try:
+            for entry in deadlock_api.get_hero_stats(all_ids):
+                stats_by_account[entry["account_id"]].append(entry)
+        except Exception as e:
+            logger.warning(f"Could not load hero stats ({e}); identities will rely on names and friends only")
+
+    for i, candidates in candidates_by_player.items():
+        hero_id = hero_ids_by_name.get(results[i]["hero"])
+        for c in candidates:
+            c["current_hero_matches"] = sum(e["matches_played"] for e in stats_by_account[c["account_id"]]
+                                            if e["hero_id"] == hero_id)
+
+    names = {i: results[i]["player"] for i in candidates_by_player}
+    resolved = resolve_lobby(candidates_by_player, names)
+    for i, (account, reason) in resolved.items():
+        results[i].update(status="found", note=reason, account_id=account["account_id"],
+                          profile_url=account["profile_url"],
+                          top_heroes=top_heroes(stats_by_account[account["account_id"]], hero_names_by_id))
+
+    parties = find_parties(resolved, {i: results[i]["team"] for i in resolved})
+    return results, parties
 
 
 def main():
@@ -117,10 +136,13 @@ def main():
         print("No players found in the screenshot.")
         return
 
-    results = [lookup_player(r, hero_ids_by_name, hero_names_by_id) for r in records]
+    results, parties = lookup_lobby(records, hero_ids_by_name, hero_names_by_id)
 
     for team in ("friendly", "enemy"):
         print(f"\n=== {team.upper()} TEAM ===")
+        for party in parties:
+            if results[party[0]]["team"] == team:
+                print(f"  Party of {len(party)}: {' + '.join(results[i]['player'] for i in party)}")
         for r in results:
             if r["team"] != team:
                 continue

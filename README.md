@@ -9,8 +9,11 @@ screenshot ──► OCR (Tesseract) ──► player / hero / team ──► pu
 Example output (illustrative names and numbers):
 
 ```
+=== ENEMY TEAM ===
+  Party of 3: PlayerA + PlayerB + ExamplePlayer
+
 ExamplePlayer  (playing Paradox)  [found]
-    5 accounts share this name; picked the one with 8 matches on this hero
+    friends with PlayerA, PlayerB in this lobby
     https://steamcommunity.com/profiles/<steam-id>/
     Graves         20 matches  70% wins
     Mirage         18 matches  50% wins
@@ -30,8 +33,9 @@ modify game files, automate input, or interact with anti-cheat in any way.
    a hero name and "Level" is paired with the line above it. Each line's vertical position decides the team.
 3. **Lookup**: `player_lookup.py` searches the [Deadlock API](https://api.deadlock-api.com) for each Steam name
    and fetches per-hero stats.
-   - Steam names aren't unique. Only exact name matches are accepted, and when several accounts share a name,
-     the one with the most matches on the hero currently being played is chosen.
+   - Steam names aren't unique, so `identity.py` resolves the whole lobby together: unique names first,
+     then candidates who are Steam friends with already-identified players, then hero history.
+   - Friends on the same team are reported as a party.
    - Players whose name equals their hero (bots in bot lobbies) are skipped.
 
 ## Setup
@@ -62,7 +66,8 @@ main.py              hotkey screenshot capture
 screenshot_manager.py
 scoreboard_ocr.py    screenshot -> [{"player", "hero", "team"}]
 deadlock_api.py      thin client for the public Deadlock API
-player_lookup.py     name -> account -> hero stats; command-line report
+identity.py          which same-named account is which; party detection
+player_lookup.py     whole-lobby lookup and command-line report
 tests/               unit tests (API calls are mocked)
 docs/DESIGN.md       design decisions and technology choices
 utils/logger.py      logging to logs/app.log and the console
