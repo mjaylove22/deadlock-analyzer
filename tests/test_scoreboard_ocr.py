@@ -6,7 +6,7 @@ Run from the project root:
 
 import unittest
 
-from scoreboard_ocr import FALLBACK_HERO_NAMES, parse_player_rows, team_for_row
+from scoreboard_ocr import FALLBACK_HERO_NAMES, looks_like_misread, match_hero, parse_player_rows, team_for_row
 
 HEROES = FALLBACK_HERO_NAMES
 
@@ -105,6 +105,21 @@ class ParsePlayerRowsTests(unittest.TestCase):
     def test_longer_hero_name_wins_over_shorter_one_inside_it(self):
         rows = parse(["someone", "Grey Talon Level 1"], ["Talon", "Grey Talon"])
         self.assertEqual(rows, [("someone", "Grey Talon")])
+
+
+class OcrNoiseTests(unittest.TestCase):
+    HEROES = sorted(FALLBACK_HERO_NAMES, key=len, reverse=True)
+
+    def test_hero_with_one_misread_letter(self):
+        self.assertEqual(match_hero("Oynamo Level -1", self.HEROES), "Dynamo")
+        self.assertEqual(match_hero("Mo & Krlll Level 1", self.HEROES), "Mo & Krill")
+
+    def test_short_hero_names_are_not_guessed(self):
+        self.assertIsNone(match_hero("Rern Level 1", self.HEROES))  # Rem: too short to guess safely
+        self.assertIsNone(match_hero("Wer Level-1", self.HEROES))
+
+    def test_spaces_are_ignored_when_comparing(self):
+        self.assertTrue(looks_like_misread("Dr.NightOwl", "Or. Night Owl"))
 
 
 class TeamForRowTests(unittest.TestCase):

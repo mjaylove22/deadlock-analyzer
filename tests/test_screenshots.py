@@ -14,7 +14,7 @@ import json
 import os
 import unittest
 
-from player_lookup import looks_like_misread
+from player_lookup import looks_like_misread, same_name
 from scoreboard_ocr import FALLBACK_HERO_NAMES, read_scoreboard
 
 SCREENSHOT_DIR = os.path.join(os.path.dirname(__file__), "..", "screenshots")
@@ -34,7 +34,7 @@ class ScreenshotRegressionTests(unittest.TestCase):
                 # the lookup corrects those (e.g. "Or. Night Owl" -> "Dr. Night Owl").
                 self.assertEqual([(r["hero"], r["team"]) for r in actual], [(r["hero"], r["team"]) for r in expected])
                 for got, want in zip(actual, expected):
-                    self.assertTrue(got["player"] == want["player"] or looks_like_misread(got["player"], want["player"]),
+                    self.assertTrue(same_name(got["player"], want["player"]) or looks_like_misread(got["player"], want["player"]),
                                     f"OCR read {got['player']!r}, screen says {want['player']!r}")
 
 

@@ -6,6 +6,9 @@ from datetime import datetime
 from typing import List
 
 import mss
+import mss.tools
+
+import game_window
 
 logger = logging.getLogger(__name__)
 
@@ -23,10 +26,12 @@ def capture_and_save_screenshot():
     filename = f"screenshot_{timestamp}.png"
     filepath = os.path.join('screenshots', filename)
 
-    # Capture screenshot
+    # The game's window wherever it is (any monitor, windowed too); else the main monitor
+    region = game_window.find_window()
     with mss.mss() as sct:
-        # Capture primary monitor
-        sct.shot(output=filepath)
+        area = sct.monitors[1] if region is None else {
+            "left": region[0], "top": region[1], "width": region[2] - region[0], "height": region[3] - region[1]}
+        mss.tools.to_png(sct.grab(area).rgb, (area["width"], area["height"]), output=filepath)
 
     return filepath
 

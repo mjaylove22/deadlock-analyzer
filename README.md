@@ -87,10 +87,12 @@ python -m unittest discover -s tests -v
 
 ## Limitations
 
-- Crop coordinates were measured on a **1920×1080** screen with a 6v6 scoreboard; other resolutions log a warning and will likely misread.
-- OCR occasionally garbles a hero line; that player is skipped rather than guessed.
-- A player whose account isn't in the Deadlock API's database can't be found by name at all (only
-  identifying players by match ID, after the match, could fix that).
+- **Screen sizes:** built and verified on real 1920x1080 screenshots. Other sizes (1440p, 4K, ultrawide,
+  16:10, smaller screens) are located automatically and tested with **simulated** screenshots; real
+  screenshots at those sizes are still needed to confirm how Deadlock lays out its UI there.
+- Works on any monitor and in windowed mode (it captures the Deadlock window itself).
+- OCR occasionally garbles a line; that player is skipped rather than guessed. One misread letter in a
+  hero name, and dropped or added spaces in names, are handled.
 - Match reviews appear a while after a match ends (bot matches never do). Matches the API hasn't stored
   yet are fetched from Steam, which is limited to 3 an hour, so failed matches aren't retried for 10 minutes.
 - **Ban share** is each hero's part of all recorded bans, not a ban rate: the API gives ban counts but not
@@ -101,6 +103,8 @@ python -m unittest discover -s tests -v
 
 ```
 app.py               desktop app: window, navigation, background tasks, capture and auto-detect
+layout.py            finds the scoreboard at any screen size (checked by the PLAYERS-tab detector)
+game_window.py       finds the Deadlock window (any monitor, windowed or not)
 ui/                  theme, images, reusable widgets (cards, sortable tables) and the pages
 assets.py            hero portraits and rank emblems, cached on disk
 scoreboard_detector.py  spots the open scoreboard from a tiny screen grab

@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 import player_lookup
-from player_lookup import looks_like_misread, lookup_lobby, search_player
+from player_lookup import looks_like_misread, lookup_lobby, same_name, search_player
 
 PARADOX = 10
 GRAVES = 76
@@ -180,6 +180,10 @@ class SearchPlayerTests(unittest.TestCase):
 
 
 class LooksLikeMisreadTests(unittest.TestCase):
+    def test_names_match_with_spaces_dropped_or_added(self):
+        self.assertTrue(same_name("a frog sat ina pond", "A Frog Sat In A Pond"))
+        self.assertFalse(same_name("Bob", "Rob"))
+
     def test_one_swapped_character(self):
         self.assertTrue(looks_like_misread("Or. Night Owl", "Dr. Night Owl"))
 

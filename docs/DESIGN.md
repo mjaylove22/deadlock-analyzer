@@ -35,6 +35,8 @@ screenshot ──► crop ──► Tesseract OCR ──► lines + positions �
 | `assets.py` | Hero portraits, hero colours and rank emblems from the API, cached on disk | `deadlock_api`, `Pillow` |
 | `make_shortcut.py` | Creates the desktop shortcut (with an .ico icon) | `Pillow`, PowerShell |
 | `match_review.py` | Post-game review: condenses a match's ~1.5 MB data to a small summary, saved on disk; lobby places and comparisons | `deadlock_api`, `profiles` |
+| `layout.py` | Finds the scoreboard at any screen size: candidate layouts confirmed by the tab detector | `scoreboard_detector`, `settings` |
+| `game_window.py` | Finds the Deadlock window by its program (any monitor, windowed or not) | Windows API via `ctypes` |
 | `report.py` | Report lines shared by the terminal and the app, so the two can't drift apart | standard library only |
 | `tests/` | Unit tests for parsing and lookup logic; the API is mocked | `unittest` (standard library) |
 | `utils/logger.py` | One place to configure logging to `logs/app.log` and the console | standard library |
@@ -200,14 +202,21 @@ The ban endpoint returns how many times each hero was banned, but not how many m
 - **Player pages split Ranked / Unranked / Street Brawl.** Match history marks each match (`match_mode` 4 = ranked; Street Brawl is always unranked, so the three don't overlap), and the per-hero table uses the hero-stats endpoint's `match_mode` filter (default: both).
 - **Size check** (measured): ~3,400 lines of app code and ~1,100 of tests; committed files 282 KB; Python packages ~18 MB (Pillow 16 MB of that) plus the Tesseract engine (~116 MB, separate install); ~70 MB of memory with a 12-player lobby loaded; window on screen in ~0.4 s; local cache ~2 MB.
 
-### 4.22 Housekeeping
+### 4.22 Any screen size, any monitor
+- **What was tied to 1920x1080:** the scoreboard crop, the row grid that splits the teams, the PLAYERS-tab position and reference image, and capture of the primary monitor only (the author has a second monitor, where this would have silently failed).
+- **No guessed coordinates.** Without screenshots at other sizes, `layout.py` lists a few plausible layouts (UI scaling with the screen's height or width; anchored to the right edge or a centred 16:9 area; top or letterboxed) and **confirms each with the PLAYERS-tab detector**. The match is remembered per screen size, so it's found once. The scoreboard is then scaled back to its 1920x1080 size before reading, so every tuned value (crop, brightness cutoff, row grid) is unchanged.
+- **The detector is position-sensitive:** shifted by one pixel, the real tab fails (correlation 1.00 → 0.73). That would also have broken auto-detect at 1080p if a game patch nudged the tab. So it now searches ±3 px around the predicted spot. Two faster shortcuts were tried and rejected because they gave wrong answers: Pillow's `multiply` (rounds every pixel; scored an identical image 0.87) and statistics on float images (impossible values, from a 256-bucket histogram). Restructuring the exact integer maths (`sum(map(operator.mul, ...))`, reference sums computed once) made each check 5x faster (0.14 ms) with identical results. Blurring for tolerance was rejected too: it made the unselected tab look like the selected one.
+- **Capture follows the game window** (`game_window.py`, matched by `deadlock.exe`, ~1 ms), so any monitor and windowed mode work, and the watcher does nothing while the game isn't running.
+- **Simulated sizes** (resized/padded real screenshots, `tests/test_resolutions.py`): 1440p, both ultrawide arrangements, 16:10 and 900p read 12/12; simulated 4K and 720p 11/12. Small screens get sharpening plus a higher cutoff (720p went from 1/7 to 7/7 on one screenshot); at 1080p and above sharpening slightly hurt, so it's only used below. The 4K misses turned out to be ordinary OCR noise that can happen at any size, which led to two general fixes: a hero name one letter off ("Oynamo") counts as that hero (5+ letters), and names are compared ignoring spaces ("Dr.NightOwl"). **Simulated images are blurrier than real ones**, so tuning stopped there: real screenshots at those sizes are the next step.
+
+### 4.23 Housekeeping
 - Screenshots older than 7 days are deleted at startup and after each capture. Only files named like the app's own captures are touched, and a screenshot with an `.expected.json` (a regression test case) is never deleted.
 - Hero and rank lists are cached for the life of the app (`functools.lru_cache`); a failed request isn't cached, so it's retried next time.
 - The analysis reports progress through a callback, so the lookup code doesn't need to know about the window.
 
 ## 5. Testing
 
-`python -m unittest discover -s tests -v` runs 104 tests in about a second:
+`python -m unittest discover -s tests -v` runs 120 tests in a few seconds:
 - **Parser tests** use OCR output actually produced from real screenshots, including a noisy version, plus edge cases: headers, noise-only lines, duplicate player names, multi-word heroes, hero lines with nothing above them.
 - **Identity tests** use plain data to cover settling by unique name, friend links (including links listed by only one side and chains of settled players), ties falling back to hero history, and party grouping.
 - **Insights tests** cover each badge rule and its thresholds.

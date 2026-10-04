@@ -26,12 +26,14 @@ from typing import Any, Callable, Dict
 import customtkinter as ctk
 import keyboard
 import mss
+from PIL import Image
 
 import assets
 import deadlock_api
 from matchups import build_matchup
 from player_lookup import analyze_records, read_lobby
-from scoreboard_detector import grab_tab, is_scoreboard_open
+import game_window
+import layout as layout_module
 from screenshot_manager import capture_and_save_screenshot, delete_old_screenshots, get_screenshot_path
 from settings import get_me, load_settings, save_settings
 from ui.pages import HeroesPage, HeroPage, HomePage, LobbyPage, MatchPage, PlayerPage, SearchPage, SetupPage
@@ -295,18 +297,44 @@ class AnalyzerApp:
 
     def _watch(self):
         """Watcher thread: when the scoreboard appears, ask the main thread to capture it.
-        Fires once per opening; closing and reopening the menu fires again."""
+        Fires once per opening; closing and reopening the menu fires again.
+
+        It follows the Deadlock window (any monitor, windowed or not) and does nothing at all while
+        the game isn't running. The layout that matches a window size is remembered, so after the
+        first time only that one spot is checked (a few ms per second)."""
         was_open = False
+        last_full_search = 0.0
         with mss.mss() as sct:  # mss objects can't be shared between threads, so this thread has its own
             while True:
                 time.sleep(WATCH_INTERVAL_S)
                 if not self.watching or self.busy:
                     continue
                 try:
-                    is_open = is_scoreboard_open(grab_tab(sct))
+                    window = game_window.find_window()
+                    if window is None:
+                        was_open = False
+                        continue  # game not running: nothing to check
+                    left, top, right, bottom = window
+                    width, height = right - left, bottom - top
+
+                    def grab(box):
+                        shot = sct.grab({"left": left + box[0], "top": top + box[1],
+                                         "width": box[2] - box[0], "height": box[3] - box[1]})
+                        return Image.frombytes("RGB", shot.size, shot.rgb)
+
+                    known = layout_module.remembered(width, height)
+                    if known:
+                        found = layout_module.check(grab, known)  # calibrated: just the one spot
+                    elif time.time() - last_full_search >= 3:  # not calibrated yet: try every candidate, every 3 s
+                        last_full_search = time.time()
+                        found = layout_module.locate(grab, width, height)
+                    else:
+                        found = None
+                    is_open = found is not None
                     if is_open and not was_open:
+                        layout_module.remember(width, height, found)
                         time.sleep(SETTLE_S)
-                        if is_scoreboard_open(grab_tab(sct)):  # still open after the animation
+                        if layout_module.check(grab, found):  # still open after the animation
                             self.events.put(lambda: self.capture(auto=True))
                     was_open = is_open
                 except Exception:

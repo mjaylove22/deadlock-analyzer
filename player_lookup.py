@@ -19,7 +19,7 @@ from insights import compute_badges, hero_summary
 from matchups import build_matchup
 from report import build_report, items_text, matchup_text
 from settings import get_me
-from scoreboard_ocr import FALLBACK_HERO_NAMES, read_scoreboard
+from scoreboard_ocr import FALLBACK_HERO_NAMES, looks_like_misread, read_scoreboard, squash
 from screenshot_manager import get_screenshot_path
 from utils.logger import setup_logger
 
@@ -27,12 +27,6 @@ logger = logging.getLogger(__name__)
 
 TOP_HEROES_SHOWN = 3
 
-# OCR sometimes swaps one character for a lookalike ("Or. Night Owl" for "Dr. Night Owl").
-# Such a name is accepted as a misread, flagged so the user can see it. A general similarity score
-# was tried first and wrongly "corrected" names OCR had read right ("Kovas" -> "Kovmas", "Ravenl" ->
-# "raven"): misreads swap characters, they don't add or drop them. Short names have too many
-# one-letter neighbours to guess safely, hence the minimum length.
-MISREAD_MIN_LENGTH = 6
 
 Progress = Optional[Callable[[str], None]]  # called with a short status message at each step
 
@@ -72,7 +66,8 @@ def find_candidates(name: str) -> Tuple[List[Dict[str, Any]], str]:
 
 
 def same_name(a: str, b: str) -> bool:
-    return a.strip().lower() == b.strip().lower()
+    """Ignoring case and spaces: OCR drops and adds spaces ("Dr.NightOwl")."""
+    return squash(a) == squash(b)
 
 
 def as_candidate(c: Dict[str, Any]) -> Dict[str, Any]:
@@ -83,14 +78,6 @@ def as_candidate(c: Dict[str, Any]) -> Dict[str, Any]:
         "avatar_url": c.get("avatarmedium") or c.get("avatar"),
         "friends": {f["account_id"] for f in (c.get("friends") or [])},
     }
-
-
-def looks_like_misread(ocr_name: str, real_name: str) -> bool:
-    """True if OCR could have produced ocr_name by misreading one character of real_name."""
-    a, b = ocr_name.strip().lower(), real_name.strip().lower()
-    if len(a) != len(b) or len(a) < MISREAD_MIN_LENGTH:
-        return False
-    return sum(x != y for x, y in zip(a, b)) == 1
 
 
 def top_heroes(entries: List[Dict], hero_names_by_id: Dict[int, str]) -> List[Dict[str, Any]]:

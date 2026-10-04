@@ -7,18 +7,20 @@ Usage (debug view of the raw OCR lines and parsed rows):
 """
 
 import logging
+import re
 import sys
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import pytesseract
-from PIL import Image
+from PIL import Image, ImageFilter
 
 import deadlock_api
+import layout as layout_module  # "layout" alone would clash with the local variable names
 
 logger = logging.getLogger(__name__)
 
 # Scoreboard geometry, measured on 1920x1080 screenshots of the Esc menu's PLAYERS tab.
-SCREEN_SIZE = (1920, 1080)
+# Other screen sizes are located with layout.py and scaled back to this size before reading.
 
 # Player list crop (left, top, right, bottom).
 # - Left starts just past the hero portraits, which OCR otherwise reads as junk like "sy" or "@".
@@ -39,6 +41,14 @@ ROW_PITCH = 60
 # screenshot for any cutoff from 90 to 130.
 OCR_SCALE = 2
 TEXT_THRESHOLD = 110
+
+# Screens smaller than 1080p: text scaled back up is blurry, and at 720p the plain settings read only
+# 1 of 7 players on one test screenshot. Sharpening plus a slightly higher cutoff read 7 of 7 (and
+# 11 of 12 on the 6v6 ones). Tested on 1080p screenshots scaled down; at 1080p and above, sharpening
+# slightly hurt, so it's only used below.
+SMALL_SCREEN_SCALE = 0.9
+SMALL_SCREEN_THRESHOLD = 120
+SMALL_SCREEN_SHARPEN = ImageFilter.UnsharpMask(radius=2, percent=150, threshold=2)
 
 # The panel's textured background sometimes adds junk words at the end of a line
 # ("BrightFox ." or "... Owl . pees"). Those junk words had confidence 0-47, while real name
@@ -65,15 +75,33 @@ def load_hero_names() -> List[str]:
         return FALLBACK_HERO_NAMES
 
 
-def prepare_for_ocr(crop: Image.Image) -> Image.Image:
-    """Upscale, then turn light text into black-on-white with a fixed brightness cutoff."""
-    big = crop.resize((crop.width * OCR_SCALE, crop.height * OCR_SCALE), Image.LANCZOS)
-    return big.convert("L").point(lambda v: 0 if v > TEXT_THRESHOLD else 255)
+def prepare_for_ocr(crop: Image.Image, screen_scale: float = 1.0) -> Image.Image:
+    """Upscale, then turn light text into black-on-white with a fixed brightness cutoff.
+    screen_scale < 1 means the screenshot came from a screen smaller than 1080p."""
+    gray = crop.resize((crop.width * OCR_SCALE, crop.height * OCR_SCALE), Image.LANCZOS).convert("L")
+    threshold = TEXT_THRESHOLD
+    if screen_scale < SMALL_SCREEN_SCALE:
+        gray = gray.filter(SMALL_SCREEN_SHARPEN)
+        threshold = SMALL_SCREEN_THRESHOLD
+    return gray.point(lambda v: 0 if v > threshold else 255)
 
 
-def read_ocr_lines(image: Image.Image) -> List[Tuple[int, str]]:
-    """OCR the player list once. Returns (top, text) per line in screen order; top is in crop pixels."""
-    prepared = prepare_for_ocr(image.crop(PLAYER_LIST_BOX))
+def find_layout(image: Image.Image) -> layout_module.Layout:
+    """Where the scoreboard is in this screenshot. If the PLAYERS tab can't be confirmed (e.g. the
+    menu was closing), fall back to the most likely layout for the image's size."""
+    width, height = image.size
+    found = layout_module.locate_in_image(image, layout_module.remembered(width, height))
+    if found:
+        return found
+    logger.warning(f"Couldn't confirm where the scoreboard is in a {width}x{height} image; using the most likely layout")
+    return layout_module.candidates(width, height)[0]
+
+
+def read_ocr_lines(image: Image.Image, layout: layout_module.Layout = None) -> List[Tuple[int, str]]:
+    """OCR the player list once. Returns (top, text) per line in screen order; top is in pixels of
+    the crop as it looks at 1920x1080 (other sizes are scaled back to that first)."""
+    layout = layout or find_layout(image)
+    prepared = prepare_for_ocr(layout_module.normalized_crop(image, layout, PLAYER_LIST_BOX), layout.scale)
     # --psm 6 treats the crop as one uniform block of text
     data = pytesseract.image_to_data(prepared, config="--psm 6", output_type=pytesseract.Output.DICT)
 
@@ -96,6 +124,42 @@ def read_ocr_lines(image: Image.Image) -> List[Tuple[int, str]]:
             words.pop()
         result.append((line["top"], " ".join(word for word, _ in words)))
     return result
+
+
+# OCR sometimes swaps one character for a lookalike ("Or. Night Owl", "Oynamo") and drops or
+# adds spaces ("Dr.NightOwl", "ina pond"). A general similarity score was tried first and wrongly
+# "corrected" correctly read names ("Kovas" -> "Kovmas"): misreads swap characters, they don't add or
+# drop them. Short names have too many one-letter neighbours to guess safely, hence a minimum length.
+MISREAD_MIN_LENGTH = 6
+HERO_MISREAD_MIN_LENGTH = 5  # only 39 hero names to confuse, so a slightly shorter minimum is safe
+
+
+def squash(text: str) -> str:
+    """Lower case, without spaces: OCR adds and drops spaces."""
+    return "".join(text.lower().split())
+
+
+def looks_like_misread(ocr_text: str, real_text: str, min_length: int = MISREAD_MIN_LENGTH) -> bool:
+    """True if OCR could have produced ocr_text by misreading one character of real_text (spaces ignored)."""
+    a, b = squash(ocr_text), squash(real_text)
+    if len(a) != len(b) or len(a) < min_length:
+        return False
+    return sum(x != y for x, y in zip(a, b)) == 1
+
+
+def match_hero(line: str, heroes_longest_first: List[str]) -> Optional[str]:
+    """The hero named in a "<Hero> Level" line: an exact match, or else one letter off ("Oynamo")."""
+    lowered = line.lower()
+    exact = next((h for h in heroes_longest_first if h.lower() in lowered), None)
+    if exact:
+        return exact
+    words = re.findall(r"[^\s]+", line)
+    for hero in heroes_longest_first:
+        size = len(hero.split())
+        for i in range(len(words) - size + 1):
+            if looks_like_misread(" ".join(words[i:i + size]), hero, HERO_MISREAD_MIN_LENGTH):
+                return hero
+    return None
 
 
 def team_for_row(name_top: int) -> str:
@@ -135,7 +199,7 @@ def parse_player_rows(lines: List[Tuple[int, str]], hero_names: List[str]) -> Li
             continue
 
         if "level" in line.lower():
-            hero = next((h for h in heroes_longest_first if h.lower() in line.lower()), None)
+            hero = match_hero(line, heroes_longest_first)
             if hero and previous_line:
                 name_top, name = previous_line
                 rows.append((name_top, name, hero))
@@ -150,8 +214,6 @@ def parse_player_rows(lines: List[Tuple[int, str]], hero_names: List[str]) -> Li
 def read_scoreboard(file_path: str, hero_names: List[str]) -> List[Dict[str, str]]:
     """Return one {"player", "hero", "team"} record per player found in the screenshot."""
     with Image.open(file_path) as image:
-        if image.size != SCREEN_SIZE:
-            logger.warning(f"Screenshot is {image.size}, but the crop was measured on {SCREEN_SIZE}; results may be wrong")
         lines = read_ocr_lines(image)
     logger.debug(f"OCR lines: {lines}")
 
