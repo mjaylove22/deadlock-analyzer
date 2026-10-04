@@ -5,6 +5,8 @@ Start without a terminal by double-clicking "Deadlock Analyzer.pyw" (or run: pyt
 game runs in borderless windowed mode. Nothing here touches the game: the app only takes
 screenshots, like the Windows snipping tool.
 
+Layout: the two teams side by side, one card per player, so a full lobby fits without scrolling.
+
 Threading: tkinter may only be used from the main thread. The global hotkey fires on the
 keyboard library's thread, and analysis (OCR + API calls) takes a few seconds, so it runs on a
 worker thread to keep the window responsive. Both hand results back through a queue that the
@@ -21,7 +23,7 @@ import webbrowser
 import keyboard
 
 from player_lookup import analyze_screenshot
-from report import build_report
+from report import TEAM_TITLES, badge_labels, hero_stats_text, most_played_text
 from screenshot_manager import capture_and_save_screenshot, get_screenshot_path
 from utils.logger import setup_logger
 
@@ -30,12 +32,28 @@ logger = logging.getLogger(__name__)
 HOTKEY = "ctrl+shift+d"
 POLL_MS = 100
 CAPTURE_DELAY_MS = 150  # time for Windows to repaint after the overlay turns invisible
-OVERLAY_ALPHA = 0.88
+OVERLAY_ALPHA = 0.9
+FONT = "Segoe UI"
 
 COLORS = {
-    "bg": "#16181d", "panel": "#1f232b", "text": "#e6e6e6", "dim": "#9aa3b2",
-    "team": "#f0c060", "party": "#ff8a65", "link": "#6fa8ff", "hero": "#c7d0dc",
+    "bg": "#0f1115", "header": "#161a22", "card": "#1c212b", "text": "#e8eaed", "dim": "#8b93a1",
+    "friendly": "#4fc3f7", "enemy": "#ef5350", "button": "#2a303c",
 }
+BADGE_COLORS = {"strong": "#f5b942", "good": "#43a047", "warn": "#e8711a", "info": "#4a5a6a"}
+PARTY_COLORS = ["#ab47bc", "#26a69a", "#ffa726", "#5c6bc0"]
+
+
+def text_color_for(background: str) -> str:
+    """Black or white text, whichever reads better on the given hex colour."""
+    r, g, b = (int(background[i:i + 2], 16) for i in (1, 3, 5))
+    brightness = 0.299 * r + 0.587 * g + 0.114 * b  # standard perceived-brightness weights
+    return "#111111" if brightness > 150 else "#ffffff"
+
+
+def pill(parent, text: str, color: str, size: int = 8) -> tk.Label:
+    """A small coloured label, used for badges and ranks."""
+    return tk.Label(parent, text=text, bg=color, fg=text_color_for(color),
+                    font=(FONT, size, "bold"), padx=6, pady=1)
 
 
 class AnalyzerApp:
@@ -44,47 +62,126 @@ class AnalyzerApp:
         self.events = queue.Queue()  # (kind, payload) messages from other threads
         self.busy = False
         self.overlay = tk.BooleanVar(value=False)
-        self.link_count = 0
 
         root.title("Deadlock Analyzer")
-        root.geometry("460x720")
+        root.geometry("1180x820")
+        root.minsize(980, 640)
         root.configure(bg=COLORS["bg"])
-        self._build_widgets()
+        self._build_header()
+        self.body = tk.Frame(root, bg=COLORS["bg"])
+        self.body.pack(fill="both", expand=True, padx=14, pady=(6, 14))
+        self.show_message(f"Press {HOTKEY.upper()} in game with the Esc menu on the PLAYERS tab.\n\n"
+                          "The lobby report will appear here.")
 
         keyboard.add_hotkey(HOTKEY, lambda: self.events.put(("hotkey", None)))
         root.protocol("WM_DELETE_WINDOW", self.close)
         root.after(POLL_MS, self.poll)
-        self.set_status(f"Press {HOTKEY.upper()} in game with the Esc menu on the PLAYERS tab.")
 
-    def _build_widgets(self):
-        bar = tk.Frame(self.root, bg=COLORS["bg"])
-        bar.pack(fill="x", padx=8, pady=(8, 4))
-        tk.Button(bar, text="Analyze latest screenshot", command=self.analyze_latest,
-                  bg=COLORS["panel"], fg=COLORS["text"], relief="flat", padx=8).pack(side="left")
-        tk.Checkbutton(bar, text="Overlay mode", variable=self.overlay, command=self.apply_overlay,
-                       bg=COLORS["bg"], fg=COLORS["text"], selectcolor=COLORS["panel"],
-                       activebackground=COLORS["bg"], activeforeground=COLORS["text"]).pack(side="right")
+    # ---- layout ----------------------------------------------------------------------------
 
-        self.status = tk.Label(self.root, anchor="w", bg=COLORS["bg"], fg=COLORS["dim"], wraplength=440, justify="left")
-        self.status.pack(fill="x", padx=8)
+    def _build_header(self):
+        header = tk.Frame(self.root, bg=COLORS["header"], padx=14, pady=10)
+        header.pack(fill="x")
+        tk.Label(header, text="DEADLOCK ANALYZER", bg=COLORS["header"], fg=COLORS["text"],
+                 font=(FONT, 14, "bold")).pack(side="left")
+        tk.Checkbutton(header, text="Overlay mode", variable=self.overlay, command=self.apply_overlay,
+                       bg=COLORS["header"], fg=COLORS["text"], selectcolor=COLORS["button"],
+                       activebackground=COLORS["header"], activeforeground=COLORS["text"],
+                       font=(FONT, 10)).pack(side="right", padx=(10, 0))
+        tk.Button(header, text="Analyze latest screenshot", command=self.analyze_latest,
+                  bg=COLORS["button"], fg=COLORS["text"], activebackground=COLORS["card"],
+                  activeforeground=COLORS["text"], relief="flat", font=(FONT, 10), padx=10).pack(side="right")
+        self.status = tk.Label(header, bg=COLORS["header"], fg=COLORS["dim"], font=(FONT, 10), anchor="w")
+        self.status.pack(side="left", padx=20, fill="x", expand=True)
 
-        frame = tk.Frame(self.root, bg=COLORS["bg"])
-        frame.pack(fill="both", expand=True, padx=8, pady=8)
-        scrollbar = tk.Scrollbar(frame)
-        scrollbar.pack(side="right", fill="y")
-        self.text = tk.Text(frame, bg=COLORS["panel"], fg=COLORS["text"], relief="flat", wrap="none",
-                            font=("Consolas", 10), padx=8, pady=8, yscrollcommand=scrollbar.set)
-        self.text.pack(side="left", fill="both", expand=True)
-        scrollbar.config(command=self.text.yview)
+    def clear_body(self):
+        for widget in self.body.winfo_children():
+            widget.destroy()
 
-        # One text style per report line style (see report.py)
-        self.text.tag_configure("team", foreground=COLORS["team"], font=("Consolas", 11, "bold"), spacing1=6)
-        self.text.tag_configure("party", foreground=COLORS["party"])
-        self.text.tag_configure("player", font=("Consolas", 10, "bold"), spacing1=6)
-        self.text.tag_configure("note", foreground=COLORS["dim"])
-        self.text.tag_configure("link", foreground=COLORS["link"], underline=True)
-        self.text.tag_configure("hero", foreground=COLORS["hero"])
-        self.text.config(state="disabled")
+    def show_message(self, message: str):
+        self.clear_body()
+        tk.Label(self.body, text=message, bg=COLORS["bg"], fg=COLORS["dim"],
+                 font=(FONT, 13), justify="center").pack(expand=True)
+
+    def render(self, results, parties):
+        """Two team columns side by side, one card per player."""
+        self.clear_body()
+        if not results:
+            self.show_message("No players found in the screenshot.\n\n"
+                              "Make sure the Esc menu is open on the PLAYERS tab.")
+            return
+
+        # Each party gets its own colour, shown as the card's side stripe and a badge
+        party_of = {}
+        for n, party in enumerate(parties):
+            for i in party:
+                party_of[i] = (PARTY_COLORS[n % len(PARTY_COLORS)], f"PARTY {chr(65 + n)}")
+
+        self.body.columnconfigure(0, weight=1, uniform="team")
+        self.body.columnconfigure(1, weight=1, uniform="team")
+        for column, (team, title) in enumerate(TEAM_TITLES.items()):
+            members = [i for i, r in enumerate(results) if r["team"] == team]
+            frame = tk.Frame(self.body, bg=COLORS["bg"])
+            frame.grid(row=0, column=column, sticky="nsew", padx=(0 if column == 0 else 8, 8 if column == 0 else 0))
+
+            team_parties = [p for p in parties if results[p[0]]["team"] == team]
+            summary = f"{len(members)} players"
+            if team_parties:
+                summary += " · " + ", ".join(f"party of {len(p)}" for p in team_parties)
+            heading = tk.Frame(frame, bg=COLORS["bg"])
+            heading.pack(fill="x", pady=(0, 6))
+            tk.Label(heading, text=title, bg=COLORS["bg"], fg=COLORS[team], font=(FONT, 13, "bold")).pack(side="left")
+            tk.Label(heading, text=summary, bg=COLORS["bg"], fg=COLORS["dim"], font=(FONT, 10)).pack(side="left", padx=10)
+
+            for i in members:
+                self._card(frame, results[i], COLORS[team], *party_of.get(i, (None, None)))
+
+    def _card(self, parent, r, accent, party_color, party_label):
+        bg = COLORS["card"]
+        card = tk.Frame(parent, bg=bg)
+        card.pack(fill="x", pady=3)
+        tk.Frame(card, bg=party_color or accent, width=5).pack(side="left", fill="y")
+        body = tk.Frame(card, bg=bg, padx=12, pady=5)
+        body.pack(side="left", fill="both", expand=True)
+        body.columnconfigure(0, weight=1)
+
+        # Row 1: name (click opens the Steam profile) and rank
+        name = tk.Label(body, text=r["player"], bg=bg, fg=COLORS["text"], font=(FONT, 12, "bold"), anchor="w")
+        name.grid(row=0, column=0, sticky="w")
+        if r["profile_url"]:
+            self._make_link(name, r["profile_url"])
+        if r["rank"]:
+            pill(body, r["rank"]["name"], r["rank"]["color"], size=9).grid(row=0, column=1, sticky="e")
+
+        # Row 2: the hero they're on and how they do on it
+        line = tk.Frame(body, bg=bg)
+        line.grid(row=1, column=0, columnspan=2, sticky="w", pady=(1, 0))
+        tk.Label(line, text=r["hero"], bg=bg, fg=accent, font=(FONT, 10, "bold")).pack(side="left")
+        tk.Label(line, text="   " + hero_stats_text(r), bg=bg, fg=COLORS["text"], font=(FONT, 10)).pack(side="left")
+
+        # Row 3: badges
+        badges = badge_labels(r)
+        if party_label:
+            badges.insert(0, (party_label, "party"))
+        if badges:
+            row = tk.Frame(body, bg=bg)
+            row.grid(row=2, column=0, columnspan=2, sticky="w", pady=(4, 0))
+            for label, kind in badges:
+                color = party_color if kind == "party" else BADGE_COLORS[kind]
+                pill(row, label, color).pack(side="left", padx=(0, 4))
+
+        # Row 4: their usual heroes, in smaller, dimmer text (the identity details are in the badges)
+        details = most_played_text(r)
+        if details:
+            tk.Label(body, text=details, bg=bg, fg=COLORS["dim"], font=(FONT, 9), anchor="w").grid(
+                row=3, column=0, columnspan=2, sticky="w", pady=(3, 0))
+
+    def _make_link(self, label: tk.Label, url: str):
+        normal, hover = (FONT, 12, "bold"), (FONT, 12, "bold underline")
+        label.config(cursor="hand2")
+        label.bind("<Button-1>", lambda event: webbrowser.open(url))
+        label.bind("<Enter>", lambda event: label.config(font=hover))
+        label.bind("<Leave>", lambda event: label.config(font=normal))
 
     # ---- main-thread helpers -------------------------------------------------------------
 
@@ -159,23 +256,9 @@ class AnalyzerApp:
 
     def show_report(self, path, results, parties):
         self.busy = False
-        self.text.config(state="normal")
-        self.text.delete("1.0", "end")
-        for text, style in build_report(results, parties):
-            if style == "link":
-                # Each link gets its own tag so a click knows which URL to open
-                url = text.strip()
-                tag = f"link{self.link_count}"
-                self.link_count += 1
-                self.text.tag_bind(tag, "<Button-1>", lambda event, u=url: webbrowser.open(u))
-                self.text.tag_bind(tag, "<Enter>", lambda event: self.text.config(cursor="hand2"))
-                self.text.tag_bind(tag, "<Leave>", lambda event: self.text.config(cursor=""))
-                self.text.insert("end", text + "\n", ("link", tag))
-            else:
-                self.text.insert("end", text + "\n", style)
-        self.text.config(state="disabled")
-        self.set_status(f"{len(results)} players from {os.path.basename(path)}. "
-                        f"Press {HOTKEY.upper()} again for a new screenshot.")
+        self.render(results, parties)
+        self.set_status(f"{len(results)} players from {os.path.basename(path)}  ·  "
+                        f"{HOTKEY.upper()} for a new screenshot")
         self.root.bell()  # audible cue when the report is ready while you're in game
 
     def close(self):

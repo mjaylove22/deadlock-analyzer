@@ -2,12 +2,14 @@
 
 import unittest
 
-from report import build_report
+from report import badge_labels, build_report, hero_stats_text
 
 
-def result(player, hero, team, status="found", note="", url=None, top=()):
+def result(player, hero, team, status="found", note="unique name", url=None, top=(), stats=None,
+           badges=(), confident=True, rank=None):
     return {"player": player, "hero": hero, "team": team, "status": status, "note": note,
-            "profile_url": url, "top_heroes": list(top)}
+            "profile_url": url, "top_heroes": list(top), "hero_stats": stats, "badges": list(badges),
+            "confident": confident, "rank": rank}
 
 
 class BuildReportTests(unittest.TestCase):
@@ -28,15 +30,31 @@ class BuildReportTests(unittest.TestCase):
         self.assertEqual(texts[0], "YOUR TEAM")
         self.assertIn(("Party of 2: A + B", "party"), lines)
         self.assertIn(("    https://steam/1", "link"), lines)
-        self.assertIn("Viscous", next(t for t, s in lines if s == "hero"))
+        self.assertIn("Most played: Viscous 120", " ".join(t for t, _ in lines))
         # The party line belongs to the enemy section, right after its title
         enemy_title = texts.index("ENEMY TEAM")
         self.assertEqual(styles[enemy_title + 1], "party")
 
-    def test_player_without_account_has_no_link_or_heroes(self):
+    def test_player_without_account_has_no_link(self):
         lines = build_report([result("Bot", "Haze", "enemy", status="skipped", note="likely a bot")], [])
         self.assertNotIn("link", [s for _, s in lines])
-        self.assertNotIn("hero", [s for _, s in lines])
+        self.assertIn(("    Bot", "hero"), lines)
+
+
+class WordingTests(unittest.TestCase):
+    def test_hero_stats_line(self):
+        r = result("A", "Lash", "enemy", stats={"games": 1, "win_rate": 1.0, "kda": 2.7, "damage_per_min": 1234.4})
+        self.assertEqual(hero_stats_text(r), "1 game · 100% WR · 2.7 KDA · 1,234 dmg/min")
+
+    def test_no_games_on_hero(self):
+        self.assertEqual(hero_stats_text(result("A", "Lash", "enemy")), "No recorded games on Lash")
+
+    def test_identity_badges(self):
+        unsure = result("A", "Lash", "enemy", note="7 accounts share this name; ...", confident=False)
+        friends = result("B", "Lash", "enemy", note="friends with C in this lobby")
+        self.assertIn(("ID UNSURE", "warn"), badge_labels(unsure))
+        self.assertIn(("ID VIA FRIENDS", "info"), badge_labels(friends))
+        self.assertEqual(badge_labels(result("D", "Lash", "enemy")), [])
 
 
 if __name__ == "__main__":

@@ -6,19 +6,16 @@ Reads the in-game scoreboard of Valve's **Deadlock** from a screenshot and looks
 screenshot ──► OCR (Tesseract) ──► player / hero / team ──► public Deadlock API ──► favourite heroes, win rates
 ```
 
-Example output (illustrative names and numbers):
+For every player in the lobby, the app shows:
 
-```
-=== ENEMY TEAM ===
-  Party of 3: PlayerA + PlayerB + ExamplePlayer
+- **Stats on the hero they're playing right now:** games, win rate, KDA, damage per minute
+- **Badges:** ONE-TRICK, ON MAIN, COMFORT PICK, NEW ON HERO, FIRST GAME ON HERO, HIGH WR / LOW WR, VETERAN
+- **Rank**, in the game's rank colours
+- **Parties:** friends queued together on the same team share a colour
+- **Their most-played heroes**, and a clickable Steam profile
+- **ID UNSURE** when the account match is a close call, so you know when not to trust it
 
-ExamplePlayer  (playing Paradox)  [found]
-    friends with PlayerA, PlayerB in this lobby
-    https://steamcommunity.com/profiles/<steam-id>/
-    Graves         20 matches  70% wins
-    Mirage         18 matches  50% wins
-    The Doorman    17 matches  47% wins
-```
+Both teams sit side by side, so a full 6v6 lobby fits on one screen without scrolling.
 
 ## Ground rules
 
@@ -65,6 +62,7 @@ python -m unittest discover -s tests -v
 
 - Crop coordinates were measured on a **1920×1080** screen with a 6v6 scoreboard; other resolutions log a warning and will likely misread.
 - OCR occasionally garbles a hero line; that player is skipped rather than guessed.
+- Hero stats and badges count normal matches only (the API default); Street Brawl and bot matches aren't included.
 
 ## Project layout
 
@@ -76,7 +74,8 @@ scoreboard_ocr.py    screenshot -> [{"player", "hero", "team"}]
 deadlock_api.py      thin client for the public Deadlock API
 identity.py          which same-named account is which; party detection
 player_lookup.py     whole-lobby lookup and command-line report
-report.py            report lines shared by the terminal and the app
+insights.py          stats on the current hero and badge rules
+report.py            wording shared by the terminal and the app
 tests/               unit tests (API calls are mocked)
 docs/DESIGN.md       design decisions and technology choices
 utils/logger.py      logging to logs/app.log and the console

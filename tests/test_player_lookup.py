@@ -22,7 +22,16 @@ def profile(account_id, name, friends=()):
 
 
 def stat(account_id, hero_id, matches, wins=0):
-    return {"account_id": account_id, "hero_id": hero_id, "matches_played": matches, "wins": wins}
+    """Shaped like a real hero-stats entry (only the fields this project reads)."""
+    return {"account_id": account_id, "hero_id": hero_id, "matches_played": matches, "wins": wins,
+            "kills": matches * 5, "deaths": matches * 4, "assists": matches * 8, "damage_per_min": 900.0}
+
+
+RANK_TIERS = {0: {"name": "Obscurus", "color": "#333333"}, 7: {"name": "Emissary", "color": "#B47FEB"}}
+
+
+def rank(account_id, tier, subrank):
+    return {"account_id": account_id, "rank": tier, "subrank": subrank}
 
 
 def record(player, hero, team="friendly"):
@@ -34,10 +43,19 @@ def fake_search(profiles_by_name):
 
 
 class LookupLobbyTests(unittest.TestCase):
+    def setUp(self):
+        # Safety net: any API call a test forgot to mock fails loudly instead of using the network
+        guard = patch.object(player_lookup.deadlock_api, "get_json",
+                             side_effect=AssertionError("unit test tried to call the real API"))
+        guard.start()
+        self.addCleanup(guard.stop)
+
     def run_lookup(self, records, profiles_by_name, stats=()):
         api = player_lookup.deadlock_api
         with patch.object(api, "search_steam_profiles", side_effect=fake_search(profiles_by_name)), \
-             patch.object(api, "get_hero_stats", return_value=list(stats)) as get_stats:
+             patch.object(api, "get_hero_stats", return_value=list(stats)) as get_stats, \
+             patch.object(api, "fetch_rank_tiers", return_value=RANK_TIERS), \
+             patch.object(api, "get_player_ranks", side_effect=lambda ids: [rank(a, 7, 2) for a in ids]):
             results, parties = lookup_lobby(records, HERO_IDS, HERO_NAMES)
         return results, parties, get_stats
 
@@ -78,6 +96,21 @@ class LookupLobbyTests(unittest.TestCase):
         self.assertEqual(results[1]["account_id"], 21)
         self.assertEqual(results[1]["note"], "friends with PlayerA in this lobby")
         self.assertEqual(parties, [[0, 1]])
+
+    def test_found_player_gets_rank_badges_and_confidence(self):
+        stats = [stat(2, PARADOX, 25, wins=20), stat(2, GRAVES, 5)]
+        results, _, _ = self.run_lookup([record("Solo", "Paradox")], {"Solo": [profile(2, "Solo")]}, stats)
+        r = results[0]
+        self.assertEqual(r["rank"], {"name": "Emissary 2", "color": "#B47FEB"})
+        self.assertEqual(r["hero_stats"]["games"], 25)
+        self.assertIn(("HIGH WR", "good"), r["badges"])
+        self.assertTrue(r["confident"])
+
+    def test_close_hero_history_call_is_marked_unsure(self):
+        profiles = {"Twin": [profile(1, "Twin"), profile(2, "Twin")]}
+        stats = [stat(1, PARADOX, 8), stat(2, PARADOX, 5)]  # the real "8 vs 5" case
+        results, _, _ = self.run_lookup([record("Twin", "Paradox")], profiles, stats)
+        self.assertFalse(results[0]["confident"])
 
     def test_network_error_is_reported_not_raised(self):
         with patch.object(player_lookup.deadlock_api, "search_steam_profiles", side_effect=OSError("timed out")):

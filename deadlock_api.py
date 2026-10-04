@@ -47,3 +47,16 @@ def search_steam_profiles(name: str, limit: int = 50) -> List[Dict[str, Any]]:
 def get_hero_stats(account_ids: List[int]) -> List[Dict[str, Any]]:
     """Per-hero stats for one or more accounts (one entry per account+hero pair)."""
     return get_json("/v1/players/hero-stats", {"account_ids": ",".join(str(a) for a in account_ids)})
+
+
+def fetch_rank_tiers() -> Dict[int, Dict[str, str]]:
+    """Rank tier number -> {"name", "color"}, e.g. 7 -> Emissary. Tier 0 (Obscurus) means unranked."""
+    return {tier["tier"]: {"name": tier["name"], "color": tier["color"]} for tier in get_json("/v1/assets/ranks")}
+
+
+def get_player_ranks(account_ids: List[int]) -> List[Dict[str, Any]]:
+    """Rank after each player's latest ranked match: {"account_id", "rank" (tier), "subrank", ...}.
+
+    Batch endpoint with a tighter rate limit (20 requests/min per IP), so call it once per lobby.
+    """
+    return get_json("/v1/players/rank", {"account_ids": ",".join(str(a) for a in account_ids)})

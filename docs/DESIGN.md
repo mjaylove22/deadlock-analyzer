@@ -26,6 +26,7 @@ screenshot ──► crop ──► Tesseract OCR ──► lines + positions �
 | `deadlock_api.py` | Thin client: every HTTP call to the Deadlock API lives here | standard library only |
 | `identity.py` | Decide which same-named account is which; detect parties. Pure logic, no network | standard library only |
 | `player_lookup.py` | Fetch candidates and stats for the whole lobby; `analyze_screenshot()` runs the full pipeline | `scoreboard_ocr`, `deadlock_api`, `identity` |
+| `insights.py` | Stats on the current hero and badge rules (one-trick, new on hero, ...). Pure logic, no network | standard library only |
 | `report.py` | Report lines shared by the terminal and the app, so the two can't drift apart | standard library only |
 | `tests/` | Unit tests for parsing and lookup logic; the API is mocked | `unittest` (standard library) |
 | `utils/logger.py` | One place to configure logging to `logs/app.log` and the console | standard library |
@@ -113,12 +114,22 @@ An early hardcoded list turned out to be largely invented, and a hand-verified l
 - **Overlay mode** is an ordinary always-on-top, semi-transparent window. It works over the game in borderless windowed mode. Overlays that draw over *exclusive fullscreen* do it by injecting into the game's renderer, which this project deliberately never does.
 - **The overlay would cover the scoreboard in its own screenshot**, so it turns fully transparent for 150 ms during capture. Transparency is used instead of hiding and re-showing the window, because re-showing can steal keyboard focus from the game.
 
+### 4.9 Insights: badges with thresholds, and honest confidence
+- **Stats on the current hero**, not just overall: a player's usual heroes say less about *this* match than how they do on the hero they're actually playing.
+- **Badges** are rules with named thresholds in `insights.py`, chosen so a badge means something rather than firing on tiny samples: e.g. ONE-TRICK needs their most-played hero with 50+ games *and* 40%+ of everything they play, and win-rate badges need 20+ games. Stats are from normal matches (the API default); in a Street Brawl lobby most players really were on heroes with no recorded games, checked against Street Brawl stats too.
+- **Rank** comes from one batch request per lobby (that endpoint allows 20 requests per minute), using the API's own tier names and colours rather than hardcoded ones.
+- **ID UNSURE**: a hero-history pick only counts as confident if the winner has at least twice the runner-up's games on the hero (55 vs 7 yes, 8 vs 5 no). The 8-vs-5 case was a real wrong pick, so the UI now warns instead of presenting it as fact.
+
+### 4.10 UI layout, measured
+Teams sit side by side with one card per player. Whether a full lobby fits was **measured**, not eyeballed: tkinter reports the size a layout needs, so the worst case (12 real players with badges and parties) was rendered off-screen. It needed 826px against an 820px window, so card spacing was tightened to 790px.
+
 ## 5. Testing
 
-`python -m unittest discover -s tests -v` runs 35 tests in under a second:
+`python -m unittest discover -s tests -v` runs 50 tests in under a second:
 - **Parser tests** use OCR output actually produced from real screenshots, including a noisy version, plus edge cases: headers, noise-only lines, duplicate player names, multi-word heroes, hero lines with nothing above them.
 - **Identity tests** use plain data to cover settling by unique name, friend links (including links listed by only one side and chains of settled players), ties falling back to hero history, and party grouping.
-- **Lookup tests** mock the API to cover rejecting fuzzy matches, bot skipping, one stats request per lobby, favourite heroes, and network errors being reported instead of crashing the report.
+- **Insights tests** cover each badge rule and its thresholds.
+- **Lookup tests** mock the API (a guard makes any unmocked call fail, so unit tests can never quietly use the network) to cover rejecting fuzzy matches, bot skipping, one stats request per lobby, favourite heroes, and network errors being reported instead of crashing the report.
 
 - **Screenshot regression tests** run the full OCR pipeline on real screenshots and compare against hand-checked `.expected.json` answers. Screenshots contain other players' names, so they stay in the gitignored `screenshots/` folder and the test skips on machines without them. This test exists because the unit tests alone missed an OCR failure on a new screenshot; with the fix disabled, it fails.
 

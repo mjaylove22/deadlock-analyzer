@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Tuple
 
 import deadlock_api
 from identity import find_parties, resolve_lobby
+from insights import compute_badges, hero_summary
 from report import build_report
 from scoreboard_ocr import FALLBACK_HERO_NAMES, read_scoreboard
 from screenshot_manager import get_screenshot_path
@@ -71,7 +72,8 @@ def lookup_lobby(records: List[Dict[str, str]], hero_ids_by_name: Dict[str, int]
     Returns (results, parties): one result per record, and parties as lists of record indexes.
     The whole lobby is resolved together, because friend links between players are evidence.
     """
-    results = [dict(r, status=None, note="", account_id=None, profile_url=None, top_heroes=[]) for r in records]
+    results = [dict(r, status=None, note="", account_id=None, profile_url=None, top_heroes=[],
+                    hero_stats=None, badges=[], confident=False, rank=None) for r in records]
 
     candidates_by_player = {}
     for i, result in enumerate(results):
@@ -107,12 +109,47 @@ def lookup_lobby(records: List[Dict[str, str]], hero_ids_by_name: Dict[str, int]
     names = {i: results[i]["player"] for i in candidates_by_player}
     resolved = resolve_lobby(candidates_by_player, names)
     for i, (account, reason) in resolved.items():
+        entries = stats_by_account[account["account_id"]]
+        hero_id = hero_ids_by_name.get(results[i]["hero"])
         results[i].update(status="found", note=reason, account_id=account["account_id"],
                           profile_url=account["profile_url"],
-                          top_heroes=top_heroes(stats_by_account[account["account_id"]], hero_names_by_id))
+                          top_heroes=top_heroes(entries, hero_names_by_id),
+                          hero_stats=hero_summary(entries, hero_id),
+                          badges=compute_badges(entries, hero_id),
+                          confident=is_confident(candidates_by_player[i], reason))
 
+    attach_ranks(results)
     parties = find_parties(resolved, {i: results[i]["team"] for i in resolved})
     return results, parties
+
+
+def is_confident(candidates: List[Dict[str, Any]], reason: str) -> bool:
+    """Unique names and friend links are strong evidence. Hero history counts only when the
+    winner has at least twice the runner-up's games on this hero (55 vs 7 yes, 8 vs 5 no)."""
+    if len(candidates) == 1 or reason.startswith("friends with"):
+        return True
+    games = sorted((c["current_hero_matches"] for c in candidates), reverse=True)
+    return games[0] > 0 and games[0] >= 2 * games[1]
+
+
+def attach_ranks(results: List[Dict[str, Any]]) -> None:
+    """Add {"name", "subrank", "color"} ranks for found players, using one batch request."""
+    ids = [r["account_id"] for r in results if r["account_id"]]
+    if not ids:
+        return
+    try:
+        tiers = deadlock_api.fetch_rank_tiers()
+        ranks = {r["account_id"]: r for r in deadlock_api.get_player_ranks(ids)}
+    except Exception as e:
+        logger.warning(f"Could not load ranks ({e})")
+        return
+    for result in results:
+        rank = ranks.get(result["account_id"])
+        if rank and rank["rank"] in tiers:
+            tier = tiers[rank["rank"]]
+            # Tier 0 (Obscurus) means no recent ranked games
+            name = "Unranked" if rank["rank"] == 0 else f"{tier['name']} {rank['subrank']}"
+            result["rank"] = {"name": name, "color": tier["color"]}
 
 
 def analyze_screenshot(file_path: str) -> Tuple[List[Dict[str, Any]], List[List[int]]]:
@@ -134,6 +171,8 @@ def analyze_screenshot(file_path: str) -> Tuple[List[Dict[str, Any]], List[List[
 
 def main():
     setup_logger()
+    # The report uses characters like "·"; Windows consoles default to a legacy encoding
+    sys.stdout.reconfigure(encoding="utf-8")
 
     file_path = sys.argv[1] if len(sys.argv) > 1 else get_screenshot_path()
     if not file_path:
