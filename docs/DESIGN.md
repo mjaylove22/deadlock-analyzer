@@ -75,7 +75,9 @@ The alternative, cropping each team separately, was tested and rejected: OCR on 
 A name search for one test player returned **five accounts with exactly that name**. The lookup:
 1. Accepts **exact** (case-insensitive) matches only. Fuzzy matches are usually a different person or an OCR misread, so it reports "not found" with the closest name instead of guessing.
 2. If several accounts share the name, it fetches all their hero stats in **one batch request** and picks the account with the most matches on the hero being played right now. The API's own ranking (name similarity + recent activity) breaks ties.
-3. Every result says how confident it is (`unique name`, `picked the one with 8 matches on this hero`, or `this pick is a guess`).
+3. Every result says how confident it is (`unique name`, `picked the one with 16 matches on this hero`, or `this pick is a guess`).
+
+**A lesson from testing against a known answer.** The search endpoint hides accounts with fewer than 5 recorded matches in the last 30 days by default. Bot matches aren't recorded, so the author's own account was filtered out *before* the tie-breaker ran, and two screenshots confidently picked two different wrong accounts. Checking against a player whose real account was known exposed it. With the filter off there were 7 accounts with the exact name, and the tie-breaker picked the right one on both screenshots (16 vs 8 matches on one hero, 55 vs 7 on the other). A unit test now pins that parameter.
 
 ### 4.5 Bots are skipped
 In bot lobbies, bots are named after their hero. Looking up "Haze" would return random strangers, so a player whose name equals their hero is marked as a likely bot and not looked up.

@@ -33,9 +33,15 @@ def fetch_heroes() -> List[Dict[str, Any]]:
     ]
 
 
-def search_steam_profiles(name: str, limit: int = 10) -> List[Dict[str, Any]]:
-    """Search Steam profiles by display name. Results are ranked by name similarity and activity."""
-    return get_json("/v1/players/steam-search", {"search_query": name, "limit": limit})
+def search_steam_profiles(name: str, limit: int = 50) -> List[Dict[str, Any]]:
+    """Search Steam profiles by display name. Results are ranked by name similarity and activity.
+
+    The API hides accounts with fewer than 5 recorded matches in the last 30 days by default.
+    Bot matches aren't recorded, so that filter can hide the very player we're looking for;
+    it is turned off here, and same-named accounts are told apart by hero history instead.
+    """
+    return get_json("/v1/players/steam-search",
+                    {"search_query": name, "limit": limit, "min_matches_played_last_30d": 0})
 
 
 def get_hero_stats(account_ids: List[int]) -> List[Dict[str, Any]]:
