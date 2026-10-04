@@ -26,12 +26,17 @@ import webbrowser
 from concurrent.futures import ThreadPoolExecutor
 from tkinter import filedialog
 
+import ctypes
+import time
+
 import keyboard
+import mss
 from PIL import Image, ImageTk
 
 import deadlock_api
 from matchups import build_matchup
-from player_lookup import analyze_screenshot, search_player
+from player_lookup import analyze_records, read_lobby, search_player
+from scoreboard_detector import grab_tab, is_scoreboard_open
 from report import (TEAM_TITLES, badge_labels, hero_stats_text, items_text, matchup_kind, matchup_text,
                     most_played_text, team_summary)
 from settings import get_me, load_settings, save_settings
@@ -46,6 +51,8 @@ CAPTURE_DELAY_MS = 150  # time for Windows to repaint after the overlay turns in
 OVERLAY_ALPHA = 0.9
 FONT = "Segoe UI"
 AVATAR_SIZE = 48
+WATCH_INTERVAL_S = 1.0   # how often auto-detect checks for the scoreboard (one check takes ~6 ms)
+SETTLE_S = 0.5           # after the scoreboard appears, wait for the menu animation before capturing
 
 COLORS = {
     "bg": "#0f1115", "header": "#161a22", "card": "#1c212b", "text": "#e8eaed", "dim": "#8b93a1",
@@ -93,6 +100,9 @@ class AnalyzerApp:
         self.placeholder = ImageTk.PhotoImage(Image.new("RGB", (AVATAR_SIZE, AVATAR_SIZE), "#2a303c"))
         settings = load_settings()
         self.overlay = tk.BooleanVar(value=settings.get("overlay", False))
+        self.auto_detect = tk.BooleanVar(value=settings.get("auto_detect", True))
+        self.watching = self.auto_detect.get()  # plain copy for the watcher thread (tk variables are main-thread only)
+        self.last_records = None                # the lobby currently shown, to skip re-analysing the same one
 
         root.title("Deadlock Analyzer")
         root.geometry(settings.get("geometry", "1180x880"))
@@ -102,14 +112,18 @@ class AnalyzerApp:
         self.strip = tk.Frame(root, bg=COLORS["header"], padx=14, pady=8)  # your matchup, when known
         self.body = tk.Frame(root, bg=COLORS["bg"])
         self.body.pack(fill="both", expand=True, padx=14, pady=(6, 14))
-        self.show_message(f"Press {HOTKEY.upper()} in game with the Esc menu on the PLAYERS tab.\n\n"
+        self.show_message(f"Open the Esc menu on the PLAYERS tab in game (or press {HOTKEY.upper()}).\n\n"
                           "The lobby report will appear here.")
 
         keyboard.add_hotkey(HOTKEY, lambda: self.events.put(("hotkey", None)))
         root.protocol("WM_DELETE_WINDOW", self.close)
         root.after(POLL_MS, self.poll)
         self.apply_overlay()
+        self.hidden_from_capture = self.exclude_from_capture()
         delete_old_screenshots()
+        threading.Thread(target=self._watch, daemon=True).start()
+        if self.watching and not open_screenshot:
+            self.set_status("Watching for the scoreboard...")
         if open_screenshot:
             self.busy = True
             self.start_analysis(open_screenshot)
@@ -121,10 +135,12 @@ class AnalyzerApp:
         header.pack(fill="x")
         tk.Label(header, text="DEADLOCK ANALYZER", bg=COLORS["header"], fg=COLORS["text"],
                  font=(FONT, 14, "bold")).pack(side="left")
-        tk.Checkbutton(header, text="Overlay mode", variable=self.overlay, command=self.apply_overlay,
-                       bg=COLORS["header"], fg=COLORS["text"], selectcolor=COLORS["button"],
-                       activebackground=COLORS["header"], activeforeground=COLORS["text"],
-                       font=(FONT, 10)).pack(side="right", padx=(10, 0))
+        for text, variable, command in (("Overlay mode", self.overlay, self.apply_overlay),
+                                        ("Auto-detect", self.auto_detect, self.apply_auto_detect)):
+            tk.Checkbutton(header, text=text, variable=variable, command=command,
+                           bg=COLORS["header"], fg=COLORS["text"], selectcolor=COLORS["button"],
+                           activebackground=COLORS["header"], activeforeground=COLORS["text"],
+                           font=(FONT, 10)).pack(side="right", padx=(10, 0))
         for text, command in (("Open screenshot...", self.open_screenshot), ("Analyze latest", self.analyze_latest)):
             tk.Button(header, text=text, command=command, bg=COLORS["button"], fg=COLORS["text"],
                       activebackground=COLORS["card"], activeforeground=COLORS["text"], relief="flat",
@@ -301,6 +317,40 @@ class AnalyzerApp:
     def set_status(self, message: str):
         self.status.config(text=message)
 
+    def exclude_from_capture(self) -> bool:
+        """Ask Windows to leave this window out of screenshots, so in overlay mode it can't cover the
+        scoreboard in its own captures or confuse auto-detect. Needs Windows 10 (2004) or later."""
+        try:
+            self.root.update_idletasks()
+            hwnd = ctypes.windll.user32.GetParent(self.root.winfo_id())
+            return bool(ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 0x11))  # WDA_EXCLUDEFROMCAPTURE
+        except Exception:
+            return False
+
+    def apply_auto_detect(self):
+        self.watching = self.auto_detect.get()
+        save_settings({"auto_detect": self.watching})
+        self.set_status("Watching for the scoreboard..." if self.watching else "Auto-detect off")
+
+    def _watch(self):
+        """Watcher thread: when the scoreboard appears, ask the main thread to capture it.
+        Fires once per opening; closing and reopening the menu fires again."""
+        was_open = False
+        with mss.mss() as sct:  # mss objects can't be shared between threads, so this thread has its own
+            while True:
+                time.sleep(WATCH_INTERVAL_S)
+                if not self.watching or self.busy:
+                    continue
+                try:
+                    is_open = is_scoreboard_open(grab_tab(sct))
+                    if is_open and not was_open:
+                        time.sleep(SETTLE_S)
+                        if is_scoreboard_open(grab_tab(sct)):  # still open after the animation
+                            self.events.put(("auto", None))
+                    was_open = is_open
+                except Exception:
+                    logger.exception("Auto-detect check failed")
+
     def apply_overlay(self):
         on = self.overlay.get()
         self.root.attributes("-topmost", on)
@@ -313,6 +363,11 @@ class AnalyzerApp:
                 kind, payload = self.events.get_nowait()
                 if kind == "hotkey":
                     self.capture()
+                elif kind == "auto":
+                    self.capture(auto=True)
+                elif kind == "same_lobby":
+                    self.busy = False
+                    self.set_status("Same lobby as before; nothing new  ·  watching for the scoreboard...")
                 elif kind == "progress":
                     self.set_status(payload)
                 elif kind == "done":
@@ -326,17 +381,20 @@ class AnalyzerApp:
             pass
         self.root.after(POLL_MS, self.poll)
 
-    def capture(self):
+    def capture(self, auto: bool = False):
         if self.busy:
             return
         self.busy = True
-        self.set_status("Capturing screenshot...")
-        # In overlay mode the window would cover the scoreboard in its own screenshot. Making it
-        # fully transparent (instead of hiding it) avoids stealing keyboard focus from the game.
+        self.set_status("Scoreboard detected, capturing..." if auto else "Capturing screenshot...")
+        if self.hidden_from_capture:
+            self._capture_now(auto)
+            return
+        # Older Windows: the window would cover the scoreboard in its own screenshot. Making it fully
+        # transparent (instead of hiding it) avoids stealing keyboard focus from the game.
         self.root.attributes("-alpha", 0.0)
-        self.root.after(CAPTURE_DELAY_MS, self._capture_now)
+        self.root.after(CAPTURE_DELAY_MS, lambda: self._capture_now(auto))
 
-    def _capture_now(self):
+    def _capture_now(self, auto: bool = False):
         try:
             path = capture_and_save_screenshot()
         except Exception as e:
@@ -347,7 +405,7 @@ class AnalyzerApp:
         finally:
             self.apply_overlay()  # restore normal opacity
         delete_old_screenshots()
-        self.start_analysis(path)
+        self.start_analysis(path, auto)
 
     def analyze_latest(self):
         if self.busy:
@@ -368,15 +426,21 @@ class AnalyzerApp:
             self.busy = True
             self.start_analysis(path)
 
-    def start_analysis(self, path: str):
+    def start_analysis(self, path: str, auto: bool = False):
         self.set_status(f"Reading {os.path.basename(path)} and looking up players...")
-        threading.Thread(target=self._analyze, args=(path,), daemon=True).start()
+        threading.Thread(target=self._analyze, args=(path, auto), daemon=True).start()
 
-    def _analyze(self, path: str):
+    def _analyze(self, path: str, auto: bool = False):
         """Runs on a worker thread: no tkinter calls here, only queue messages."""
         try:
             progress = lambda message: self.events.put(("progress", message))
-            results, parties = analyze_screenshot(path, progress=progress, me=get_me())
+            records = read_lobby(path, progress)
+            if auto and records and records == self.last_records:
+                # Menu reopened in the same lobby: nothing changed, so skip the API calls and the duplicate file
+                os.remove(path)
+                self.events.put(("same_lobby", None))
+                return
+            results, parties = analyze_records(records, progress=progress, me=get_me())
             matchup = None
             if any(r.get("is_me") for r in results):
                 progress("Loading your matchup...")
@@ -388,7 +452,7 @@ class AnalyzerApp:
                     logger.exception("Matchup failed")  # the lobby report is still useful without it
             progress("Loading avatars...")
             images = download_images([r["avatar_url"] for r in results if r.get("avatar_url")])
-            self.events.put(("done", (path, results, parties, images, matchup)))
+            self.events.put(("done", (path, records, results, parties, images, matchup)))
         except Exception as e:
             logger.exception("Analysis failed")
             self.events.put(("error", str(e)))
@@ -439,13 +503,15 @@ class AnalyzerApp:
         self.fit_window()
         self.set_status(f"{len(results)} results  ·  {HOTKEY.upper()} for the lobby")
 
-    def show_report(self, path, results, parties, images, matchup):
+    def show_report(self, path, records, results, parties, images, matchup):
         self.busy = False
+        self.last_records = records
         self.store_avatars(images)
         self.render_matchup(matchup)
         self.render(results, parties)
         self.fit_window()
-        self.set_status(f"{len(results)} players  ·  {HOTKEY.upper()} for a new screenshot")
+        watching = "watching for the scoreboard" if self.watching else f"{HOTKEY.upper()} for a new screenshot"
+        self.set_status(f"{len(results)} players  ·  {watching}")
         self.root.bell()  # audible cue when the report is ready while you're in game
 
     def close(self):

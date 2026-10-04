@@ -255,23 +255,35 @@ def attach_ranks(results: List[Dict[str, Any]]) -> None:
             result["rank"] = {"name": name, "color": tier["color"], "badge": rank["rank"] * 10 + rank["subrank"]}
 
 
-def analyze_screenshot(file_path: str, progress: Progress = None,
-                       me: Optional[Dict[str, Any]] = None) -> Tuple[List[Dict[str, Any]], List[List[int]]]:
-    """The whole pipeline: screenshot -> (results, parties). Used by the terminal and the app."""
-    # One hero list feeds both OCR (names) and stats (ids)
+def hero_maps() -> Tuple[Dict[str, int], Dict[int, str]]:
+    """(hero ids by name, hero names by id). One hero list feeds both OCR (names) and stats (ids)."""
     try:
         heroes = deadlock_api.fetch_heroes()
     except Exception as e:
         logger.warning(f"Could not load heroes from the API ({e}); player lookups will fail")
         heroes = [{"id": None, "name": name} for name in FALLBACK_HERO_NAMES]
-    hero_ids_by_name = {h["name"]: h["id"] for h in heroes}
-    hero_names_by_id = {h["id"]: h["name"] for h in heroes}
+    return {h["name"]: h["id"] for h in heroes}, {h["id"]: h["name"] for h in heroes}
 
+
+def read_lobby(file_path: str, progress: Progress = None) -> List[Dict[str, str]]:
+    """Step 1, OCR only (no player lookups): the {"player", "hero", "team"} records on screen."""
     report_progress(progress, "Reading the scoreboard...")
-    records = read_scoreboard(file_path, list(hero_ids_by_name))
+    return read_scoreboard(file_path, list(hero_maps()[0]))
+
+
+def analyze_records(records: List[Dict[str, str]], progress: Progress = None,
+                    me: Optional[Dict[str, Any]] = None) -> Tuple[List[Dict[str, Any]], List[List[int]]]:
+    """Step 2: look up every player found on the scoreboard -> (results, parties)."""
     if not records:
         return [], []
+    hero_ids_by_name, hero_names_by_id = hero_maps()
     return lookup_lobby(records, hero_ids_by_name, hero_names_by_id, progress, me)
+
+
+def analyze_screenshot(file_path: str, progress: Progress = None,
+                       me: Optional[Dict[str, Any]] = None) -> Tuple[List[Dict[str, Any]], List[List[int]]]:
+    """The whole pipeline: screenshot -> (results, parties). Used by the terminal and the app."""
+    return analyze_records(read_lobby(file_path, progress), progress, me)
 
 
 def main():

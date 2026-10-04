@@ -47,12 +47,15 @@ modify game files, automate input, or interact with anti-cheat in any way.
 
 ## Usage
 
-**App (no terminal needed):** double-click `Deadlock Analyzer.pyw`. In game, open the Esc menu on the
-**PLAYERS** tab and press `Ctrl+Shift+D`. The report appears in the app window (a sound plays when it's ready).
+**App (no terminal needed):** double-click `Deadlock Analyzer.pyw` and leave it running. In game, just open
+the Esc menu on the **PLAYERS** tab: **auto-detect** notices the scoreboard, captures it and shows the report
+(a sound plays when it's ready). Reopening the menu in the same lobby doesn't redo the work.
+`Ctrl+Shift+D` still captures on demand, and auto-detect can be switched off in the header.
 Profile links are clickable.
 
 - **Overlay mode** keeps the window semi-transparent and on top of the game. This needs the game in
-  **borderless windowed** mode; the app never draws into the game itself.
+  **borderless windowed** mode; the app never draws into the game itself. The window asks Windows to
+  leave it out of screen captures, so it never covers the scoreboard in its own screenshots.
 - **Analyze latest** re-runs the report on the newest screenshot; **Open screenshot...** picks any saved one.
 - **Search player:** type any Steam name to see every account with that name (avatar, rank, overall
   stats). A player the lookup couldn't find gets a **Search similar names** link.
@@ -82,7 +85,8 @@ python -m unittest discover -s tests -v
 ## Project layout
 
 ```
-app.py               desktop app: hotkey, capture, report window, overlay mode
+app.py               desktop app: auto-detect, hotkey, capture, report window, overlay mode
+scoreboard_detector.py  spots the open scoreboard from a tiny screen grab
 Deadlock Analyzer.pyw  double-click launcher (no console window)
 screenshot_manager.py
 scoreboard_ocr.py    screenshot -> [{"player", "hero", "team"}]

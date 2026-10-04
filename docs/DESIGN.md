@@ -29,6 +29,7 @@ screenshot ──► crop ──► Tesseract OCR ──► lines + positions �
 | `insights.py` | Stats on the current hero and badge rules (one-trick, new on hero, ...). Pure logic, no network | standard library only |
 | `matchups.py` | Your hero vs the enemy heroes (relative to the hero's average) and popular items against them | `deadlock_api` |
 | `settings.py` | settings.json (gitignored): window layout and which account is you; saving merges | standard library only |
+| `scoreboard_detector.py` | Spots the open scoreboard from a tiny grab of the PLAYERS tab (colour + pattern match) | `mss`, `Pillow` |
 | `report.py` | Report lines shared by the terminal and the app, so the two can't drift apart | standard library only |
 | `tests/` | Unit tests for parsing and lookup logic; the API is mocked | `unittest` (standard library) |
 | `utils/logger.py` | One place to configure logging to `logs/app.log` and the console | standard library |
@@ -141,14 +142,21 @@ Teams sit side by side with one card per player. Whether a full lobby fits was *
 - **Items** are the ones most often bought by the user's hero *against this enemy team* (the API filters by enemy heroes), with win rates shown but not used for ranking: an item's win rate is inflated when mostly players who are already winning can afford it, so ranking by win rate would always recommend expensive late items.
 - Lanes are deliberately left out: the scoreboard doesn't show them.
 
-### 4.14 Housekeeping
+### 4.14 Auto-detecting the scoreboard
+- A watcher thread grabs only the **PLAYERS tab** area (185x20 pixels) once a second and compares it with a reference image (`assets/players_tab.png`). One check takes about 6 ms, so the cost is negligible. Screen reading only, like a screen recorder.
+- **Two checks must pass, and the second was added because a test found the first wasn't enough.** Mean colour difference alone (< 15) was fooled by a plain block of the tab's colour, with no text, at 14.3. So the detector also requires **normalised cross-correlation** > 0.9, which compares the pattern of light and dark pixels (the word "PLAYERS") and scores flat areas 0. Real scoreboards: difference 0-1.6 and correlation 1.00, on four very different scenes (the tab is drawn solid, so the game behind it never shows). Everything else: correlation 0.51 at most.
+- It fires once per opening, after a short wait for the menu animation, and re-checks first. If the OCR'd lobby matches the one already shown, the API calls are skipped and the duplicate screenshot deleted.
+- **Keeping the app out of its own way:** the window calls `SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)`, so Windows leaves it out of screen captures. In overlay mode it can then sit over the scoreboard without hiding it from screenshots or from the detector. (Tested: a window placed over the tab vanished from the capture.) Older Windows falls back to briefly turning the window transparent.
+- Tested end to end without a game: the watcher was fed a scripted sequence (closed, open, closed, open again) with a real screenshot standing in for the capture; the first opening produced the full report and the second was recognised as the same lobby.
+
+### 4.15 Housekeeping
 - Screenshots older than 7 days are deleted at startup and after each capture. Only files named like the app's own captures are touched, and a screenshot with an `.expected.json` (a regression test case) is never deleted.
 - Hero and rank lists are cached for the life of the app (`functools.lru_cache`); a failed request isn't cached, so it's retried next time.
 - The analysis reports progress through a callback, so the lookup code doesn't need to know about the window.
 
 ## 5. Testing
 
-`python -m unittest discover -s tests -v` runs 76 tests in about a second:
+`python -m unittest discover -s tests -v` runs 80 tests in about a second:
 - **Parser tests** use OCR output actually produced from real screenshots, including a noisy version, plus edge cases: headers, noise-only lines, duplicate player names, multi-word heroes, hero lines with nothing above them.
 - **Identity tests** use plain data to cover settling by unique name, friend links (including links listed by only one side and chains of settled players), ties falling back to hero history, and party grouping.
 - **Insights tests** cover each badge rule and its thresholds.
