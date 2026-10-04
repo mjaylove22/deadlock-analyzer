@@ -22,16 +22,17 @@ class AvatarCache:
     def __init__(self):
         self.data: Dict[str, bytes] = {}
 
-    @staticmethod
-    def download(urls) -> Dict[str, bytes]:
-        """Worker thread: fetch avatars in parallel. Images that fail are just skipped."""
+    def download(self, urls) -> Dict[str, bytes]:
+        """Worker thread: fetch avatars not already downloaded, in parallel. Failures are skipped."""
         def fetch(url):
             try:
                 with urllib.request.urlopen(url, timeout=5) as response:
                     return url, response.read()
             except OSError:
                 return url, None
-        wanted = {u for u in urls if u}
+        wanted = {u for u in urls if u and u not in self.data}
+        if not wanted:
+            return {}
         with ThreadPoolExecutor(max_workers=6) as pool:
             return {url: data for url, data in pool.map(fetch, wanted) if data}
 
@@ -141,6 +142,7 @@ def data_table(parent, columns: Sequence[Column], rows: List[Dict[str, Any]], he
     scrollbar.pack(side="right", fill="y")
     tree.tag_configure("win", foreground=COLORS["win"])
     tree.tag_configure("loss", foreground=COLORS["loss"])
+    tree.tag_configure("me", background=COLORS["selected"])
     formats = {key: fmt for key, _, _, fmt, _ in columns}
     sort_state = {"key": None, "reverse": False}
     row_of = {}  # tree item id -> row, so a click knows which row it was

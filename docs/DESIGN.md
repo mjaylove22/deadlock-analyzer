@@ -34,6 +34,7 @@ screenshot ──► crop ──► Tesseract OCR ──► lines + positions �
 | `ui/` | Theme, reusable widgets (cards, sortable tables, avatars) and the pages | `tkinter`, `Pillow` |
 | `assets.py` | Hero portraits, hero colours and rank emblems from the API, cached on disk | `deadlock_api`, `Pillow` |
 | `make_shortcut.py` | Creates the desktop shortcut (with an .ico icon) | `Pillow`, PowerShell |
+| `match_review.py` | Post-game review: condenses a match's ~1.5 MB data to a small summary, saved on disk; lobby places and comparisons | `deadlock_api`, `profiles` |
 | `report.py` | Report lines shared by the terminal and the app, so the two can't drift apart | standard library only |
 | `tests/` | Unit tests for parsing and lookup logic; the API is mocked | `unittest` (standard library) |
 | `utils/logger.py` | One place to configure logging to `logs/app.log` and the console | standard library |
@@ -183,14 +184,25 @@ Teams sit side by side with one card per player. Whether a full lobby fits was *
 - **Plays most with:** the API's "same party" filter returned nothing, so this is "most games together", which in practice means friends.
 - **Desktop shortcut:** `make_shortcut.py` asks Windows where the Desktop is (it can be inside OneDrive), starts the app with `pythonw` so there's no console, and the app sets its own taskbar ID so Windows shows its icon instead of Python's.
 
-### 4.19 Housekeeping
+### 4.19 Post-game review
+- **Source:** `/v1/matches/{id}/metadata` has every player's stats, items with buy/sell times and 11 snapshots over the match. It's **~1.5 MB**, so it's condensed into a **~9 KB summary** straight away (scoreboard, final build = items never sold, net-worth lead per snapshot), and the raw response is never kept: `get_json(max_age=0)` now means "don't store this", where before it was still added to the memory cache.
+- **Finished matches never change**, so summaries are saved to disk (newest 50). Reopening a match is instant, and the API is asked once.
+- **Rate limits:** matches the API hasn't stored are fetched from Steam at **3 per hour**. Testing ran into it (`429`), so a failed match isn't requested again for 10 minutes, and the page explains the failure: rate-limited, or not available yet (`404`, or `503` while the API is still fetching it: a just-finished match returned 503, later 404). Bot matches are never recorded.
+- **"Your game"** puts each stat in context two ways: place in the lobby ("3rd of 12") and per-minute value vs the player's own average on that hero (from hero stats; there's no healing average, so healing has only the lobby place).
+- **The lead chart** is a plain `tk.Canvas`: one filled segment per snapshot, green while ahead, red while behind, redrawn when the window resizes. No charting library needed.
+- **Found while measuring the review page:** avatars were being re-downloaded on every page visit, because the downloader never checked what it already had. Fixed for every page (match reopen 431 ms → 142 ms).
+
+### 4.20 Ban share, not ban rate
+The ban endpoint returns how many times each hero was banned, but not how many matches those bans came from, so a true ban rate would need a guessed number of bans per match. The app shows **ban share**: each hero's part of all recorded bans. Every hero is divided by the same total, so the ranking matches a ban rate; only the scale differs, and it's labelled. A hero missing from the ban data (a brand-new hero) shows "-", not "0%", which would claim nobody bans it.
+
+### 4.21 Housekeeping
 - Screenshots older than 7 days are deleted at startup and after each capture. Only files named like the app's own captures are touched, and a screenshot with an `.expected.json` (a regression test case) is never deleted.
 - Hero and rank lists are cached for the life of the app (`functools.lru_cache`); a failed request isn't cached, so it's retried next time.
 - The analysis reports progress through a callback, so the lookup code doesn't need to know about the window.
 
 ## 5. Testing
 
-`python -m unittest discover -s tests -v` runs 94 tests in about a second:
+`python -m unittest discover -s tests -v` runs 101 tests in about a second:
 - **Parser tests** use OCR output actually produced from real screenshots, including a noisy version, plus edge cases: headers, noise-only lines, duplicate player names, multi-word heroes, hero lines with nothing above them.
 - **Identity tests** use plain data to cover settling by unique name, friend links (including links listed by only one side and chains of settled players), ties falling back to hero history, and party grouping.
 - **Insights tests** cover each badge rule and its thresholds.

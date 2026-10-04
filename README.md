@@ -61,11 +61,12 @@ The app has pages, with a **Back** button (or Alt+Left) and the title as a link 
 |---|---|
 | **Home** | Your account, the last lobby, the strongest heroes right now and your recent matches |
 | **Lobby** | Both teams side by side, with your matchup at the bottom. Click any player to open their page |
-| **Heroes** | Every hero's win rate, pick rate, games and KDA, for Normal or Street Brawl and any rank band. Click a heading to sort, or a hero to open it |
+| **Heroes** | Every hero's win rate, pick rate, ban share, games and KDA, for Normal or Street Brawl and any rank band. Click a heading to sort, or a hero to open it |
 | **Hero** | A hero's best and toughest matchups (against its own average) and its most-bought items, by mode and rank band |
 | **My Stats** | Your own player page |
-| **Player** | Avatar, rank, games and win rate per game mode, who they play with most, a sortable per-hero table (Normal or Street Brawl) and recent matches |
-| **Search** | Type any Steam name in the top bar to see every account with that name, then click one |
+| **Player** | Avatar, rank, games and win rate per game mode, who they play with most, a sortable per-hero table (Normal or Street Brawl) and recent matches (click one for its review) |
+| **Match review** | A finished match: victory or defeat, your K/D/A, net worth, damage, healing and last hits with your place in the lobby and how they compare with your usual on that hero, your final build, the net-worth lead over time and both scoreboards |
+| **Search** | Type any Steam name in the top bar to see every account with that name, or a **match ID** to open its review |
 
 - **Set your account:** search your Steam name, open your account and click **Set as my account**. You're
   then identified exactly in every lobby (even if others share your name) and your matchup appears.
@@ -89,6 +90,10 @@ python -m unittest discover -s tests -v
 - OCR occasionally garbles a hero line; that player is skipped rather than guessed.
 - A player whose account isn't in the Deadlock API's database can't be found by name at all (only
   identifying players by match ID, after the match, could fix that).
+- Match reviews appear a while after a match ends (bot matches never do). Matches the API hasn't stored
+  yet are fetched from Steam, which is limited to 3 an hour, so failed matches aren't retried for 10 minutes.
+- **Ban share** is each hero's part of all recorded bans, not a ban rate: the API gives ban counts but not
+  how many matches they came from. The ranking is the same either way.
 - Hero stats and badges count normal matches only (the API default); Street Brawl and bot matches aren't included.
 
 ## Project layout
@@ -106,6 +111,7 @@ identity.py          which same-named account is which; party detection
 player_lookup.py     whole-lobby lookup and command-line report
 matchups.py          your hero vs the enemy heroes, and popular items against them
 profiles.py          player pages (per-hero stats, recent matches, modes) and the hero tier list
+match_review.py      post-game review: condenses a match's data, saved on disk
 settings.py          settings.json: window layout and which account is you (stays on your PC)
 make_shortcut.py     creates the desktop shortcut
 insights.py          stats on the current hero and badge rules

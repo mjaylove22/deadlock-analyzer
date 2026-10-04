@@ -56,6 +56,14 @@ class ProfilesTests(unittest.TestCase):
         self.assertEqual(when(None, now), "")
 
 
+    def test_ban_share_is_each_heros_part_of_all_bans(self):
+        stats = [{"hero_id": 1, "matches": 6000, "losses": 3000}, {"hero_id": 2, "matches": 6000, "losses": 3000}]
+        rows = tier_rows(stats, NAMES, bans=[{"hero_id": 1, "bans": 300}, {"hero_id": 2, "bans": 100}])
+        self.assertEqual({r["hero"]: r["ban_share"] for r in rows}, {"Haze": 0.75, "Rem": 0.25})
+        self.assertIsNone(tier_rows(stats, NAMES)[0]["ban_share"])  # no ban data (e.g. Street Brawl)
+        only_haze = tier_rows(stats, NAMES, bans=[{"hero_id": 1, "bans": 300}])
+        self.assertIsNone(next(r for r in only_haze if r["hero"] == "Rem")["ban_share"])  # missing hero: unknown, not 0%
+
     def test_top_mates_most_games_first(self):
         mates = [{"mate_id": 1, "matches_played": 20, "wins": 10}, {"mate_id": 2, "matches_played": 700, "wins": 350},
                  {"mate_id": 3, "matches_played": 60, "wins": 45}]

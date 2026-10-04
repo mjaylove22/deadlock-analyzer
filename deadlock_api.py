@@ -69,6 +69,8 @@ def get_json(path: str, params: Dict[str, Any] = None, max_age: float = CACHE_SE
             _memory.move_to_end(url)
             return hit[1]
     data = _download(url)
+    if max_age <= 0:
+        return data  # asked not to reuse it, so don't hold on to it either (e.g. 1.5 MB match data)
     with _lock:
         _memory[url] = (now, data)
         _memory.move_to_end(url)
@@ -179,6 +181,12 @@ def get_item_stats(hero_id: int, enemy_hero_ids: List[int] = (), game_mode: str 
     if enemy_hero_ids:
         params["enemy_hero_ids"] = ",".join(str(h) for h in enemy_hero_ids)
     return get_json("/v1/analytics/item-stats", params, max_age=3600)
+
+
+def get_hero_bans(ranks: tuple = None) -> List[Dict[str, Any]]:
+    """How many times each hero was banned: {"hero_id", "bans"}. Only counts, not how many matches
+    they came from, so a true ban rate can't be computed from this; a hero's share of all bans can."""
+    return get_json("/v1/analytics/hero-ban-stats", badge_range(ranks), max_age=3600)
 
 
 def get_mate_stats(account_id: int, min_matches: int = 10) -> List[Dict[str, Any]]:

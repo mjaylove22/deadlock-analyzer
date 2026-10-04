@@ -34,7 +34,7 @@ from player_lookup import analyze_records, read_lobby
 from scoreboard_detector import grab_tab, is_scoreboard_open
 from screenshot_manager import capture_and_save_screenshot, delete_old_screenshots, get_screenshot_path
 from settings import get_me, load_settings, save_settings
-from ui.pages import HeroesPage, HeroPage, HomePage, LobbyPage, PlayerPage, SearchPage, SetupPage
+from ui.pages import HeroesPage, HeroPage, HomePage, LobbyPage, MatchPage, PlayerPage, SearchPage, SetupPage
 from ui import images
 from ui.theme import COLORS, FONT, HEADING_FONT, label, setup_styles, switch
 from ui.widgets import AvatarCache
@@ -138,7 +138,7 @@ class AnalyzerApp:
                                         ("Auto-detect", self.auto_detect, self.apply_auto_detect)):
             switch(bar, text, variable, command).pack(side="right", padx=(10, 0))
         self.search_box = ctk.CTkEntry(bar, width=240, height=32, corner_radius=8, border_width=1,
-                                       placeholder_text="Search a player...", font=(FONT, 11),
+                                       placeholder_text="Player name or match ID", font=(FONT, 11),
                                        fg_color=COLORS["button"], border_color=COLORS["card_border"],
                                        text_color=COLORS["text"], placeholder_text_color=COLORS["faint"])
         self.search_box.pack(side="right", padx=(0, 10))
@@ -190,10 +190,17 @@ class AnalyzerApp:
 
     def search(self, query: str):
         query = query.strip()
-        if query:
-            self.search_box.delete(0, "end")
-            self.search_box.insert(0, query)
+        if not query:
+            return
+        self.search_box.delete(0, "end")
+        self.search_box.insert(0, query)
+        if query.isdigit() and len(query) >= 6:  # a match ID (shown bottom-right of the scoreboard)
+            self.open_match(int(query))
+        else:
             self.navigate(SearchPage, query=query)
+
+    def open_match(self, match_id: int):
+        self.navigate(MatchPage, match_id=match_id)
 
     def focus_search(self):
         self.search_box.focus_set()
@@ -209,9 +216,10 @@ class AnalyzerApp:
 
     # ---- background work --------------------------------------------------------------------
 
-    def run_task(self, work: Callable[[], Any], on_done: Callable[[Any], None]):
+    def run_task(self, work: Callable[[], Any], on_done: Callable[[Any], None],
+                 on_error: Callable[[Exception], None] = None):
         """Run work() on a worker thread, then on_done(result) on the main thread, but only if the
-        user is still on the page that asked for it."""
+        user is still on the page that asked for it. on_error(exception) handles failures."""
         token = self.page_token
 
         def runner():
@@ -220,8 +228,11 @@ class AnalyzerApp:
                 self.events.put(lambda: on_done(result) if token == self.page_token else None)
             except Exception as e:
                 logger.exception("Background task failed")
-                error = str(e)  # bound now: Python clears "e" when the except block ends
-                self.events.put(lambda: self.set_status(f"Something went wrong: {error}"))
+                error = e  # bound now: Python clears "e" when the except block ends
+                if on_error:
+                    self.events.put(lambda: on_error(error) if token == self.page_token else None)
+                else:
+                    self.events.put(lambda: self.set_status(f"Something went wrong: {error}"))
         threading.Thread(target=runner, daemon=True).start()
 
     def progress(self, message: str):
@@ -373,7 +384,7 @@ class AnalyzerApp:
                     return None
             self.progress("Loading your matchup and avatars...")
             matchup, images = deadlock_api.parallel(
-                matchup, lambda: AvatarCache.download(r.get("avatar_url") for r in results))
+                matchup, lambda: self.avatars.download(r.get("avatar_url") for r in results))
             lobby = {"path": path, "records": records, "results": results, "parties": parties,
                      "matchup": matchup, "images": images, "time": time.time()}
             self.events.put(lambda: self.show_lobby(lobby))

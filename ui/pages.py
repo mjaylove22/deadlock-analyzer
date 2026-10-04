@@ -12,8 +12,10 @@ import webbrowser
 from typing import Any, Dict
 
 import assets
-from player_lookup import search_player
+import deadlock_api
+from match_review import REVIEW_STATS, MatchUnavailable, match_review
 from matchups import hero_breakdown
+from player_lookup import search_player
 from profiles import API_GAME_MODES, RANK_BANDS, hero_tier_list, player_profile, teammates, when
 from report import TEAM_TITLES, team_summary
 from settings import get_me, save_settings
@@ -175,6 +177,7 @@ class HomePage(Page):
                 hero_label(row, m["hero"], "card", size=24, color=COLORS["text"]).pack(side="left")
                 label(row, f"{m['mode']} · {when(m['start_time'])}", bg="card", color="dim").pack(side="right")
                 label(row, f"{m['kills']}/{m['deaths']}/{m['assists']}", bg="card").pack(side="right", padx=14)
+                bind_click(row, lambda match_id=m["match_id"]: self.app.open_match(match_id))
             button(self.recent_box, "All my stats", self.app.open_my_stats).pack(anchor="w", pady=(10, 0))
         self.app.run_task(work, done)
 
@@ -295,9 +298,11 @@ class HeroesPage(Page):
             ("pick_rate", "Pick rate", 100, pct, "center"),
             ("games", "Games", 110, lambda v: f"{v:,}", "center"),
             ("kda", "KDA", 80, lambda v: f"{v:.2f}", "center"),
+            ("ban_share", "Ban share", 90, lambda v: f"{v:.1%}" if v is not None else "-", "center"),
         ], list(rows), height=17, hero_key="hero",
             on_click=lambda r: self.app.open_hero(r["hero"], self.mode, self.band))
-        label(self.body, "Click a column heading to sort, or a hero for details. Heroes with under 500 games are left out.",
+        label(self.body, "Click a column heading to sort, or a hero for details. Heroes with under 500 games are left out. "
+                         "Ban share = the hero's part of all recorded bans (ranked games only).",
               size=9, color="dim").pack(anchor="w", pady=(8, 0))
         self.app.set_status(f"{len(rows)} heroes")
 
@@ -337,7 +342,8 @@ class HeroPage(Page):
         if stats:
             for text in (f"#{tiers.index(stats) + 1} by win rate",  # tiers are sorted by win rate
                          f"{stats['win_rate']:.1%} win rate", f"{stats['pick_rate']:.0%} pick rate",
-                         f"{stats['games']:,} games", f"{stats['kda']:.2f} KDA"):
+                         f"{stats['games']:,} games", f"{stats['kda']:.2f} KDA",
+                         *([f"{stats['ban_share']:.1%} of bans"] if stats.get("ban_share") else [])):
                 pill(chips, text, COLORS["button"], size=10, text_color=COLORS["text"]).pack(side="left", padx=(0, 6))
         controls = tk.Frame(header, bg=COLORS["card"])
         controls.pack(side="right", anchor="n")
@@ -380,6 +386,148 @@ class HeroPage(Page):
         for slot, color in ITEM_SLOT_COLORS.items():
             pill(legend, slot.title(), color, size=8).pack(side="left", padx=(0, 4))
         self.app.set_status(f"{self.hero} · click a matchup to open that hero")
+
+
+class MatchPage(Page):
+    nav = None
+
+    def build(self, match_id: int):
+        self.match_id = match_id
+        self.message(f"Loading match {match_id}...")
+
+        def work():
+            review = match_review(match_id, self.app.hero_names_by_id(), get_me())
+            tiers = deadlock_api.fetch_rank_tiers()
+            review["team_ranks"] = [f"{tiers[b // 10]['name']} {b % 10}" if b and b // 10 in tiers else None
+                                    for b in review["team_badges"]]
+            return review, self.app.avatars.download(p.get("avatar_url") for p in review["players"])
+
+        def failed(error):
+            self.clear(self.frame)
+            self.heading(f"Match {match_id}")
+            self.message(str(error) if isinstance(error, MatchUnavailable) else f"Couldn't load this match ({error}).")
+            self.app.set_status(f"Match {match_id} couldn't be loaded")
+        self.app.run_task(work, lambda result: self.show(*result), failed)
+
+    def show(self, r: Dict[str, Any], downloaded):
+        self.app.avatars.store(downloaded)
+        self.clear(self.frame)
+        me = r.get("me")
+        my_team = me["team"] if me else 0
+
+        # Header: result, hero, match facts
+        outer, header = card(self.frame, padding=14)
+        outer.pack(fill="x")
+        if me:
+            result, color = ("VICTORY", "win") if me["won"] else ("DEFEAT", "loss")
+            label(header, result, size=24, heading=True, color=color, bg="card").pack(side="left")
+            hero_label(header, me["hero"], "card", size=34, font_size=13).pack(side="left", padx=18)
+        else:
+            label(header, f"Match {r['match_id']}", size=22, heading=True, bg="card").pack(side="left")
+        facts = f"{r['mode']} · {'ranked' if r['ranked'] else 'unranked'} · {r['minutes']:.0f} min · {when(r['start_time'])}"
+        label(header, facts, color="dim", bg="card").pack(side="left", padx=(6, 0))
+        label(header, f"match {r['match_id']}", size=9, color="faint", bg="card").pack(side="right")
+
+        # Your game: lobby place and comparison with your usual on this hero
+        if me:
+            yours_outer, yours = card(self.frame, padding=12)
+            yours_outer.pack(fill="x", pady=(10, 0))
+            label(yours, "YOUR GAME", size=9, color="dim", bold=True, bg="card").pack(anchor="w", pady=(0, 6))
+            tiles = tk.Frame(yours, bg=COLORS["card"])
+            tiles.pack(fill="x")
+            stats = [("K / D / A", f"{me['kills']} / {me['deaths']} / {me['assists']}", "kda", None)]
+            stats += [(name, f"{me[key]:,}", key, r["vs_usual"].get(key)) for name, key, _ in REVIEW_STATS]
+            players = len(r["players"])
+            for c, (name, value, key, vs) in enumerate(stats):
+                tiles.columnconfigure(c, weight=1, uniform="tiles")
+                tile = tk.Frame(tiles, bg=COLORS["card"])
+                tile.grid(row=0, column=c, sticky="w")
+                label(tile, name.upper(), size=8, color="faint", bold=True, bg="card").pack(anchor="w")
+                label(tile, value, size=16, heading=True, bg="card").pack(anchor="w")
+                place = r["places"][key]
+                label(tile, f"{ordinal(place)} of {players} in the lobby", size=9,
+                      color="win" if place <= 3 else "dim", bg="card").pack(anchor="w")
+                if vs is not None:
+                    label(tile, f"{vs:+.0%} vs your {me['hero']} average", size=9,
+                          color="win" if vs >= 0 else "loss", bg="card").pack(anchor="w")
+            if me["items"]:
+                build = tk.Frame(yours, bg=COLORS["card"])
+                build.pack(fill="x", pady=(10, 0))
+                label(build, "Final build", size=9, color="dim", bold=True, bg="card").pack(side="left", padx=(0, 8))
+                for item in me["items"]:
+                    pill(build, item["name"], ITEM_SLOT_COLORS.get(item["slot"], COLORS["button"]), size=8).pack(side="left", padx=(0, 3))
+
+        # Net worth lead over the match, from your team's side
+        if r["networth_lead"]:
+            chart_outer, chart = card(self.frame, padding=10)
+            chart_outer.pack(fill="x", pady=(10, 0))
+            sign = 1 if my_team == 0 else -1
+            lead = [(minute, sign * diff) for minute, diff in r["networth_lead"]]
+            final = lead[-1][1]
+            title = "NET WORTH LEAD" + (" · your team" if me else " · team 1")
+            label(chart, f"{title}   (final {final:+,.0f})", size=9, color="dim", bold=True, bg="card").pack(anchor="w")
+            lead_chart(chart, lead).pack(fill="x", pady=(4, 0))
+
+        # Both scoreboards
+        columns = tk.Frame(self.frame, bg=COLORS["bg"])
+        columns.pack(fill="both", expand=True, pady=(10, 0))
+        for c, team in enumerate((my_team, 1 - my_team)):
+            columns.columnconfigure(c, weight=1, uniform="teams")
+            frame = tk.Frame(columns, bg=COLORS["bg"])
+            frame.grid(row=0, column=c, sticky="nsew", padx=(0, 8) if c == 0 else (8, 0))
+            team_players = sorted((p for p in r["players"] if p["team"] == team), key=lambda p: -p["net_worth"])
+            won = team == r["winning_team"]
+            title = ("Your team" if me and team == my_team else "Enemy team" if me else f"Team {team + 1}")
+            rank = f" · avg rank {r['team_ranks'][team]}" if r["team_ranks"][team] else ""
+            head = tk.Frame(frame, bg=COLORS["bg"])
+            head.pack(fill="x", pady=(0, 4))
+            label(head, title, size=13, heading=True, color="friendly" if c == 0 else "enemy").pack(side="left")
+            label(head, f"{'won' if won else 'lost'}{rank}", color="win" if won else "loss").pack(side="left", padx=10)
+            for p in team_players:
+                p["kda_text"] = f"{p['kills']}/{p['deaths']}/{p['assists']}"
+            data_table(frame, [
+                ("name", "Player", 120, lambda v: v[:16], "w"),
+                ("kda_text", "K/D/A", 70, str, "center"),
+                ("net_worth", "Souls", 60, lambda v: f"{v / 1000:.1f}k", "center"),
+                ("damage", "Damage", 60, lambda v: f"{v / 1000:.1f}k", "center"),
+                ("healing", "Healing", 60, lambda v: f"{v / 1000:.1f}k", "center"),
+            ], team_players, height=6, hero_key="hero",
+                tag=lambda p: "me" if me and p["account_id"] == me["account_id"] else "",
+                on_click=lambda p: self.app.open_player(p["account_id"]))
+        self.app.set_status(f"Match {r['match_id']} · click a player to open their page")
+
+
+def ordinal(n: int) -> str:
+    return f"{n}{'th' if 10 <= n % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
+
+
+def lead_chart(parent, lead, height: int = 70) -> tk.Canvas:
+    """A small area chart of a (minute, lead) series: above the line = ahead, below = behind."""
+    canvas = tk.Canvas(parent, height=height, bg=COLORS["card"], highlightthickness=0)
+
+    def draw(event=None):
+        canvas.delete("all")
+        width = canvas.winfo_width()
+        if width < 10:
+            return
+        end_minute = lead[-1][0] or 1
+        biggest = max(abs(v) for _, v in lead) or 1
+        middle = height / 2
+
+        def point(minute, value):
+            return minute / end_minute * (width - 4) + 2, middle - value / biggest * (middle - 4)
+        points = [point(0, 0)] + [point(m, v) for m, v in lead]
+        for (x1, y1), (x2, y2) in zip(points, points[1:]):
+            # each segment filled down to the middle line, green while ahead and red while behind
+            color = COLORS["win"] if (y1 + y2) / 2 <= middle else COLORS["loss"]
+            canvas.create_polygon(x1, middle, x1, y1, x2, y2, x2, middle, fill=color, outline="", stipple="gray50")
+            canvas.create_line(x1, y1, x2, y2, fill=color, width=2)
+        canvas.create_line(0, middle, width, middle, fill=COLORS["faint"], dash=(2, 3))
+        canvas.create_text(4, 2, text=f"+{biggest / 1000:.0f}k", anchor="nw", fill=COLORS["faint"], font=("Segoe UI", 8))
+        canvas.create_text(4, height - 2, text=f"-{biggest / 1000:.0f}k", anchor="sw", fill=COLORS["faint"], font=("Segoe UI", 8))
+        canvas.create_text(width - 4, height - 2, text=f"{end_minute:.0f} min", anchor="se", fill=COLORS["faint"], font=("Segoe UI", 8))
+    canvas.bind("<Configure>", draw)  # redraw whenever the window (and so the canvas) is resized
+    return canvas
 
 
 class PlayerPage(Page):
@@ -489,10 +637,11 @@ class PlayerPage(Page):
                 ("result", "Result", 55, str, "center"),
                 ("kda_text", "K/D/A", 70, str, "center"),
                 ("mode", "Mode", 90, str, "center"),
-            ], list(p["recent"]), height=14, tag=lambda m: "win" if m["won"] else "loss", hero_key="hero")
+            ], list(p["recent"]), height=14, tag=lambda m: "win" if m["won"] else "loss", hero_key="hero",
+                on_click=lambda m: self.app.open_match(m["match_id"]))
         else:
             self.message("No recorded matches.", right)
-        self.app.set_status(f"{p['name']} · click a column heading to sort")
+        self.app.set_status(f"{p['name']} · click a match for its post-game review")
 
     def show_mates(self, mates, downloaded):
         self.app.avatars.store(downloaded)

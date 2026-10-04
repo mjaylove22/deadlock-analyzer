@@ -83,13 +83,17 @@ def hero_rows(entries: List[Dict[str, Any]], hero_names_by_id: Dict[int, str]) -
 
 
 def tier_rows(stats: List[Dict[str, Any]], hero_names_by_id: Dict[int, str],
-              game_mode: str = "normal") -> List[Dict[str, Any]]:
+              game_mode: str = "normal", bans: List[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """Global hero stats as tier-list rows, highest win rate first.
 
     Pick rate = share of matches the hero appears in. Every match has 12 heroes (8 in Street
     Brawl), so the number of matches is the sum of all heroes' games divided by that.
     """
     total_matches = sum(s["matches"] for s in stats) / PLAYERS_PER_MATCH.get(game_mode, 12)
+    # Ban share = the hero's part of all recorded bans. The API gives ban counts but not how many
+    # matches they come from, so this is used instead of a ban rate; the ranking is the same.
+    ban_counts = {b["hero_id"]: b["bans"] for b in bans or []}
+    total_bans = sum(ban_counts.values())
     rows = []
     for s in stats:
         games = s["matches"]
@@ -101,6 +105,9 @@ def tier_rows(stats: List[Dict[str, Any]], hero_names_by_id: Dict[int, str],
             "win_rate": (games - s["losses"]) / games,
             "pick_rate": games / total_matches if total_matches else 0.0,
             "kda": (s.get("total_kills", 0) + s.get("total_assists", 0)) / max(s.get("total_deaths", 0), 1),
+            # None (shown as "-") when the hero isn't in the ban data at all, e.g. a brand-new hero:
+            # 0% would wrongly claim nobody bans it
+            "ban_share": ban_counts[s["hero_id"]] / total_bans if total_bans and s["hero_id"] in ban_counts else None,
         })
     return sorted(rows, key=lambda r: r["win_rate"], reverse=True)
 
@@ -130,8 +137,13 @@ def player_profile(account_id: int, hero_names_by_id: Dict[int, str], game_mode:
 
 
 def hero_tier_list(hero_names_by_id: Dict[int, str], game_mode: str = "normal", ranks: tuple = None) -> List[Dict[str, Any]]:
-    """Tier list rows, optionally only from matches in a rank band (see RANK_BANDS)."""
-    return tier_rows(deadlock_api.get_global_hero_stats(game_mode, ranks), hero_names_by_id, game_mode)
+    """Tier list rows, optionally only from matches in a rank band (see RANK_BANDS).
+    Bans exist in normal matches only, so Street Brawl rows have no ban share."""
+    if game_mode != "normal":
+        return tier_rows(deadlock_api.get_global_hero_stats(game_mode, ranks), hero_names_by_id, game_mode)
+    stats, bans = deadlock_api.parallel(lambda: deadlock_api.get_global_hero_stats(game_mode, ranks),
+                                        lambda: deadlock_api.get_hero_bans(ranks))
+    return tier_rows(stats, hero_names_by_id, game_mode, bans)
 
 
 def top_mates(mates: List[Dict[str, Any]], count: int = TEAMMATES_SHOWN) -> List[Dict[str, Any]]:
