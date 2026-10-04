@@ -30,6 +30,8 @@ screenshot ──► crop ──► Tesseract OCR ──► lines + positions �
 | `matchups.py` | Your hero vs the enemy heroes (relative to the hero's average) and popular items against them | `deadlock_api` |
 | `settings.py` | settings.json (gitignored): window layout and which account is you; saving merges | standard library only |
 | `scoreboard_detector.py` | Spots the open scoreboard from a tiny grab of the PLAYERS tab (colour + pattern match) | `mss`, `Pillow` |
+| `profiles.py` | Player pages (per-hero stats by mode, recent matches, mode summary) and the hero tier list | `deadlock_api` |
+| `ui/` | Theme, reusable widgets (cards, sortable tables, avatars) and the pages | `tkinter`, `Pillow` |
 | `report.py` | Report lines shared by the terminal and the app, so the two can't drift apart | standard library only |
 | `tests/` | Unit tests for parsing and lookup logic; the API is mocked | `unittest` (standard library) |
 | `utils/logger.py` | One place to configure logging to `logs/app.log` and the console | standard library |
@@ -149,14 +151,23 @@ Teams sit side by side with one card per player. Whether a full lobby fits was *
 - **Keeping the app out of its own way:** the window calls `SetWindowDisplayAffinity(WDA_EXCLUDEFROMCAPTURE)`, so Windows leaves it out of screen captures. In overlay mode it can then sit over the scoreboard without hiding it from screenshots or from the detector. (Tested: a window placed over the tab vanished from the capture.) Older Windows falls back to briefly turning the window transparent.
 - Tested end to end without a game: the watcher was fed a scripted sequence (closed, open, closed, open again) with a real screenshot standing in for the capture; the first opening produced the full report and the second was recognised as the same lobby.
 
-### 4.15 Housekeeping
+### 4.15 From a report window to an app with pages
+- **Structure:** `app.py` owns the window, the top bar, navigation and all background work; `ui/pages.py` has one class per page; `ui/widgets.py` has the reusable pieces (player cards, sortable tables, toggles, avatars); `ui/theme.py` the colours and table styling. Before this, one 500-line file mixed all of it.
+- **Navigation** keeps a history of (page, options), so **Back** retraces exactly where the user went, and the title always goes Home. Pages are rebuilt on each visit, from data kept in the app (the last lobby, cached tier lists), so there's no stale widget state.
+- **One way to load data:** `run_task(work, on_done)` runs `work` on a worker thread and `on_done` on the main thread, **only if the user is still on the page that asked** (a page token changes on every navigation), so a slow response can never draw over a different page. Errors become a status message. One detail: Python deletes an `except ... as e` variable when the block ends, so the error text is copied into a variable before the callback that uses it.
+- **A detected lobby still arrives while browsing:** lobby analysis doesn't use `run_task`, so it isn't dropped when the user is on another page. The app jumps to the Lobby page, and Back returns to where they were.
+- **Data from match history:** game mode and result are stored as numbers, decoded from the API's spec (game mode 1 = Normal, 4 = Street Brawl). The result field is 0 ("invalid") in 969 of the author's 1,015 matches, so a win is computed as "the player's team won" (`match_result == player_team`), which agrees with the result field in every match where it's set.
+- **Tables** are `ttk.Treeview`, styled dark (the default Windows theme ignores colours, so the `clam` theme is used). Clicking a heading sorts by that column: numbers biggest first, text A-Z, click again to reverse.
+- **Checked visually:** every page was photographed with real data and adjusted (table borders, fitting the player page in 880 px, filling the empty Home page).
+
+### 4.16 Housekeeping
 - Screenshots older than 7 days are deleted at startup and after each capture. Only files named like the app's own captures are touched, and a screenshot with an `.expected.json` (a regression test case) is never deleted.
 - Hero and rank lists are cached for the life of the app (`functools.lru_cache`); a failed request isn't cached, so it's retried next time.
 - The analysis reports progress through a callback, so the lookup code doesn't need to know about the window.
 
 ## 5. Testing
 
-`python -m unittest discover -s tests -v` runs 80 tests in about a second:
+`python -m unittest discover -s tests -v` runs 86 tests in about a second:
 - **Parser tests** use OCR output actually produced from real screenshots, including a noisy version, plus edge cases: headers, noise-only lines, duplicate player names, multi-word heroes, hero lines with nothing above them.
 - **Identity tests** use plain data to cover settling by unique name, friend links (including links listed by only one side and chains of settled players), ties falling back to hero history, and party grouping.
 - **Insights tests** cover each badge rule and its thresholds.

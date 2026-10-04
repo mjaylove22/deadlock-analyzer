@@ -48,23 +48,26 @@ modify game files, automate input, or interact with anti-cheat in any way.
 ## Usage
 
 **App (no terminal needed):** double-click `Deadlock Analyzer.pyw` and leave it running. In game, just open
-the Esc menu on the **PLAYERS** tab: **auto-detect** notices the scoreboard, captures it and shows the report
+the Esc menu on the **PLAYERS** tab: **auto-detect** notices the scoreboard, captures it and shows the lobby
 (a sound plays when it's ready). Reopening the menu in the same lobby doesn't redo the work.
-`Ctrl+Shift+D` still captures on demand, and auto-detect can be switched off in the header.
-Profile links are clickable.
+`Ctrl+Shift+D` still captures on demand.
 
-- **Overlay mode** keeps the window semi-transparent and on top of the game. This needs the game in
-  **borderless windowed** mode; the app never draws into the game itself. The window asks Windows to
-  leave it out of screen captures, so it never covers the scoreboard in its own screenshots.
-- **Analyze latest** re-runs the report on the newest screenshot; **Open screenshot...** picks any saved one.
-- **Search player:** type any Steam name to see every account with that name (avatar, rank, overall
-  stats). A player the lookup couldn't find gets a **Search similar names** link.
-- **Tell the app who you are:** search your own Steam name and click **This is me** on your account.
-  You're then always identified exactly (even if others share your name), and your matchup appears.
-- Progress shows while it works ("Looking up player 5/12..."), and each team header sums up the team
-  ("party of 3 · 2 new on hero · best rank Oracle 6").
+The app has pages, with a **Back** button (or Alt+Left) and the title as a link to **Home**:
+
+| Page | What it shows |
+|---|---|
+| **Home** | Your account, the last lobby, the strongest heroes right now and your recent matches |
+| **Lobby** | Both teams side by side, with your matchup at the bottom. Click any player to open their page |
+| **Heroes** | Every hero's win rate, pick rate, games and KDA, for Normal or Street Brawl. Click a heading to sort |
+| **My Stats** | Your own player page |
+| **Player** | Avatar, rank, games and win rate per game mode, a sortable per-hero table (Normal or Street Brawl) and recent matches |
+| **Search** | Type any Steam name in the top bar to see every account with that name, then click one |
+
+- **Set your account:** search your Steam name, open your account and click **Set as my account**. You're
+  then identified exactly in every lobby (even if others share your name) and your matchup appears.
+- **Overlay** keeps the window semi-transparent and on top of the game (needs **borderless windowed**
+  mode). The window asks Windows to leave it out of screen captures, so it never hides the scoreboard.
 - Screenshots older than **7 days are deleted automatically** (except ones kept as test cases).
-- The window remembers its size, position and overlay setting.
 
 **Terminal:**
 
@@ -85,7 +88,8 @@ python -m unittest discover -s tests -v
 ## Project layout
 
 ```
-app.py               desktop app: auto-detect, hotkey, capture, report window, overlay mode
+app.py               desktop app: window, navigation, background tasks, capture and auto-detect
+ui/                  theme, reusable widgets (cards, sortable tables) and the pages
 scoreboard_detector.py  spots the open scoreboard from a tiny screen grab
 Deadlock Analyzer.pyw  double-click launcher (no console window)
 screenshot_manager.py
@@ -94,6 +98,7 @@ deadlock_api.py      thin client for the public Deadlock API
 identity.py          which same-named account is which; party detection
 player_lookup.py     whole-lobby lookup and command-line report
 matchups.py          your hero vs the enemy heroes, and popular items against them
+profiles.py          player pages (per-hero stats, recent matches, modes) and the hero tier list
 settings.py          settings.json: window layout and which account is you (stays on your PC)
 insights.py          stats on the current hero and badge rules
 report.py            wording shared by the terminal and the app
