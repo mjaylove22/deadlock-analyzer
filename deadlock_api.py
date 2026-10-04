@@ -5,9 +5,11 @@ the API's OpenAPI spec (https://api.deadlock-api.com/openapi.json) and real resp
 """
 
 import functools
+import html
 import json
 import logging
 import os
+import re
 import threading
 import time
 import urllib.error
@@ -15,7 +17,7 @@ import urllib.parse
 import urllib.request
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, Dict, List, Optional
 
 import paths
 
@@ -106,6 +108,51 @@ def parallel(*calls: Callable[[], Any], allow_failures: bool = False) -> List[An
         return list(pool.map(run, calls))
 
 
+def plain_text(markup: Optional[str]) -> str:
+    """Game text without its markup: inline SVG icons, tags and HTML entities removed."""
+    text = re.sub(r"<svg.*?</svg>", "", markup or "", flags=re.S)
+    text = re.sub(r"<[^>]+>", " ", text)  # a space, so words either side of a tag don't merge...
+    text = re.sub(r"\s+", " ", html.unescape(text)).strip()
+    return re.sub(r" ([.,;:!?])", r"\1", text)  # ...but none before punctuation ("applying slow .")
+
+
+def _number(prop: Any) -> Optional[float]:
+    """A numeric ability property ({"value": "33"}), or None for 0, missing or non-numbers like "4m"."""
+    try:
+        value = float((prop or {}).get("value"))
+    except (TypeError, ValueError):
+        return None
+    return value or None
+
+
+@functools.lru_cache(maxsize=None)
+def fetch_hero_guides() -> Dict[str, Dict[str, Any]]:
+    """Per hero name: {"type", "tags", "complexity", "gun", "health", "speed", "abilities": [{"name",
+    "image", "text", "cooldown", "charges"}]}, from the game's hero and item lists. Those are 2 MB and
+    6 MB; ~60 KB is kept on disk for 3 days (abilities change only with patches)."""
+    def build():
+        abilities = {i["class_name"]: i for i in get_json("/v1/assets/items", max_age=0) if i.get("type") == "ability"}
+        guides = {}
+        for h in get_json("/v1/assets/heroes", max_age=0):
+            if not h["player_selectable"] or h["disabled"] or h["in_development"]:
+                continue
+            stats = h.get("starting_stats") or {}
+            kit = []
+            for slot in ("signature1", "signature2", "signature3", "signature4"):
+                a = abilities.get((h.get("items") or {}).get(slot))
+                if not a:
+                    continue
+                props = a.get("properties") or {}
+                image = next((u for u in (a.get("image_webp"), a.get("image")) if u and not u.endswith(".svg")), None)
+                kit.append({"name": a["name"], "image": image, "text": plain_text((a.get("description") or {}).get("desc")),
+                            "cooldown": _number(props.get("AbilityCooldown")), "charges": _number(props.get("AbilityCharges"))})
+            guides[h["name"]] = {"type": h.get("hero_type"), "tags": h.get("tags") or [], "complexity": h.get("complexity"),
+                                 "gun": h.get("gun_tag"), "health": (stats.get("max_health") or {}).get("value"),
+                                 "speed": (stats.get("max_move_speed") or {}).get("value"), "abilities": kit}
+        return guides
+    return disk_cached("hero_guides", build, max_age=3 * 86400)
+
+
 @functools.lru_cache(maxsize=None)
 def fetch_hero_assets() -> List[Dict[str, Any]]:
     """Playable heroes: {"id", "name", "icon", "card", "color"} (image URLs and the hero's colour)."""
@@ -115,7 +162,7 @@ def fetch_hero_assets() -> List[Dict[str, Any]]:
              "icon": (h.get("images") or {}).get("icon_image_small"),
              "card": (h.get("images") or {}).get("icon_hero_card"),
              "color": (h.get("colors") or {}).get("style_hex") or "#4a5a6a"}
-            for h in get_json("/v1/assets/heroes", max_age=ASSET_CACHE_SECONDS)
+            for h in get_json("/v1/assets/heroes", max_age=0)
             if h["player_selectable"] and not h["disabled"] and not h["in_development"]
         ]
     return disk_cached("heroes", build)
@@ -186,7 +233,7 @@ def fetch_rank_assets() -> List[Dict[str, Any]]:
         return [
             {"tier": r["tier"], "name": r["name"], "color": r["color"],
              "emblems": {str(n): (r.get("images") or {}).get(f"small_subrank{n}") for n in range(1, 7)}}
-            for r in get_json("/v1/assets/ranks", max_age=ASSET_CACHE_SECONDS)
+            for r in get_json("/v1/assets/ranks", max_age=0)
         ]
     return disk_cached("ranks", build)
 
@@ -296,7 +343,7 @@ def fetch_items() -> Dict[int, Dict[str, Any]]:
 
     def build():  # stored as a list: JSON object keys can't be numbers
         rows = []
-        for item in get_json("/v1/assets/items", max_age=ASSET_CACHE_SECONDS):
+        for item in get_json("/v1/assets/items", max_age=0):
             if item.get("type") != "upgrade" or not item.get("shopable"):
                 continue
             art = readable(item.get("shop_image_webp")) or readable(item.get("shop_image"))

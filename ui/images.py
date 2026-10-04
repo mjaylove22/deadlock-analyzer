@@ -129,6 +129,25 @@ def item_icon(item: Dict, size: int, kind: str = "tk"):
     return _cache[key]
 
 
+def ability_icon(url: Optional[str], size: int, color: str):
+    """An ability's icon on a rounded tile in a dark shade of the hero's colour, as a PhotoImage."""
+    key = ("ability", url, size, color, assets.get(url) is not None)
+    if key not in _cache:
+        big = size * 4
+        rounded = Image.new("L", (big, big), 0)
+        ImageDraw.Draw(rounded).rounded_rectangle((0, 0, big - 1, big - 1), radius=big // 4, fill=255)
+        rounded = rounded.resize((size, size), Image.LANCZOS)
+        tile = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+        tile.paste(Image.new("RGBA", (size, size), shade(color, 0.4)), (0, 0), rounded)
+        picture = assets.get(url)
+        if picture is not None:
+            inner = picture.resize((round(size * 0.8),) * 2, Image.LANCZOS)
+            offset = (size - inner.width) // 2
+            tile.alpha_composite(inner, (offset, offset))
+        _cache[key] = ImageTk.PhotoImage(tile)
+    return _cache[key]
+
+
 def avatar(data: Optional[bytes], size: int, ring: Optional[str] = None, placeholder: str = "#2a303c"):
     """A circular Steam avatar with an optional coloured ring, as a PhotoImage."""
     key = ("avatar", hash(data) if data else None, size, ring)

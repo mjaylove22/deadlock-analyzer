@@ -270,9 +270,15 @@ Checked against a real Street Brawl lobby where 2 of 8 players weren't found:
 - **The cause:** every capture runs OCR straight away, and pytesseract starts `tesseract.exe` (a console program) with only "hidden window". The app has no console of its own, so Windows creates one for every run. On Windows 11 with the default "let Windows decide" terminal (Windows Terminal here), a console can become a Terminal window that takes keyboard focus, which tabs a fullscreen game out. Tesseract now starts with `CREATE_NO_WINDOW`: no console at all. Running from a terminal hid this during development, because tesseract shared that terminal's console.
 - **Not tested live while the game was focused:** a failed test would have tabbed the user out of their match. A unit test checks the flag instead, and every capture now logs a warning if the focused window changed between the start and the end of the capture, so any other cause would show up in the log.
 
+### 4.31 Hero guides
+- **Only data, no hand-written text:** the API has no playstyle descriptions (only lore), so the guide is built from what it does have: the game's hero type, complexity (1-4), gun type, tags, health and speed (compared with the median hero), the four abilities' own descriptions and cooldowns, and the weapon/vitality/spirit split of what players actually buy. Nothing goes stale when a patch changes a hero.
+- **What the kit does** is read from the ability descriptions by keyword (heal, barrier, stun, slow...). Longer phrases are matched first and removed, so an ally buff ("bonus weapon damage") isn't also counted as damage. "Fly" was dropped as a mobility word: a hero's dragon flies, the hero doesn't.
+- **Light:** the hero and item lists are 2 MB and 6 MB; the guides keep ~60 KB on disk for 3 days. The raw asset lists used to stay in memory for the rest of the session after each daily refresh; they're now dropped once their slim copies are saved.
+- **Placement:** a Stats | Guide switch on the hero page, since the stats view already fills the window.
+
 ## 5. Testing
 
-`python -m unittest discover -s tests -v` runs 149 tests in a few seconds:
+`python -m unittest discover -s tests -v` runs 156 tests in a few seconds:
 - **Parser tests** use OCR output actually produced from real screenshots, including a noisy version, plus edge cases: headers, noise-only lines, duplicate player names, multi-word heroes, hero lines with nothing above them.
 - **Identity tests** use plain data to cover settling by unique name, friend links (including links listed by only one side and chains of settled players), ties falling back to hero history, and party grouping.
 - **Insights tests** cover each badge rule and its thresholds.

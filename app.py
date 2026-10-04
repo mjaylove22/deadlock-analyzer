@@ -189,8 +189,8 @@ class AnalyzerApp:
     def open_heroes(self, mode: str = "Normal", band: str = "All ranks", push: bool = True):
         self.navigate(HeroesPage, push=push, mode=mode, band=band)
 
-    def open_hero(self, hero: str, mode: str = "Normal", band: str = "All ranks", push: bool = True):
-        self.navigate(HeroPage, push=push, hero=hero, mode=mode, band=band)
+    def open_hero(self, hero: str, mode: str = "Normal", band: str = "All ranks", push: bool = True, view: str = "Stats"):
+        self.navigate(HeroPage, push=push, hero=hero, mode=mode, band=band, view=view)
 
     def open_player(self, account_id: int, mode: str = "All", nav: str = None, push: bool = True):
         self.navigate(PlayerPage, push=push, account_id=account_id, mode=mode, nav=nav)

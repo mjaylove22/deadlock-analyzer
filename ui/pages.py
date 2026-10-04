@@ -5,6 +5,7 @@ work runs on a worker thread, on_done runs on the main thread, and only if the u
 the same page (otherwise the result is dropped).
 """
 
+import logging
 import os
 import time
 import tkinter as tk
@@ -14,6 +15,7 @@ from typing import Any, Dict
 import assets
 import deadlock_api
 from match_review import REVIEW_STATS, MatchUnavailable, match_review
+from guides import hero_guide
 from matchups import hero_breakdown, matchup_details
 from player_lookup import search_player
 from profiles import (API_GAME_MODES, LOW_SAMPLE_GAMES, MATCH_TYPES, RANK_BANDS, hero_rank_curve, hero_tier_list, hero_trends,
@@ -31,6 +33,7 @@ from ui.widgets import bind_click, data_table, hero_label, matchup_strip, player
 
 MODES = list(API_GAME_MODES)  # ["Normal", "Street Brawl"]
 HOTKEY_TEXT = "Ctrl+Shift+D"
+logger = logging.getLogger(__name__)
 BANDS = dict(RANK_BANDS)      # label -> (lowest tier, highest tier) or None
 
 
@@ -558,9 +561,9 @@ class HeroesPage(Page):
 class HeroPage(Page):
     nav = "heroes"
 
-    def build(self, hero: str, mode: str = "Normal", band: str = "All ranks"):
+    def build(self, hero: str, mode: str = "Normal", band: str = "All ranks", view: str = "Stats"):
         band = band_for(mode, band)
-        self.hero, self.mode, self.band = hero, mode, band
+        self.hero, self.mode, self.band, self.view = hero, mode, band, view
         self.message(f"Loading {hero}...")
 
         def work():
@@ -578,11 +581,18 @@ class HeroPage(Page):
                 allow_failures=True)
             breakdown = breakdown or {"toughest": None, "best": None, "items": None}
             breakdown["by_rank"] = by_rank
-            assets.load_many((item.get("image") for item in breakdown["items"] or []), assets.ITEM_MAX_SIDE)
-            return tiers, breakdown, trends
+            try:
+                guide = hero_guide(hero, breakdown["items"])
+            except (OSError, ValueError) as e:
+                logger.warning(f"No guide for {hero} ({e})")
+                guide = None
+            deadlock_api.parallel(
+                lambda: assets.load_many((item.get("image") for item in breakdown["items"] or []), assets.ITEM_MAX_SIDE),
+                lambda: assets.load_many(a["image"] for a in (guide or {}).get("abilities", [])))
+            return tiers, breakdown, trends, guide
         self.app.run_task(work, lambda result: self.show(*result))
 
-    def show(self, tiers, b, trends):
+    def show(self, tiers, b, trends, guide):
         if tiers:
             self.app.cache[("tiers", self.mode, self.band)] = tiers
         if trends:
@@ -624,8 +634,92 @@ class HeroPage(Page):
                 tooltip(change_label, change_tip(trend))
             trend_chart(chart, self.hero, trend, len(trends["weeks"]), height=84).pack(fill="both", expand=True, pady=(2, 0))
 
+        tabs = tk.Frame(self.frame, bg=COLORS["bg"])
+        tabs.pack(fill="x", pady=(12, 0))
+        segmented(tabs, ["Stats", "Guide"], self.view,
+                  lambda view: self.app.open_hero(self.hero, self.mode, self.band, push=False, view=view)).pack(side="left")
+        if self.view == "Guide":
+            self.show_guide(guide, b)
+        else:
+            self.show_stats(b, stats)
+
+    def show_guide(self, guide, b):
+        """A simple overview: what kind of hero this is, what players build, and the four abilities."""
+        if not guide:
+            self.message("No guide for this hero yet: it isn't in the game's hero data.")
+            return
+        color = images.hero_color(self.hero)
+        top = tk.Frame(self.frame, bg=COLORS["bg"])
+        top.pack(fill="x", pady=(10, 0))
+        top.columnconfigure(0, weight=3, uniform="guide")
+        top.columnconfigure(1, weight=2, uniform="guide")
+        play_outer, play = section(top, "Playstyle")
+        play_outer.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        label(play, guide["summary"], size=11, bg="card", justify="left", wraplength=620).pack(anchor="w")
+        facts = tk.Frame(play, bg=COLORS["card"])
+        facts.pack(anchor="w", pady=(12, 0))
+        for n, (name, value) in enumerate(guide["facts"]):
+            row, column = divmod(n, 3)
+            label(facts, name.upper(), size=8, color="dim", bold=True, bg="card").grid(row=row * 2, column=column, sticky="w", padx=(0, 34))
+            label(facts, value, size=10, bg="card").grid(row=row * 2 + 1, column=column, sticky="w", padx=(0, 34), pady=(0, 8))
+
+        build_outer, build = section(top, "What players build")
+        build_outer.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
+        if guide["build"]:
+            bar = tk.Canvas(build, height=14, bg=COLORS["card"], highlightthickness=0)
+            bar.pack(fill="x")
+
+            def draw_split(event=None):
+                bar.delete("all")
+                x, width = 0.0, bar.winfo_width()
+                for slot in ("weapon", "vitality", "spirit"):
+                    share = guide["build"].get(slot, 0)
+                    if share:
+                        bar.create_rectangle(x, 0, x + share * width, 14, fill=ITEM_SLOT_COLORS[slot], outline=COLORS["card"])
+                        x += share * width
+            bar.bind("<Configure>", draw_split)
+            legend = tk.Frame(build, bg=COLORS["card"])
+            legend.pack(anchor="w", pady=(6, 10))
+            for slot in ("weapon", "vitality", "spirit"):
+                if guide["build"].get(slot):
+                    label(legend, f"{slot.title()} {guide['build'][slot]:.0%}", size=9, bold=True, bg="card",
+                          color=ITEM_SLOT_COLORS[slot]).pack(side="left", padx=(0, 12))
+        if b.get("items"):
+            label(build, "Most bought (hover for details)", size=9, color="dim", bg="card").pack(anchor="w", pady=(0, 6))
+            shelf = tk.Frame(build, bg=COLORS["card"])
+            shelf.pack(anchor="w")
+            for n, item in enumerate(b["items"][:10]):
+                tile = tk.Label(shelf, image=images.item_icon(item, 30), bg=COLORS["card"])
+                tile.grid(row=n // 5, column=n % 5, padx=(0, 6), pady=(0, 6))
+                tooltip(tile, item_tooltip_text(item, None, self.hero))
+
+        abilities_outer, abilities = section(self.frame, "Abilities")
+        abilities_outer.pack(fill="x", pady=(12, 0))
+        grid = tk.Frame(abilities, bg=COLORS["card"])
+        grid.pack(fill="x")
+        grid.columnconfigure((0, 1), weight=1, uniform="abilities")
+        for n, a in enumerate(guide["abilities"]):
+            cell = tk.Frame(grid, bg=COLORS["card"])
+            cell.grid(row=n // 2, column=n % 2, sticky="nsew", padx=(0, 20) if n % 2 == 0 else (0, 0), pady=(0, 14))
+            tk.Label(cell, image=images.ability_icon(a["image"], 46, color), bg=COLORS["card"]).pack(side="left", anchor="n", padx=(0, 12))
+            text = tk.Frame(cell, bg=COLORS["card"])
+            text.pack(side="left", fill="x", expand=True)
+            head = tk.Frame(text, bg=COLORS["card"])
+            head.pack(anchor="w")
+            label(head, f"{n + 1}  {a['name']}", size=11, bold=True, bg="card",
+                  color=images.readable_on_dark(color)).pack(side="left")
+            chips = (["ULTIMATE"] if n == 3 else []) + ([f"{a['cooldown']:.0f}s cooldown"] if a["cooldown"] else []) \
+                + ([f"{a['charges']:.0f} charges"] if a["charges"] and a["charges"] > 1 else [])
+            for chip in chips:
+                pill(head, chip, COLORS["button"], size=8, text_color=COLORS["text"]).pack(side="left", padx=(8, 0))
+            label(text, a["text"], size=9, color="dim", bg="card", justify="left", wraplength=440).pack(anchor="w", pady=(2, 0))
+        label(self.frame, "Built from the game's own hero and ability data and what players buy; nothing here is written by hand.",
+              size=9, color="faint").pack(anchor="w", pady=(8, 0))
+        self.app.set_status(f"{self.hero} · guide")
+
+    def show_stats(self, b, stats):
         columns = tk.Frame(self.frame, bg=COLORS["bg"])
-        columns.pack(fill="x", pady=(14, 0))  # not expand: the rank chart sits right below, not at the bottom
+        columns.pack(fill="x", pady=(10, 0))  # not expand: the rank chart sits right below, not at the bottom
         for c in range(3):
             columns.columnconfigure(c, weight=1, uniform="hero")
         for c, (title, matchups) in enumerate((("Best matchups", b["best"]), ("Toughest matchups", b["toughest"]))):
