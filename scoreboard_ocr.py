@@ -17,7 +17,7 @@ import deadlock_api
 
 logger = logging.getLogger(__name__)
 
-# Scoreboard geometry, measured on a 1920x1080 screenshot of the Esc menu's PLAYERS tab (6v6).
+# Scoreboard geometry, measured on 1920x1080 screenshots of the Esc menu's PLAYERS tab.
 SCREEN_SIZE = (1920, 1080)
 
 # Player list crop (left, top, right, bottom).
@@ -25,8 +25,12 @@ SCREEN_SIZE = (1920, 1080)
 # - Right must stay inside the panel (which ends ~x=1892): including the black strip past it breaks OCR.
 PLAYER_LIST_BOX = (1560, 110, 1875, 940)
 
-# The ENEMY TEAM header sits in the gap at y~545 on screen, which is y~435 inside the crop.
-TEAM_SPLIT_Y = 435
+# Row layout inside the crop: player rows are 60px apart and the first name line starts at y~77.
+# The ENEMY TEAM header pushes every enemy row down an extra 40px, so enemy rows sit ~40px off
+# the friendly rows' 60px grid. That holds for any team size (6v6, or 4v4 Street Brawl, or a
+# lobby where players are still connecting), unlike a fixed split height.
+FIRST_ROW_TOP = 77
+ROW_PITCH = 60
 
 # OCR preprocessing. The panel is semi-transparent, so its brightness shifts with whatever is
 # behind it; left to its own automatic black/white conversion, Tesseract read nothing on a
@@ -62,8 +66,8 @@ def prepare_for_ocr(crop: Image.Image) -> Image.Image:
     return big.convert("L").point(lambda v: 0 if v > TEXT_THRESHOLD else 255)
 
 
-def read_team_lines(image: Image.Image) -> Dict[str, List[str]]:
-    """OCR the player list once and split its text lines by team, using each line's position."""
+def read_ocr_lines(image: Image.Image) -> List[Tuple[int, str]]:
+    """OCR the player list once. Returns (top, text) per line in screen order; top is in crop pixels."""
     prepared = prepare_for_ocr(image.crop(PLAYER_LIST_BOX))
     # --psm 6 treats the crop as one uniform block of text
     data = pytesseract.image_to_data(prepared, config="--psm 6", output_type=pytesseract.Output.DICT)
@@ -75,32 +79,38 @@ def read_team_lines(image: Image.Image) -> Dict[str, List[str]]:
             continue
         key = (data["block_num"][i], data["par_num"][i], data["line_num"][i])
         if key not in lines:
-            lines[key] = {"top": data["top"][i], "words": []}
+            # Positions come from the upscaled image, so scale back to crop coordinates
+            lines[key] = {"top": data["top"][i] // OCR_SCALE, "words": []}
         lines[key]["words"].append(word)
 
-    team_lines = {"friendly": [], "enemy": []}
-    for line in lines.values():
-        # Positions come from the upscaled image, so scale back to crop coordinates
-        team = "friendly" if line["top"] / OCR_SCALE < TEAM_SPLIT_Y else "enemy"
-        team_lines[team].append(" ".join(line["words"]))
-    return team_lines
+    return [(line["top"], " ".join(line["words"])) for line in lines.values()]
 
 
-def parse_player_rows(lines: List[str], hero_names: List[str]) -> List[Tuple[str, str]]:
+def team_for_row(name_top: int) -> str:
+    """Which team a row belongs to, from where its name line sits on the 60px row grid.
+
+    Friendly rows sit ~0px off the grid and enemy rows ~40px off; the cutoffs (20 and 50)
+    are halfway between, leaving ~10px of tolerance either way.
+    """
+    offset = (name_top - FIRST_ROW_TOP) % ROW_PITCH
+    return "enemy" if 20 <= offset < 50 else "friendly"
+
+
+def parse_player_rows(lines: List[Tuple[int, str]], hero_names: List[str]) -> List[Tuple[int, str, str]]:
     """Pair each player's Steam name with their hero.
 
     Each scoreboard row is two lines:
         <Steam name>
         <Hero> Level -1
     so a line containing a hero name and "Level" is paired with the line above it.
-    Returns (player, hero) tuples in screen order.
+    Takes (top, text) lines; returns (name_top, player, hero) tuples in screen order.
     """
     # Check longer names first so a short name can never match inside a longer one
     heroes_longest_first = sorted(hero_names, key=len, reverse=True)
     rows = []
-    previous_line = None  # Candidate Steam name: the last meaningful line seen
+    previous_line = None  # Candidate Steam name: (top, text) of the last meaningful line seen
 
-    for line in lines:
+    for top, line in lines:
         line = line.strip()
 
         # Skip blank lines and pure noise (no letters at all, e.g. "=" or ",")
@@ -115,11 +125,12 @@ def parse_player_rows(lines: List[str], hero_names: List[str]) -> List[Tuple[str
         if "level" in line.lower():
             hero = next((h for h in heroes_longest_first if h.lower() in line.lower()), None)
             if hero and previous_line:
-                rows.append((previous_line, hero))
+                name_top, name = previous_line
+                rows.append((name_top, name, hero))
             # A hero line is never a Steam name for the next row
             previous_line = None
         else:
-            previous_line = line
+            previous_line = (top, line)
 
     return rows
 
@@ -129,14 +140,13 @@ def read_scoreboard(file_path: str, hero_names: List[str]) -> List[Dict[str, str
     with Image.open(file_path) as image:
         if image.size != SCREEN_SIZE:
             logger.warning(f"Screenshot is {image.size}, but the crop was measured on {SCREEN_SIZE}; results may be wrong")
-        team_lines = read_team_lines(image)
+        lines = read_ocr_lines(image)
+    logger.debug(f"OCR lines: {lines}")
 
-    records = []
-    for team, lines in team_lines.items():
-        logger.debug(f"OCR lines ({team}): {lines}")
-        for player, hero in parse_player_rows(lines, hero_names):
-            records.append({"player": player, "hero": hero, "team": team})
-    return records
+    return [
+        {"player": player, "hero": hero, "team": team_for_row(name_top)}
+        for name_top, player, hero in parse_player_rows(lines, hero_names)
+    ]
 
 
 def main():
@@ -151,17 +161,15 @@ def main():
 
     print(f"Reading {file_path}")
     with Image.open(file_path) as image:
-        team_lines = read_team_lines(image)
+        lines = read_ocr_lines(image)
     hero_names = load_hero_names()
 
-    for team, lines in team_lines.items():
-        print(f"\n=== {team.upper()} TEAM ===")
-        print("Raw OCR lines:")
-        for i, line in enumerate(lines, start=1):
-            print(f"  {i:2d}. {line!r}")
-        print("Parsed rows:")
-        for player, hero in parse_player_rows(lines, hero_names):
-            print(f"  {player} -> {hero}")
+    print("\nRaw OCR lines (top = pixels from the top of the crop):")
+    for top, text in lines:
+        print(f"  top={top:3d}  {text!r}")
+    print("\nParsed rows:")
+    for name_top, player, hero in parse_player_rows(lines, hero_names):
+        print(f"  {team_for_row(name_top):<8}  {player} -> {hero}")
 
 
 if __name__ == "__main__":

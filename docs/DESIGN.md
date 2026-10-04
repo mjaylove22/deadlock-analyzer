@@ -66,10 +66,16 @@ The first parser tried to decide from a line's *contents* whether it was a playe
 
 Hero names are matched longest-first, so a short name can never match inside a longer one.
 
-### 4.3 One OCR pass, teams by position
-The team headers fall outside the tight crop, so team membership comes from **vertical position**: in a 6v6 layout the ENEMY TEAM header always sits at the same height. `pytesseract.image_to_data` returns every word with its coordinates, so each line is assigned to a team by its `top` value.
+### 4.3 One OCR pass, teams from the row grid
+`pytesseract.image_to_data` returns every word with its coordinates, so each parsed row keeps the vertical position of its name line.
 
-The alternative, cropping each team separately, was tested and rejected: OCR on the smaller enemy crop misread `Vyper Level` as `Wyper Level`. One pass keeps the text that is known to be good.
+The first version split teams at a fixed height, which assumed 6v6. A Street Brawl lobby (4v4, one player still connecting, so 3 vs 4) put three enemies on the wrong team. Two alternatives were tested:
+- **Reading the ENEMY TEAM header with OCR:** it was read in two screenshots and missed entirely in the third.
+- **Finding the header gap from pixel brightness:** it worked on bright scenes, but on a dark scene the semi-transparent panel was as dark as the gaps.
+
+What held on every screenshot: **player rows sit on a 60px grid, and the enemy header pushes all enemy rows down an extra 40px.** So a row's offset from the grid tells its team (≈0px means friendly, ≈40px means enemy), whatever the team sizes.
+
+Cropping each team separately was also rejected early on: OCR on the smaller enemy crop misread `Vyper Level` as `Wyper Level`. One pass keeps the text that is known to be good.
 
 ### 4.4 Steam names are not unique
 A name search for one test player returned **five accounts with exactly that name**. The lookup:
@@ -91,7 +97,7 @@ An early hardcoded list turned out to be largely invented, and a hand-verified l
 
 ## 5. Testing
 
-`python -m unittest discover -s tests -v` runs 18 tests in under a second:
+`python -m unittest discover -s tests -v` runs 22 tests in under a second:
 - **Parser tests** use OCR output actually produced from real screenshots, including a noisy version, plus edge cases: headers, noise-only lines, duplicate player names, multi-word heroes, hero lines with nothing above them.
 - **Lookup tests** mock the API to cover account selection, rejecting fuzzy matches, bot skipping, sorting favourite heroes, and network errors being reported instead of crashing the report.
 
@@ -101,7 +107,7 @@ An early hardcoded list turned out to be largely invented, and a hand-verified l
 
 ## 6. Limitations and next steps
 
-- **Resolution:** coordinates were measured at 1920×1080. Other sizes log a warning. Scaling coordinates by resolution, or locating the panel automatically, would remove this limit.
+- **Resolution:** coordinates were measured at 1920×1080 (6v6 and Street Brawl layouts). Other sizes log a warning. Scaling coordinates by resolution, or locating the panel automatically, would remove this limit.
 - **Sample size:** tuned on a small number of screenshots, so it needs more varied real matches (long or unusual Steam names, different heroes).
 - **Integration:** capture and analysis are separate commands; the next step is running the analysis from the hotkey.
 - **Accuracy:** a misread Steam name gives "not found". The report shows the closest match so a person can judge it.

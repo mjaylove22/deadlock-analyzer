@@ -40,8 +40,11 @@ def pick_account(candidates: List[Dict[str, Any]], stats_by_account: Dict[int, L
 
     best = max(candidates, key=matches_on_current_hero)  # max() keeps the first of equal items
     best_matches = matches_on_current_hero(best)
+    runner_up = max(matches_on_current_hero(c) for c in candidates if c is not best)
     if best_matches > 0:
-        return best, f"{len(candidates)} accounts share this name; picked the one with {best_matches} matches on this hero"
+        # Show the runner-up so a close call (e.g. 8 vs 3) is visible, not just the winner
+        return best, (f"{len(candidates)} accounts share this name; picked the one with "
+                      f"{best_matches} matches on this hero (next best: {runner_up})")
     return best, f"{len(candidates)} accounts share this name; none have played this hero, so this pick is a guess"
 
 
