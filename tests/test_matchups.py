@@ -35,9 +35,10 @@ class PopularItemsTests(unittest.TestCase):
     def test_most_bought_shop_items_with_win_rate(self):
         stats = [{"item_id": 10, "wins": 30, "matches": 60}, {"item_id": 11, "wins": 90, "matches": 100},
                  {"item_id": 99, "wins": 900, "matches": 1000}]  # 99 isn't a shop item
-        items = popular_items(stats, {10: {"name": "Ten"}, 11: {"name": "Eleven"}})
+        items = popular_items(stats, {10: {"name": "Ten", "image": "ten.png"}, 11: {"name": "Eleven"}})
         self.assertEqual([i["name"] for i in items], ["Eleven", "Ten"])
         self.assertAlmostEqual(items[0]["win_rate"], 0.9)
+        self.assertEqual(items[1]["image"], "ten.png")  # for the icon
 
 
 class BuildMatchupTests(unittest.TestCase):

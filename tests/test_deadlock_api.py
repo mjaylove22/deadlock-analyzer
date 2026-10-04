@@ -20,6 +20,21 @@ class SearchSteamProfilesTests(unittest.TestCase):
         self.assertEqual(params["search_query"], "Grey Mirage")
 
 
+class FetchItemsTests(unittest.TestCase):
+    def test_items_without_a_readable_symbol_use_their_shop_art(self):
+        shop = {"type": "upgrade", "shopable": True}
+        raw = [dict(shop, id=1, name="A", image="a.png", shop_image="a_art.png"),
+               dict(shop, id=2, name="B", image="b.svg", shop_image="b_art.png"),  # Pillow can't read SVG
+               dict(shop, id=3, name="C", shop_image="c_art.png"),
+               {"id": 4, "name": "An ability", "type": "ability", "image": "d.png"}]
+        deadlock_api.fetch_items.cache_clear()
+        self.addCleanup(deadlock_api.fetch_items.cache_clear)
+        with patch.object(deadlock_api, "get_json", return_value=raw),                 patch.object(deadlock_api, "disk_cached", lambda name, build, max_age=0: build()):
+            items = deadlock_api.fetch_items()
+        self.assertEqual({i: (item["image"], item["symbol"]) for i, item in items.items()},
+                         {1: ("a.png", True), 2: ("b_art.png", False), 3: ("c_art.png", False)})
+
+
 class ResponseCacheTests(unittest.TestCase):
     def setUp(self):
         deadlock_api._memory.clear()

@@ -24,6 +24,7 @@ from ui import images
 from ui.theme import (BADGE_COLORS, COLORS, ITEM_SLOT_COLORS, MATCHUP_COLORS, PARTY_COLORS, button, card, dropdown,
                       label, pill, segmented)
 from version import __version__
+from ui.widgets import item_tile, item_tooltip_text, tooltip
 from ui.widgets import bind_click, data_table, hero_label, matchup_strip, player_card, rank_pill
 
 MODES = list(API_GAME_MODES)  # ["Normal", "Street Brawl"]
@@ -347,6 +348,7 @@ class HeroPage(Page):
                 allow_failures=True)
             breakdown = breakdown or {"toughest": None, "best": None, "items": None}
             breakdown["by_rank"] = by_rank
+            assets.load_many((item.get("image") for item in breakdown["items"] or []), assets.ITEM_MAX_SIDE)
             return tiers, breakdown
         self.app.run_task(work, lambda result: self.show(*result))
 
@@ -408,12 +410,11 @@ class HeroPage(Page):
             label(items, "win rates run high for expensive late items", size=9, color="faint", bg="card").pack(anchor="w", pady=(0, 8))
         for item in b["items"] or []:
             row = tk.Frame(items, bg=COLORS["card"])
-            row.pack(fill="x", pady=3)
-            swatch = pill(row, "", ITEM_SLOT_COLORS.get(item["slot"], COLORS["button"]))  # shop category colour
-            swatch.configure(width=8)
-            swatch.pack(side="left", padx=(0, 8))
+            row.pack(fill="x", pady=2)
+            tk.Label(row, image=images.item_icon(item, 22), bg=COLORS["card"]).pack(side="left", padx=(0, 9))
             label(row, item["name"], bg="card").pack(side="left")
             label(row, f"{item['win_rate']:.0%}", bg="card", color="dim").pack(side="right")
+            tooltip(row, item_tooltip_text(item, stats["games"] if stats else None, self.hero))
         if b["items"]:
             legend = tk.Frame(items, bg=COLORS["card"])
             legend.pack(anchor="w", pady=(10, 0))
@@ -447,6 +448,12 @@ class MatchPage(Page):
             tiers = deadlock_api.fetch_rank_tiers()
             review["team_ranks"] = [f"{tiers[b // 10]['name']} {b % 10}" if b and b // 10 in tiers else None
                                     for b in review["team_badges"]]
+            me = review.get("me")
+            if me:  # only your build is shown, so only its icons are needed
+                items = deadlock_api.fetch_items()
+                by_name = {item["name"]: item for item in items.values()}  # reviews saved before icons have no ids
+                me["items"] = [dict(items.get(i.get("id")) or by_name.get(i["name"], {}), **i) for i in me["items"]]
+                assets.load_many((i.get("image") for i in me["items"]), assets.ITEM_MAX_SIDE)
             return review, self.app.avatars.download(p.get("avatar_url") for p in review["players"])
 
         def failed(error):
@@ -502,7 +509,7 @@ class MatchPage(Page):
                 build.pack(fill="x", pady=(10, 0))
                 label(build, "Final build", size=9, color="dim", bold=True, bg="card").pack(side="left", padx=(0, 8))
                 for item in me["items"]:
-                    pill(build, item["name"], ITEM_SLOT_COLORS.get(item["slot"], COLORS["button"]), size=8).pack(side="left", padx=(0, 3))
+                    item_tile(build, item, "card").pack(side="left", padx=(0, 4))
 
         # Net worth lead over the match, from your team's side
         if r["networth_lead"]:

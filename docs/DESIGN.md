@@ -226,6 +226,12 @@ The ban endpoint returns how many times each hero was banned, but not how many m
 - **Not code-signed:** Windows SmartScreen warns about new unsigned programs, and the README explains the "Run anyway" click. A certificate costs money, though free signing exists for open-source projects (e.g. SignPath).
 - **Found along the way:** CustomTkinter replaces the window icon with its own 200 ms after start unless `iconbitmap` is called. The `.ico` is set that way now, which fixed the icon from source too.
 
+### 4.25 Item icons and hover details
+- **Weight first:** the API offers each item's white symbol (128 px, under 1 KB) and its shop artwork (200 px, 35 KB). The symbol drawn on a rounded square in the item's category colour looks like the in-game shop and costs almost nothing. 17 of 173 items have no readable symbol (missing, or SVG, which Pillow can't open), so they use their artwork clipped to the same square.
+- **Only what's shown is downloaded**, stored at 48 px (shown at up to 26 px). All 169 icons together would be about 350 KB; a normal session downloads 10-20. The first version fetched every player's build on the match page although only yours is shown, and stored icons at 96 px: measuring the cache (513 KB for 100 icons) caught both.
+- **Hover popups** (`tooltip` in `ui/widgets.py`): one shared borderless window, so popups cost nothing until used. Hiding waits 60 ms so moving between a row's icon and its text doesn't flicker, and changing page hides it (a destroyed widget never gets a "mouse left" event).
+- The match page's final build became a row of icons with names on hover, like the in-game end screen. Reviews saved before item ids were stored find their icons by item name.
+
 ## 5. Testing
 
 `python -m unittest discover -s tests -v` runs 122 tests in a few seconds:

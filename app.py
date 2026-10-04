@@ -41,7 +41,7 @@ from settings import get_me, load_settings, save_settings
 from ui.pages import HeroesPage, HeroPage, HomePage, LobbyPage, MatchPage, PlayerPage, SearchPage, SetupPage
 from ui import images
 from ui.theme import COLORS, FONT, HEADING_FONT, label, setup_styles, switch
-from ui.widgets import AvatarCache
+from ui.widgets import AvatarCache, hide_tooltip
 from utils.logger import setup_logger
 
 logger = logging.getLogger(__name__)
@@ -158,6 +158,7 @@ class AnalyzerApp:
         self.page_token += 1
         if self.page:
             self.page.frame.destroy()
+        hide_tooltip(now=True)  # its widget is gone, so it would never get a "mouse left" event
         self.page = page_class(self, self.container, **options)
         self.page.frame.pack(fill="both", expand=True)
         self.back_button.configure(state="normal" if self.history else "disabled")
@@ -423,8 +424,11 @@ class AnalyzerApp:
                     return None
                 try:
                     heroes = deadlock_api.fetch_heroes()
-                    return build_matchup(results, {h["name"]: h["id"] for h in heroes},
-                                         {h["id"]: h["name"] for h in heroes})
+                    result = build_matchup(results, {h["name"]: h["id"] for h in heroes},
+                                           {h["id"]: h["name"] for h in heroes})
+                    if result:
+                        assets.load_many((item.get("image") for item in result["items"]), assets.ITEM_MAX_SIDE)
+                    return result
                 except Exception:
                     logger.exception("Matchup failed")  # the lobby report is still useful without it
                     return None

@@ -236,13 +236,22 @@ def get_mate_stats(account_id: int, min_matches: int = 10) -> List[Dict[str, Any
 
 @functools.lru_cache(maxsize=None)
 def fetch_items() -> Dict[int, Dict[str, Any]]:
-    """Shop items by id: {"name", "slot", "tier", "cost"}. Only buyable upgrades (not abilities etc.)."""
+    """Shop items by id: {"name", "slot", "tier", "cost", "image", "symbol"}. Only buyable upgrades (not
+    abilities etc.). "image" is the item's white symbol (about 1 KB), drawn on its category's colour like
+    in the shop; a few items have none (or only an SVG, which Pillow can't read), so their shop artwork
+    is used instead and "symbol" is False."""
+    def symbol(item):
+        url = item.get("image") or ""
+        return url if url and not url.endswith(".svg") else None
+
     def build():  # stored as a list: JSON object keys can't be numbers
         return [{"id": item["id"], "name": item["name"], "slot": item.get("item_slot_type"),
-                 "tier": item.get("item_tier"), "cost": item.get("cost")}
+                 "tier": item.get("item_tier"), "cost": item.get("cost"),
+                 "image": symbol(item) or item.get("shop_image"), "symbol": bool(symbol(item))}
                 for item in get_json("/v1/assets/items", max_age=ASSET_CACHE_SECONDS)
                 if item.get("type") == "upgrade" and item.get("shopable")]
-    return {item["id"]: item for item in disk_cached("items", build)}
+    # The file name changes when the fields do, so an older copy without them isn't used
+    return {item["id"]: item for item in disk_cached("items_v3", build)}
 
 
 def get_player_ranks(account_ids: List[int]) -> List[Dict[str, Any]]:

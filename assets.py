@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 CACHE_DIR = paths.data("cache", "images")
 ICON_MAX_SIDE = 96      # hero icons and rank emblems are shown at 18-26 px; 96 keeps them sharp
+ITEM_MAX_SIDE = 48     # item icons are shown at up to 26 px; twice that stays sharp on high-DPI screens
 PORTRAIT_MAX_SIDE = 240  # hero portraits are shown 110 px tall
 
 _images: Dict[str, Image.Image] = {}  # url -> image, once loaded
@@ -69,12 +70,12 @@ def get(url: str) -> Optional[Image.Image]:
         return _images.get(url)
 
 
-def load_many(urls: Iterable[str]) -> None:
+def load_many(urls: Iterable[str], max_side: int = ICON_MAX_SIDE) -> None:
     """Load several images in parallel (worker thread)."""
     wanted = [u for u in set(urls) if u and get(u) is None]
     if wanted:
         with ThreadPoolExecutor(max_workers=8) as pool:
-            list(pool.map(load, wanted))
+            list(pool.map(lambda url: load(url, max_side), wanted))
 
 
 def hero_art() -> Dict[str, Dict[str, str]]:

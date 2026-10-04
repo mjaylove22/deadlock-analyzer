@@ -9,9 +9,9 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 import customtkinter as ctk
 
-from report import badge_labels, hero_stats_text, items_text, matchup_kind, matchup_text, most_played_text
+from report import badge_labels, hero_stats_text, matchup_kind, matchup_text, most_played_text
 from ui import images
-from ui.theme import BADGE_COLORS, COLORS, FONT, MATCHUP_COLORS, card, label, pill
+from ui.theme import BADGE_COLORS, COLORS, FONT, ITEM_SLOT_COLORS, MATCHUP_COLORS, card, label, pill
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +42,96 @@ class AvatarCache:
     def get(self, url: Optional[str], size: int, ring: Optional[str] = None):
         """A circular avatar (grey circle if missing), with an optional coloured ring."""
         return images.avatar(self.data.get(url), size, ring)
+
+
+class _Tooltip:
+    """One small popup next to the mouse, shared by the whole app. Hiding waits a moment, so moving
+    between the parts of one widget (a row's icon and its text) doesn't make it flicker."""
+
+    def __init__(self):
+        self.window = None
+        self.text = None
+        self.pending_hide = None
+
+    def show(self, widget: tk.Widget, text: str, x: int, y: int):
+        if self.window is None or not self.window.winfo_exists():
+            self.window = tk.Toplevel(widget.winfo_toplevel())
+            self.window.wm_overrideredirect(True)  # no title bar or border from Windows
+            self.window.attributes("-topmost", True)
+            self.text = tk.Label(self.window, bg=COLORS["surface"], fg=COLORS["text"], font=(FONT, 9),
+                                 justify="left", padx=10, pady=6, highlightthickness=1,
+                                 highlightbackground=COLORS["card_border"])
+            self.text.pack()
+        if self.pending_hide:
+            self.window.after_cancel(self.pending_hide)
+            self.pending_hide = None
+        self.text.configure(text=text)
+        self.move(widget, x, y)
+        self.window.deiconify()
+
+    def move(self, widget: tk.Widget, x: int, y: int):
+        if self.window is None:
+            return
+        self.window.update_idletasks()
+        top = widget.winfo_toplevel()
+        right = top.winfo_rootx() + top.winfo_width()
+        width = self.window.winfo_reqwidth()
+        left = x + 14 if x + 14 + width <= right else x - 14 - width  # stay inside the app's window
+        self.window.geometry(f"+{left}+{y + 16}")
+
+    def hide(self, now: bool = False):
+        if self.window is None or not self.window.winfo_exists():
+            return
+        if now:
+            self.window.withdraw()
+        elif not self.pending_hide:
+            self.pending_hide = self.window.after(60, self._hide_now)
+
+    def _hide_now(self):
+        self.pending_hide = None
+        self.window.withdraw()
+
+
+_tooltip = _Tooltip()
+
+
+def show_tooltip(widget: tk.Widget, text: str, x_root: int, y_root: int) -> None:
+    """For drawings on a canvas, which handle their own mouse events."""
+    _tooltip.show(widget, text, x_root, y_root)
+
+
+def hide_tooltip(now: bool = False) -> None:
+    _tooltip.hide(now)
+
+
+def tooltip(widget: tk.Widget, text) -> None:
+    """Show text (or text() if it's a function) in a popup while the mouse is over the widget or
+    anything inside it."""
+    def enter(event):
+        _tooltip.show(widget, text() if callable(text) else text, event.x_root, event.y_root)
+    for part in (widget, *widget.winfo_children()):
+        part.bind("<Enter>", enter, add="+")
+        part.bind("<Motion>", lambda event: _tooltip.move(widget, event.x_root, event.y_root), add="+")
+        part.bind("<Leave>", lambda event: _tooltip.hide(), add="+")
+
+
+def item_tooltip_text(item: Dict[str, Any], hero_games: Optional[int] = None, hero: str = "") -> str:
+    """e.g. "Silencer / Weapon · tier 3 · 3,000 souls / Bought in 18% of Haze games · 61% win rate"."""
+    facts = [(item.get("slot") or "").title(), f"tier {item['tier']}" if item.get("tier") else "",
+             f"{item['cost']:,} souls" if item.get("cost") else ""]
+    lines = [item["name"], " · ".join(f for f in facts if f)]
+    if item.get("matches"):
+        bought = (f"Bought in {item['matches'] / hero_games:.0%} of {hero} games" if hero_games
+                  else f"Bought in {item['matches']:,} games")
+        lines.append(f"{bought} · {item['win_rate']:.0%} win rate")
+    return "\n".join(line for line in lines if line)
+
+
+def item_tile(parent, item: Dict[str, Any], bg: str, size: int = 26) -> tk.Label:
+    """Just the item's icon, with its name and details on hover (for compact rows like a build)."""
+    tile = tk.Label(parent, image=images.item_icon(item, size), bg=COLORS.get(bg, bg), borderwidth=0)
+    tooltip(tile, item_tooltip_text(item))
+    return tile
 
 
 def bind_click(widget: tk.Widget, command: Callable[[], None]) -> None:
@@ -193,5 +283,12 @@ def matchup_strip(parent, matchup: Dict[str, Any]) -> ctk.CTkFrame:
         pill(top, matchup_text(m), MATCHUP_COLORS[matchup_kind(m["vs_average"])], size=9,
              image=images.hero_badge(m["enemy_hero"], 18, kind="ctk")).pack(side="left", padx=(0, 5))
     if matchup["items"]:
-        label(inner, items_text(matchup), size=9, color="dim", bg="surface", anchor="w").pack(fill="x", pady=(4, 0))
+        row = tk.Frame(inner, bg=COLORS["surface"])
+        row.pack(fill="x", pady=(5, 0))
+        label(row, "Popular vs this team:", size=9, color="dim", bg="surface").pack(side="left", padx=(0, 6))
+        for item in matchup["items"]:
+            chip = pill(row, f"{item['name']} {item['win_rate']:.0%}", COLORS["button"], size=8,
+                        image=images.item_icon(item, 16, kind="ctk"), text_color=COLORS["text"])
+            chip.pack(side="left", padx=(0, 4))
+            tooltip(chip, item_tooltip_text(item))
     return outer

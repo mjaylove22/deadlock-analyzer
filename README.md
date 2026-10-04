@@ -21,7 +21,8 @@ with their portraits and ranks with their emblems (downloaded once, then kept in
 
 **Your matchup** (once the app knows which account is yours) appears in a strip at the bottom: your
 hero's win rate against each enemy hero, compared with your hero's average (red = harder than usual,
-green = easier), and the items most often bought by your hero against this enemy team.
+green = easier), and the items most often bought by your hero against this enemy team. Items are shown
+with their in-game icons; hover over one for its cost and how often it's bought.
 
 ## Ground rules
 

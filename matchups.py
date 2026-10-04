@@ -40,11 +40,10 @@ def hero_matchups(counter_stats: List[Dict], my_hero_id: int, enemy_hero_ids: Li
 
 
 def popular_items(item_stats: List[Dict], items_by_id: Dict[int, Dict], count: int = ITEMS_SHOWN) -> List[Dict[str, Any]]:
-    """The most-bought shop items, with their win rate."""
+    """The most-bought shop items (name, slot, tier, cost, image), with their win rate."""
     bought = [s for s in item_stats if s["item_id"] in items_by_id and s["matches"] > 0]
     bought.sort(key=lambda s: s["matches"], reverse=True)
-    return [{"name": items_by_id[s["item_id"]]["name"], "slot": items_by_id[s["item_id"]].get("slot"),
-             "win_rate": s["wins"] / s["matches"], "matches": s["matches"]}
+    return [dict(items_by_id[s["item_id"]], win_rate=s["wins"] / s["matches"], matches=s["matches"])
             for s in bought[:count]]
 
 

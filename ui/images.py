@@ -11,6 +11,7 @@ import customtkinter as ctk
 from PIL import Image, ImageDraw, ImageTk
 
 import assets
+from ui.theme import ITEM_SLOT_COLORS
 
 _cache: Dict[Tuple, object] = {}
 _hero_art: Dict[str, Dict[str, str]] = {}
@@ -89,6 +90,38 @@ def hero_card(hero: str, height: int):
             return None
         width = round(card.width * height / card.height)
         _cache[key] = ImageTk.PhotoImage(card.resize((width, height), Image.LANCZOS))
+    return _cache[key]
+
+
+def item_icon_pil(item: Dict, size: int) -> Image.Image:
+    """An item as the shop shows it: its white symbol on a rounded square in its category's colour
+    (just the square if the symbol isn't downloaded)."""
+    big = size * 4  # drawn large, then scaled down, for smooth corners
+    tile = Image.new("RGBA", (big, big), (0, 0, 0, 0))
+    fill = shade(ITEM_SLOT_COLORS.get(item.get("slot"), "#4a5a6a"), 0.8)  # a little darker, so white stands out
+    ImageDraw.Draw(tile).rounded_rectangle((0, 0, big - 1, big - 1), radius=big // 5, fill=fill)
+    tile = tile.resize((size, size), Image.LANCZOS)
+    picture = assets.get(item.get("image"))
+    if picture is None:
+        return tile
+    if not item.get("symbol", True):  # shop artwork instead of a symbol: fill the square with it
+        art = picture.resize((size, size), Image.LANCZOS)
+        rounded = Image.new("L", (big, big), 0)
+        ImageDraw.Draw(rounded).rounded_rectangle((0, 0, big - 1, big - 1), radius=big // 5, fill=255)
+        tile.paste(art, (0, 0), rounded.resize((size, size), Image.LANCZOS))
+        return tile
+    inner = picture.resize((round(size * 0.72),) * 2, Image.LANCZOS)
+    offset = (size - inner.width) // 2
+    tile.alpha_composite(inner, (offset, offset))
+    return tile
+
+
+def item_icon(item: Dict, size: int, kind: str = "tk"):
+    """kind "tk" -> ImageTk.PhotoImage (tk labels); "ctk" -> CTkImage (CustomTkinter widgets)."""
+    key = ("item", item.get("image"), item.get("slot"), size, kind, assets.get(item.get("image")) is not None)
+    if key not in _cache:
+        pil = item_icon_pil(item, size)
+        _cache[key] = ctk.CTkImage(pil, pil, (size, size)) if kind == "ctk" else ImageTk.PhotoImage(pil)
     return _cache[key]
 
 

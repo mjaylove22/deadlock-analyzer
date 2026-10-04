@@ -62,7 +62,7 @@ def summarize(metadata: Dict[str, Any], hero_names_by_id: Dict[int, str],
             "damage": final.get("player_damage", 0), "healing": final.get("player_healing", 0),
             "damage_taken": final.get("player_damage_taken", 0),
             # The final build: shop items still owned at the end, in the order they were bought
-            "items": [{"name": items_by_id[i["item_id"]]["name"], "slot": items_by_id[i["item_id"]].get("slot")}
+            "items": [{"id": i["item_id"], "name": items_by_id[i["item_id"]]["name"], "slot": items_by_id[i["item_id"]].get("slot")}
                       for i in sorted(p.get("items", []), key=lambda i: i["game_time_s"])
                       if i["item_id"] in items_by_id and not i.get("sold_time_s")],
         })
