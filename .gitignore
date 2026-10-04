@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Runtime output: screenshots can contain other players' names, logs grow forever
+screenshots/
+logs/
+
+# Local AI-tool settings
+.qwen/
+.claude/
