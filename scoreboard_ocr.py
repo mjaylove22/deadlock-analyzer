@@ -40,6 +40,11 @@ ROW_PITCH = 60
 OCR_SCALE = 2
 TEXT_THRESHOLD = 110
 
+# The panel's textured background sometimes adds junk words at the end of a line
+# ("BrightFox ." or "... Owl . pees"). Those junk words had confidence 0-47, while real name
+# words scored 60+, so low-confidence words are dropped from the end of each line.
+TRAILING_JUNK_CONFIDENCE = 50
+
 # Used only when the API is unreachable. Verified against the API on 2026-10-03.
 FALLBACK_HERO_NAMES = [
     "Abrams", "Apollo", "Bebop", "Billy", "Calico", "Celeste", "Drifter",
@@ -81,9 +86,16 @@ def read_ocr_lines(image: Image.Image) -> List[Tuple[int, str]]:
         if key not in lines:
             # Positions come from the upscaled image, so scale back to crop coordinates
             lines[key] = {"top": data["top"][i] // OCR_SCALE, "words": []}
-        lines[key]["words"].append(word)
+        lines[key]["words"].append((word, float(data["conf"][i])))
 
-    return [(line["top"], " ".join(line["words"])) for line in lines.values()]
+    result = []
+    for line in lines.values():
+        words = line["words"]
+        # Only trailing words, and always keep the first, so a real name is never emptied
+        while len(words) > 1 and words[-1][1] < TRAILING_JUNK_CONFIDENCE:
+            words.pop()
+        result.append((line["top"], " ".join(word for word, _ in words)))
+    return result
 
 
 def team_for_row(name_top: int) -> str:

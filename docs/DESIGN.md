@@ -120,12 +120,22 @@ An early hardcoded list turned out to be largely invented, and a hand-verified l
 - **Rank** comes from one batch request per lobby (that endpoint allows 20 requests per minute), using the API's own tier names and colours rather than hardcoded ones.
 - **ID UNSURE**: a hero-history pick only counts as confident if the winner has at least twice the runner-up's games on the hero (55 vs 7 yes, 8 vs 5 no). The 8-vs-5 case was a real wrong pick, so the UI now warns instead of presenting it as fact.
 
-### 4.10 UI layout, measured
+### 4.10 OCR noise and misread names
+- **Junk words:** the panel's textured background sometimes adds junk to the end of a line ("BrightFox ."). Tesseract reports a confidence per word; the junk scored 0-47 while real name words scored 60+, so low-confidence words are trimmed from the *end* of a line only, never the first word, so a real name is never emptied.
+- **Misread characters:** OCR sometimes swaps a character for a lookalike ("Or. Night Owl" for "Dr. Night Owl"). With no exact match, a name that differs by **exactly one character, at the same length, in a name of 6+ characters** is accepted as a misread, marked NAME FIXED and ID UNSURE.
+- **The first version was wrong, and real data showed it.** It used a general similarity score (90%+). On a real 6v6 screenshot that rule "corrected" two names OCR had read *right*: "Kovas" became a stranger called "Kovmas", "Ravenl" became one of 25 "raven" accounts. Misreads swap characters; they don't add or drop them. The stricter rule fixes "Dr. Night Owl", leaves "Kovas" alone, and still caught a genuine lowercase-L / capital-i swap ("Ravenl" → "RavenI"). Both bad corrections are now unit tests.
+
+### 4.11 UI layout, measured
 Teams sit side by side with one card per player. Whether a full lobby fits was **measured**, not eyeballed: tkinter reports the size a layout needs, so the worst case (12 real players with badges and parties) was rendered off-screen. It needed 826px against an 820px window, so card spacing was tightened to 790px.
+
+### 4.12 Housekeeping
+- Screenshots older than 7 days are deleted at startup and after each capture. Only files named like the app's own captures are touched, and a screenshot with an `.expected.json` (a regression test case) is never deleted.
+- Hero and rank lists are cached for the life of the app (`functools.lru_cache`); a failed request isn't cached, so it's retried next time.
+- The analysis reports progress through a callback, so the lookup code doesn't need to know about the window.
 
 ## 5. Testing
 
-`python -m unittest discover -s tests -v` runs 50 tests in under a second:
+`python -m unittest discover -s tests -v` runs 64 tests in about a second:
 - **Parser tests** use OCR output actually produced from real screenshots, including a noisy version, plus edge cases: headers, noise-only lines, duplicate player names, multi-word heroes, hero lines with nothing above them.
 - **Identity tests** use plain data to cover settling by unique name, friend links (including links listed by only one side and chains of settled players), ties falling back to hero history, and party grouping.
 - **Insights tests** cover each badge rule and its thresholds.

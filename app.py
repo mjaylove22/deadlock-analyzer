@@ -13,18 +13,21 @@ worker thread to keep the window responsive. Both hand results back through a qu
 window checks every 100 ms.
 """
 
+import json
 import logging
 import os
 import queue
+import sys
 import threading
 import tkinter as tk
 import webbrowser
+from tkinter import filedialog
 
 import keyboard
 
 from player_lookup import analyze_screenshot
-from report import TEAM_TITLES, badge_labels, hero_stats_text, most_played_text
-from screenshot_manager import capture_and_save_screenshot, get_screenshot_path
+from report import TEAM_TITLES, badge_labels, hero_stats_text, most_played_text, team_summary
+from screenshot_manager import capture_and_save_screenshot, delete_old_screenshots, get_screenshot_path
 from utils.logger import setup_logger
 
 logger = logging.getLogger(__name__)
@@ -34,6 +37,7 @@ POLL_MS = 100
 CAPTURE_DELAY_MS = 150  # time for Windows to repaint after the overlay turns invisible
 OVERLAY_ALPHA = 0.9
 FONT = "Segoe UI"
+SETTINGS_FILE = "settings.json"  # window position/size and overlay mode, remembered between runs
 
 COLORS = {
     "bg": "#0f1115", "header": "#161a22", "card": "#1c212b", "text": "#e8eaed", "dim": "#8b93a1",
@@ -57,14 +61,15 @@ def pill(parent, text: str, color: str, size: int = 8) -> tk.Label:
 
 
 class AnalyzerApp:
-    def __init__(self, root: tk.Tk):
+    def __init__(self, root: tk.Tk, open_screenshot: str = None):
         self.root = root
         self.events = queue.Queue()  # (kind, payload) messages from other threads
         self.busy = False
-        self.overlay = tk.BooleanVar(value=False)
+        settings = load_settings()
+        self.overlay = tk.BooleanVar(value=settings.get("overlay", False))
 
         root.title("Deadlock Analyzer")
-        root.geometry("1180x820")
+        root.geometry(settings.get("geometry", "1180x820"))
         root.minsize(980, 640)
         root.configure(bg=COLORS["bg"])
         self._build_header()
@@ -76,6 +81,11 @@ class AnalyzerApp:
         keyboard.add_hotkey(HOTKEY, lambda: self.events.put(("hotkey", None)))
         root.protocol("WM_DELETE_WINDOW", self.close)
         root.after(POLL_MS, self.poll)
+        self.apply_overlay()
+        delete_old_screenshots()
+        if open_screenshot:
+            self.busy = True
+            self.start_analysis(open_screenshot)
 
     # ---- layout ----------------------------------------------------------------------------
 
@@ -88,9 +98,10 @@ class AnalyzerApp:
                        bg=COLORS["header"], fg=COLORS["text"], selectcolor=COLORS["button"],
                        activebackground=COLORS["header"], activeforeground=COLORS["text"],
                        font=(FONT, 10)).pack(side="right", padx=(10, 0))
-        tk.Button(header, text="Analyze latest screenshot", command=self.analyze_latest,
-                  bg=COLORS["button"], fg=COLORS["text"], activebackground=COLORS["card"],
-                  activeforeground=COLORS["text"], relief="flat", font=(FONT, 10), padx=10).pack(side="right")
+        for text, command in (("Open screenshot...", self.open_screenshot), ("Analyze latest", self.analyze_latest)):
+            tk.Button(header, text=text, command=command, bg=COLORS["button"], fg=COLORS["text"],
+                      activebackground=COLORS["card"], activeforeground=COLORS["text"], relief="flat",
+                      font=(FONT, 10), padx=10).pack(side="right", padx=(6, 0))
         self.status = tk.Label(header, bg=COLORS["header"], fg=COLORS["dim"], font=(FONT, 10), anchor="w")
         self.status.pack(side="left", padx=20, fill="x", expand=True)
 
@@ -125,9 +136,7 @@ class AnalyzerApp:
             frame.grid(row=0, column=column, sticky="nsew", padx=(0 if column == 0 else 8, 8 if column == 0 else 0))
 
             team_parties = [p for p in parties if results[p[0]]["team"] == team]
-            summary = f"{len(members)} players"
-            if team_parties:
-                summary += " · " + ", ".join(f"party of {len(p)}" for p in team_parties)
+            summary = team_summary([results[i] for i in members], team_parties)
             heading = tk.Frame(frame, bg=COLORS["bg"])
             heading.pack(fill="x", pady=(0, 6))
             tk.Label(heading, text=title, bg=COLORS["bg"], fg=COLORS[team], font=(FONT, 13, "bold")).pack(side="left")
@@ -200,6 +209,8 @@ class AnalyzerApp:
                 kind, payload = self.events.get_nowait()
                 if kind == "hotkey":
                     self.capture()
+                elif kind == "progress":
+                    self.set_status(payload)
                 elif kind == "done":
                     self.show_report(*payload)
                 elif kind == "error":
@@ -229,6 +240,7 @@ class AnalyzerApp:
             return
         finally:
             self.apply_overlay()  # restore normal opacity
+        delete_old_screenshots()
         self.start_analysis(path)
 
     def analyze_latest(self):
@@ -241,6 +253,15 @@ class AnalyzerApp:
         self.busy = True
         self.start_analysis(path)
 
+    def open_screenshot(self):
+        if self.busy:
+            return
+        path = filedialog.askopenfilename(title="Open a scoreboard screenshot", initialdir="screenshots",
+                                          filetypes=[("PNG screenshots", "*.png"), ("All files", "*.*")])
+        if path:
+            self.busy = True
+            self.start_analysis(path)
+
     def start_analysis(self, path: str):
         self.set_status(f"Reading {os.path.basename(path)} and looking up players...")
         threading.Thread(target=self._analyze, args=(path,), daemon=True).start()
@@ -248,7 +269,7 @@ class AnalyzerApp:
     def _analyze(self, path: str):
         """Runs on a worker thread: no tkinter calls here, only queue messages."""
         try:
-            results, parties = analyze_screenshot(path)
+            results, parties = analyze_screenshot(path, progress=lambda message: self.events.put(("progress", message)))
             self.events.put(("done", (path, results, parties)))
         except Exception as e:
             logger.exception("Analysis failed")
@@ -262,14 +283,33 @@ class AnalyzerApp:
         self.root.bell()  # audible cue when the report is ready while you're in game
 
     def close(self):
+        save_settings({"geometry": self.root.geometry(), "overlay": self.overlay.get()})
         keyboard.unhook_all()
         self.root.destroy()
+
+
+def load_settings() -> dict:
+    """Saved window settings, or {} on first run (or if the file is unreadable)."""
+    try:
+        with open(SETTINGS_FILE, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def save_settings(settings: dict) -> None:
+    try:
+        with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
+            json.dump(settings, f, indent=2)
+    except OSError as e:
+        logger.warning(f"Could not save settings ({e})")
 
 
 def main():
     setup_logger()
     root = tk.Tk()
-    AnalyzerApp(root)
+    # Optional: python app.py path/to/screenshot.png opens straight onto that screenshot
+    AnalyzerApp(root, open_screenshot=sys.argv[1] if len(sys.argv) > 1 else None)
     root.mainloop()
 
 

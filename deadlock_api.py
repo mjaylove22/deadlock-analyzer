@@ -4,6 +4,7 @@ Only read-only, public endpoints are used. Endpoint shapes were checked against
 the API's OpenAPI spec (https://api.deadlock-api.com/openapi.json) and real responses.
 """
 
+import functools
 import json
 import urllib.parse
 import urllib.request
@@ -23,6 +24,7 @@ def get_json(path: str, params: Dict[str, Any] = None) -> Any:
         return json.loads(response.read().decode("utf-8"))
 
 
+@functools.lru_cache(maxsize=None)  # rarely changes: fetch once per run (failures aren't cached)
 def fetch_heroes() -> List[Dict[str, Any]]:
     """Return heroes a player can actually pick right now, as {"id", "name"} dicts."""
     heroes = get_json("/v1/assets/heroes")
@@ -49,6 +51,7 @@ def get_hero_stats(account_ids: List[int]) -> List[Dict[str, Any]]:
     return get_json("/v1/players/hero-stats", {"account_ids": ",".join(str(a) for a in account_ids)})
 
 
+@functools.lru_cache(maxsize=None)
 def fetch_rank_tiers() -> Dict[int, Dict[str, str]]:
     """Rank tier number -> {"name", "color"}, e.g. 7 -> Emissary. Tier 0 (Obscurus) means unranked."""
     return {tier["tier"]: {"name": tier["name"], "color": tier["color"]} for tier in get_json("/v1/assets/ranks")}

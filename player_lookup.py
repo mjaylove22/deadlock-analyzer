@@ -11,7 +11,7 @@ Usage:
 import logging
 import sys
 from collections import defaultdict
-from typing import Any, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import deadlock_api
 from identity import find_parties, resolve_lobby
@@ -24,6 +24,20 @@ from utils.logger import setup_logger
 logger = logging.getLogger(__name__)
 
 TOP_HEROES_SHOWN = 3
+
+# OCR sometimes swaps one character for a lookalike ("Or. Night Owl" for "Dr. Night Owl").
+# Such a name is accepted as a misread, flagged so the user can see it. A general similarity score
+# was tried first and wrongly "corrected" names OCR had read right ("Kovas" -> "Kovmas", "Ravenl" ->
+# "raven"): misreads swap characters, they don't add or drop them. Short names have too many
+# one-letter neighbours to guess safely, hence the minimum length.
+MISREAD_MIN_LENGTH = 6
+
+Progress = Optional[Callable[[str], None]]  # called with a short status message at each step
+
+
+def report_progress(progress: Progress, message: str) -> None:
+    if progress:
+        progress(message)
 
 
 def is_likely_bot(record: Dict[str, str]) -> bool:
@@ -38,18 +52,40 @@ def find_candidates(name: str) -> Tuple[List[Dict[str, Any]], str]:
     that OCR misread the name. Friend lists are kept in memory for identity resolution only.
     """
     results = deadlock_api.search_steam_profiles(name)
-    exact = [
-        {
+
+    def same_name(a: str, b: str) -> bool:
+        return a.strip().lower() == b.strip().lower()
+
+    def as_candidate(c):
+        return {
             "account_id": c["account_id"],
             "profile_url": c["profileurl"],
             "friends": {f["account_id"] for f in (c.get("friends") or [])},
         }
-        for c in results
-        if c["personaname"].strip().lower() == name.strip().lower()
-    ]
+
+    exact = [as_candidate(c) for c in results if same_name(c["personaname"], name)]
     if exact:
         return exact, ""
-    return [], f"closest name: {results[0]['personaname']!r}" if results else "no similar names"
+    if not results:
+        return [], "no similar names"
+
+    # No exact match: maybe OCR swapped one character. The API ranks results by similarity,
+    # so the first plausible misread is the best one.
+    misread = next((c["personaname"] for c in results if looks_like_misread(name, c["personaname"])), None)
+    if misread:
+        near = [as_candidate(c) for c in results if same_name(c["personaname"], misread)]
+        for c in near:
+            c["corrected_name"] = misread.strip()
+        return near, ""
+    return [], f"closest name: {results[0]['personaname']!r}"
+
+
+def looks_like_misread(ocr_name: str, real_name: str) -> bool:
+    """True if OCR could have produced ocr_name by misreading one character of real_name."""
+    a, b = ocr_name.strip().lower(), real_name.strip().lower()
+    if len(a) != len(b) or len(a) < MISREAD_MIN_LENGTH:
+        return False
+    return sum(x != y for x, y in zip(a, b)) == 1
 
 
 def top_heroes(entries: List[Dict], hero_names_by_id: Dict[int, str]) -> List[Dict[str, Any]]:
@@ -66,17 +102,18 @@ def top_heroes(entries: List[Dict], hero_names_by_id: Dict[int, str]) -> List[Di
 
 
 def lookup_lobby(records: List[Dict[str, str]], hero_ids_by_name: Dict[str, int],
-                 hero_names_by_id: Dict[int, str]) -> Tuple[List[Dict[str, Any]], List[List[int]]]:
+                 hero_names_by_id: Dict[int, str], progress: Progress = None) -> Tuple[List[Dict[str, Any]], List[List[int]]]:
     """Resolve every {"player", "hero", "team"} record to an account with stats.
 
     Returns (results, parties): one result per record, and parties as lists of record indexes.
     The whole lobby is resolved together, because friend links between players are evidence.
     """
     results = [dict(r, status=None, note="", account_id=None, profile_url=None, top_heroes=[],
-                    hero_stats=None, badges=[], confident=False, rank=None) for r in records]
+                    hero_stats=None, badges=[], confident=False, rank=None, corrected_from=None) for r in records]
 
     candidates_by_player = {}
     for i, result in enumerate(results):
+        report_progress(progress, f"Looking up {result['player']} ({i + 1}/{len(results)})...")
         if is_likely_bot(result):
             result.update(status="skipped", note="name matches hero, likely a bot")
             continue
@@ -88,12 +125,16 @@ def lookup_lobby(records: List[Dict[str, str]], hero_ids_by_name: Dict[str, int]
         if not candidates:
             result.update(status="not found", note=note)
             continue
+        if "corrected_name" in candidates[0]:
+            # Show the real Steam name, and remember what OCR read
+            result.update(corrected_from=result["player"], player=candidates[0]["corrected_name"])
         candidates_by_player[i] = candidates
 
     # One batch request covers every candidate in the lobby (the API accepts up to 1000 ids)
     all_ids = list(dict.fromkeys(c["account_id"] for cs in candidates_by_player.values() for c in cs))
     stats_by_account = defaultdict(list)
     if all_ids:
+        report_progress(progress, "Loading hero stats...")
         try:
             for entry in deadlock_api.get_hero_stats(all_ids):
                 stats_by_account[entry["account_id"]].append(entry)
@@ -118,6 +159,7 @@ def lookup_lobby(records: List[Dict[str, str]], hero_ids_by_name: Dict[str, int]
                           badges=compute_badges(entries, hero_id),
                           confident=is_confident(candidates_by_player[i], reason))
 
+    report_progress(progress, "Loading ranks...")
     attach_ranks(results)
     parties = find_parties(resolved, {i: results[i]["team"] for i in resolved})
     return results, parties
@@ -126,6 +168,8 @@ def lookup_lobby(records: List[Dict[str, str]], hero_ids_by_name: Dict[str, int]
 def is_confident(candidates: List[Dict[str, Any]], reason: str) -> bool:
     """Unique names and friend links are strong evidence. Hero history counts only when the
     winner has at least twice the runner-up's games on this hero (55 vs 7 yes, 8 vs 5 no)."""
+    if "corrected_name" in candidates[0]:
+        return False  # the name itself was a guess at an OCR misread
     if len(candidates) == 1 or reason.startswith("friends with"):
         return True
     games = sorted((c["current_hero_matches"] for c in candidates), reverse=True)
@@ -149,10 +193,11 @@ def attach_ranks(results: List[Dict[str, Any]]) -> None:
             tier = tiers[rank["rank"]]
             # Tier 0 (Obscurus) means no recent ranked games
             name = "Unranked" if rank["rank"] == 0 else f"{tier['name']} {rank['subrank']}"
-            result["rank"] = {"name": name, "color": tier["color"]}
+            # "badge" (tier * 10 + subrank) is kept so ranks can be compared
+            result["rank"] = {"name": name, "color": tier["color"], "badge": rank["rank"] * 10 + rank["subrank"]}
 
 
-def analyze_screenshot(file_path: str) -> Tuple[List[Dict[str, Any]], List[List[int]]]:
+def analyze_screenshot(file_path: str, progress: Progress = None) -> Tuple[List[Dict[str, Any]], List[List[int]]]:
     """The whole pipeline: screenshot -> (results, parties). Used by the terminal and the app."""
     # One hero list feeds both OCR (names) and stats (ids)
     try:
@@ -163,10 +208,11 @@ def analyze_screenshot(file_path: str) -> Tuple[List[Dict[str, Any]], List[List[
     hero_ids_by_name = {h["name"]: h["id"] for h in heroes}
     hero_names_by_id = {h["id"]: h["name"] for h in heroes}
 
+    report_progress(progress, "Reading the scoreboard...")
     records = read_scoreboard(file_path, list(hero_ids_by_name))
     if not records:
         return [], []
-    return lookup_lobby(records, hero_ids_by_name, hero_names_by_id)
+    return lookup_lobby(records, hero_ids_by_name, hero_names_by_id, progress)
 
 
 def main():

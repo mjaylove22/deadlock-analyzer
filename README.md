@@ -14,6 +14,7 @@ For every player in the lobby, the app shows:
 - **Parties:** friends queued together on the same team share a colour
 - **Their most-played heroes**, and a clickable Steam profile
 - **ID UNSURE** when the account match is a close call, so you know when not to trust it
+- **NAME FIXED** when OCR misread one character of a name and the real Steam name was found
 
 Both teams sit side by side, so a full 6v6 lobby fits on one screen without scrolling.
 
@@ -48,7 +49,11 @@ Profile links are clickable.
 
 - **Overlay mode** keeps the window semi-transparent and on top of the game. This needs the game in
   **borderless windowed** mode; the app never draws into the game itself.
-- **Analyze latest screenshot** re-runs the report on the newest saved screenshot.
+- **Analyze latest** re-runs the report on the newest screenshot; **Open screenshot...** picks any saved one.
+- Progress shows while it works ("Looking up player 5/12..."), and each team header sums up the team
+  ("party of 3 · 2 new on hero · best rank Oracle 6").
+- Screenshots older than **7 days are deleted automatically** (except ones kept as test cases).
+- The window remembers its size, position and overlay setting.
 
 **Terminal:**
 

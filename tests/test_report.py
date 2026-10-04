@@ -2,7 +2,7 @@
 
 import unittest
 
-from report import badge_labels, build_report, hero_stats_text
+from report import badge_labels, build_report, hero_stats_text, team_summary
 
 
 def result(player, hero, team, status="found", note="unique name", url=None, top=(), stats=None,
@@ -27,12 +27,12 @@ class BuildReportTests(unittest.TestCase):
         styles = [style for _, style in lines]
         texts = [text for text, _ in lines]
 
-        self.assertEqual(texts[0], "YOUR TEAM")
+        self.assertTrue(texts[0].startswith("YOUR TEAM"))
         self.assertIn(("Party of 2: A + B", "party"), lines)
         self.assertIn(("    https://steam/1", "link"), lines)
         self.assertIn("Most played: Viscous 120", " ".join(t for t, _ in lines))
         # The party line belongs to the enemy section, right after its title
-        enemy_title = texts.index("ENEMY TEAM")
+        enemy_title = next(n for n, t in enumerate(texts) if t.startswith("ENEMY TEAM"))
         self.assertEqual(styles[enemy_title + 1], "party")
 
     def test_player_without_account_has_no_link(self):
@@ -55,6 +55,24 @@ class WordingTests(unittest.TestCase):
         self.assertIn(("ID UNSURE", "warn"), badge_labels(unsure))
         self.assertIn(("ID VIA FRIENDS", "info"), badge_labels(friends))
         self.assertEqual(badge_labels(result("D", "Lash", "enemy")), [])
+        fixed = result("E", "Lash", "enemy", confident=False)
+        fixed["corrected_from"] = "Or. E"
+        self.assertEqual(badge_labels(fixed), [("NAME FIXED", "info"), ("ID UNSURE", "warn")])
+
+
+
+class TeamSummaryTests(unittest.TestCase):
+    def test_counts_notable_badges_and_best_rank(self):
+        team = [
+            result("A", "Haze", "enemy", badges=[("ONE-TRICK", "strong")], rank={"name": "Oracle 4", "badge": 84}),
+            result("B", "Rem", "enemy", badges=[("FIRST GAME ON HERO", "warn")], rank={"name": "Emissary 1", "badge": 71}),
+            result("C", "Ivy", "enemy", badges=[("NEW ON HERO", "warn")], rank={"name": "Unranked", "badge": 0}),
+        ]
+        self.assertEqual(team_summary(team, [[0, 1]]),
+                         "3 players · party of 2 · 1 one-trick · 2 new on hero · best rank Oracle 4")
+
+    def test_quiet_team(self):
+        self.assertEqual(team_summary([result("A", "Haze", "enemy")], []), "1 player")
 
 
 if __name__ == "__main__":

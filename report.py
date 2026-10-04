@@ -34,20 +34,42 @@ def most_played_text(r: Dict[str, Any]) -> str:
 
 def identity_text(r: Dict[str, Any]) -> str:
     """How the account was identified; empty when there was nothing to decide."""
-    if r["status"] != "found" or r["note"] == "unique name":
+    if r["status"] != "found":
         return ""
-    return f"Identified: {r['note']}"
+    fixed = f"OCR read {r['corrected_from']!r}; " if r.get("corrected_from") else ""
+    if r["note"] == "unique name" and not fixed:
+        return ""
+    return f"Identified: {fixed}{r['note']}"
 
 
 def badge_labels(r: Dict[str, Any]) -> List[Tuple[str, str]]:
     """The player's badges, plus how their account was identified when it wasn't a unique name."""
     labels = list(r["badges"])
+    if r.get("corrected_from"):
+        labels.append(("NAME FIXED", "info"))
     if r["status"] == "found":
         if not r["confident"]:
             labels.append(("ID UNSURE", "warn"))
         elif r["note"].startswith("friends with"):
             labels.append(("ID VIA FRIENDS", "info"))
     return labels
+
+
+def team_summary(team_results: List[Dict[str, Any]], team_parties: List[List[int]]) -> str:
+    """One line about a team, e.g. "4 players · party of 3 · 3 new on hero · best rank Oracle 4"."""
+    parts = [f"{len(team_results)} player" + ("" if len(team_results) == 1 else "s")]
+    parts += [f"party of {len(p)}" for p in team_parties]
+    labels = [label for r in team_results for label, _ in r["badges"]]
+    one_tricks = labels.count("ONE-TRICK")
+    new = labels.count("NEW ON HERO") + labels.count("FIRST GAME ON HERO")
+    if one_tricks:
+        parts.append(f"{one_tricks} one-trick" + ("s" if one_tricks > 1 else ""))
+    if new:
+        parts.append(f"{new} new on hero")
+    ranked = [r["rank"] for r in team_results if r["rank"] and r["rank"]["badge"] > 0]
+    if ranked:
+        parts.append("best rank " + max(ranked, key=lambda rank: rank["badge"])["name"])
+    return " · ".join(parts)
 
 
 def build_report(results: List[Dict[str, Any]], parties: List[List[int]]) -> List[Line]:
@@ -57,7 +79,9 @@ def build_report(results: List[Dict[str, Any]], parties: List[List[int]]) -> Lis
 
     lines = []
     for team, title in TEAM_TITLES.items():
-        lines.append((title, "team"))
+        members = [r for r in results if r["team"] == team]
+        team_parties = [p for p in parties if results[p[0]]["team"] == team]
+        lines.append((f"{title}  ({team_summary(members, team_parties)})", "team"))
         for party in parties:
             if results[party[0]]["team"] == team:
                 lines.append((f"Party of {len(party)}: {' + '.join(results[i]['player'] for i in party)}", "party"))

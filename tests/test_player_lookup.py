@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 import player_lookup
-from player_lookup import lookup_lobby
+from player_lookup import looks_like_misread, lookup_lobby
 
 PARADOX = 10
 GRAVES = 76
@@ -65,11 +65,28 @@ class LookupLobbyTests(unittest.TestCase):
         self.assertEqual(results[0]["status"], "skipped")
         search.assert_not_called()
 
-    def test_fuzzy_matches_are_not_trusted(self):
-        results, _, _ = self.run_lookup([record("Grey Mirage", "Paradox")],
-                                        {"Grey Mirage": [profile(1, "Nine Viscious")]})
+    def test_clearly_different_names_are_not_trusted(self):
+        # "BrightFlame" is the real nearest stranger to "BrightFox": reject it
+        results, _, _ = self.run_lookup([record("BrightFox", "Paradox")], {"BrightFox": [profile(1, "BrightFlame")]})
         self.assertEqual(results[0]["status"], "not found")
-        self.assertIn("Nine Viscious", results[0]["note"])
+        self.assertIn("BrightFlame", results[0]["note"])
+
+    def test_added_or_dropped_letters_are_not_treated_as_misreads(self):
+        # Real cases: correctly read names that a looser rule turned into strangers
+        for ocr, stranger in (("Kovas", "Kovmas"), ("Ravenl", "raven")):
+            results, _, _ = self.run_lookup([record(ocr, "Paradox")], {ocr: [profile(1, stranger)]})
+            self.assertEqual(results[0]["status"], "not found", ocr)
+            self.assertEqual(results[0]["player"], ocr)
+
+    def test_one_character_ocr_misread_is_corrected_and_flagged(self):
+        # Real case: OCR read "Or. Night Owl" for "Dr. Night Owl"
+        profiles = {"Or. Night Owl": [profile(1, "Dr. Night Owl")]}
+        results, _, _ = self.run_lookup([record("Or. Night Owl", "Paradox")], profiles)
+        r = results[0]
+        self.assertEqual(r["status"], "found")
+        self.assertEqual(r["player"], "Dr. Night Owl")
+        self.assertEqual(r["corrected_from"], "Or. Night Owl")
+        self.assertFalse(r["confident"])
 
     def test_found_player_gets_top_heroes_sorted_by_matches(self):
         stats = [stat(2, PARADOX, 8, wins=4), stat(2, GRAVES, 20, wins=14)]
@@ -101,7 +118,7 @@ class LookupLobbyTests(unittest.TestCase):
         stats = [stat(2, PARADOX, 25, wins=20), stat(2, GRAVES, 5)]
         results, _, _ = self.run_lookup([record("Solo", "Paradox")], {"Solo": [profile(2, "Solo")]}, stats)
         r = results[0]
-        self.assertEqual(r["rank"], {"name": "Emissary 2", "color": "#B47FEB"})
+        self.assertEqual(r["rank"], {"name": "Emissary 2", "color": "#B47FEB", "badge": 72})
         self.assertEqual(r["hero_stats"]["games"], 25)
         self.assertIn(("HIGH WR", "good"), r["badges"])
         self.assertTrue(r["confident"])
@@ -117,6 +134,18 @@ class LookupLobbyTests(unittest.TestCase):
             results, _ = lookup_lobby([record("Someone", "Paradox")], HERO_IDS, HERO_NAMES)
         self.assertEqual(results[0]["status"], "error")
         self.assertIn("timed out", results[0]["note"])
+
+
+
+class LooksLikeMisreadTests(unittest.TestCase):
+    def test_one_swapped_character(self):
+        self.assertTrue(looks_like_misread("Or. Night Owl", "Dr. Night Owl"))
+
+    def test_insertions_deletions_and_short_names_are_rejected(self):
+        self.assertFalse(looks_like_misread("Kovas", "Kovmas"))
+        self.assertFalse(looks_like_misread("Ravenl", "raven"))
+        self.assertFalse(looks_like_misread("Rem", "Ram"))           # too short to guess safely
+        self.assertFalse(looks_like_misread("BrightFox", "BrightBoy"))  # two characters different
 
 
 if __name__ == "__main__":

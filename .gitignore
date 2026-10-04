@@ -14,3 +14,6 @@ logs/
 
 # Private notes (interview prep etc.)
 notes/
+
+# Per-user app settings (window position, overlay mode)
+settings.json
