@@ -30,8 +30,11 @@ import keyboard
 from PIL import Image, ImageTk
 
 import deadlock_api
+from matchups import build_matchup
 from player_lookup import analyze_screenshot, search_player
-from report import TEAM_TITLES, badge_labels, hero_stats_text, most_played_text, team_summary
+from report import (TEAM_TITLES, badge_labels, hero_stats_text, items_text, matchup_kind, matchup_text,
+                    most_played_text, team_summary)
+from settings import get_me, load_settings, save_settings
 from screenshot_manager import capture_and_save_screenshot, delete_old_screenshots, get_screenshot_path
 from utils.logger import setup_logger
 
@@ -42,15 +45,15 @@ POLL_MS = 100
 CAPTURE_DELAY_MS = 150  # time for Windows to repaint after the overlay turns invisible
 OVERLAY_ALPHA = 0.9
 FONT = "Segoe UI"
-SETTINGS_FILE = "settings.json"  # window position/size and overlay mode, remembered between runs
 AVATAR_SIZE = 48
 
 COLORS = {
     "bg": "#0f1115", "header": "#161a22", "card": "#1c212b", "text": "#e8eaed", "dim": "#8b93a1",
     "friendly": "#4fc3f7", "enemy": "#ef5350", "search": "#9fa8da", "button": "#2a303c", "link": "#6fa8ff",
 }
-BADGE_COLORS = {"strong": "#f5b942", "good": "#43a047", "warn": "#e8711a", "info": "#4a5a6a"}
+BADGE_COLORS = {"strong": "#f5b942", "good": "#43a047", "warn": "#e8711a", "info": "#4a5a6a", "you": "#4fc3f7"}
 PARTY_COLORS = ["#ab47bc", "#26a69a", "#ffa726", "#5c6bc0"]
+MATCHUP_COLORS = {"good": "#43a047", "bad": "#e53935", "even": "#4a5a6a"}
 
 
 def text_color_for(background: str) -> str:
@@ -83,6 +86,7 @@ class AnalyzerApp:
         self.root = root
         self.events = queue.Queue()  # (kind, payload) messages from other threads
         self.busy = False
+        self.last_search = []
         # Steam avatars by URL. tkinter only displays an image while Python still holds a reference
         # to it, so they're kept here (an image held only by a local variable would vanish).
         self.avatars = {}
@@ -91,10 +95,11 @@ class AnalyzerApp:
         self.overlay = tk.BooleanVar(value=settings.get("overlay", False))
 
         root.title("Deadlock Analyzer")
-        root.geometry(settings.get("geometry", "1180x820"))
+        root.geometry(settings.get("geometry", "1180x880"))
         root.minsize(980, 640)
         root.configure(bg=COLORS["bg"])
         self._build_header()
+        self.strip = tk.Frame(root, bg=COLORS["header"], padx=14, pady=8)  # your matchup, when known
         self.body = tk.Frame(root, bg=COLORS["bg"])
         self.body.pack(fill="both", expand=True, padx=14, pady=(6, 14))
         self.show_message(f"Press {HOTKEY.upper()} in game with the Esc menu on the PLAYERS tab.\n\n"
@@ -174,6 +179,33 @@ class AnalyzerApp:
             for i in members:
                 self._card(frame, results[i], COLORS[team], *party_of.get(i, (None, None)))
 
+    def render_matchup(self, matchup):
+        """Bottom strip: your hero against each enemy hero, and popular items against this team."""
+        for widget in self.strip.winfo_children():
+            widget.destroy()
+        if not matchup:
+            self.strip.pack_forget()
+            return
+        self.strip.pack(side="bottom", fill="x", before=self.body)
+        top = tk.Frame(self.strip, bg=COLORS["header"])
+        top.pack(fill="x")
+        tk.Label(top, text=f"YOUR MATCHUP · {matchup['hero']}", bg=COLORS["header"], fg=COLORS["friendly"],
+                 font=(FONT, 11, "bold")).pack(side="left")
+        tk.Label(top, text=f"averages {matchup['average_win_rate']:.0%}   vs", bg=COLORS["header"],
+                 fg=COLORS["dim"], font=(FONT, 10)).pack(side="left", padx=(8, 6))
+        for m in matchup["matchups"]:  # toughest first
+            pill(top, matchup_text(m), MATCHUP_COLORS[matchup_kind(m["vs_average"])], size=9).pack(side="left", padx=(0, 4))
+        if matchup["items"]:
+            tk.Label(self.strip, text=items_text(matchup), bg=COLORS["header"], fg=COLORS["dim"],
+                     font=(FONT, 9), anchor="w").pack(fill="x", pady=(4, 0))
+
+    def fit_window(self):
+        """Grow the window if the content needs more height than it has (e.g. a small saved size)."""
+        self.root.update_idletasks()
+        needed = self.root.winfo_reqheight()
+        if self.root.state() == "normal" and self.root.winfo_height() < needed:
+            self.root.geometry(f"{self.root.winfo_width()}x{needed}")
+
     def render_search(self, query, results):
         """Manual search results: one card per matching account, in two columns."""
         self.clear_body()
@@ -239,6 +271,15 @@ class AnalyzerApp:
         if details:
             tk.Label(body, text=details, bg=bg, fg=COLORS["dim"], font=(FONT, 9), anchor="w").grid(
                 row=3, column=0, columnspan=2, sticky="w", pady=(3, 0))
+
+        # Search results: let the user mark their own account (their name may be shared)
+        if r["team"] == "search":
+            me = get_me()
+            is_me = me and me["account_id"] == r["account_id"]
+            link = tk.Label(body, text="This is you" if is_me else "This is me", bg=bg, cursor="hand2",
+                            fg=COLORS["friendly"] if is_me else COLORS["link"], font=(FONT, 9, "underline"))
+            link.grid(row=4, column=0, columnspan=2, sticky="w", pady=(3, 0))
+            link.bind("<Button-1>", lambda event: self.set_me(r))
 
         # Not found: offer a search, so the right account can be picked out by avatar and rank
         if r["status"] == "not found":
@@ -335,10 +376,19 @@ class AnalyzerApp:
         """Runs on a worker thread: no tkinter calls here, only queue messages."""
         try:
             progress = lambda message: self.events.put(("progress", message))
-            results, parties = analyze_screenshot(path, progress=progress)
+            results, parties = analyze_screenshot(path, progress=progress, me=get_me())
+            matchup = None
+            if any(r.get("is_me") for r in results):
+                progress("Loading your matchup...")
+                try:
+                    heroes = deadlock_api.fetch_heroes()
+                    matchup = build_matchup(results, {h["name"]: h["id"] for h in heroes},
+                                            {h["id"]: h["name"] for h in heroes})
+                except Exception:
+                    logger.exception("Matchup failed")  # the lobby report is still useful without it
             progress("Loading avatars...")
             images = download_images([r["avatar_url"] for r in results if r.get("avatar_url")])
-            self.events.put(("done", (path, results, parties, images)))
+            self.events.put(("done", (path, results, parties, images, matchup)))
         except Exception as e:
             logger.exception("Analysis failed")
             self.events.put(("error", str(e)))
@@ -364,6 +414,11 @@ class AnalyzerApp:
             logger.exception("Search failed")
             self.events.put(("error", str(e)))
 
+    def set_me(self, r):
+        save_settings({"me": {"name": r["player"], "account_id": r["account_id"]}})
+        self.set_status(f"Saved: you are {r['player']}. Your matchup will show in your next lobby.")
+        self.render_search(self.search_box.get().strip(), self.last_search)  # refresh the links
+
     def store_avatars(self, images: dict):
         """Turn downloaded avatar bytes into tkinter images (must run on the main thread)."""
         for url, data in images.items():
@@ -377,38 +432,26 @@ class AnalyzerApp:
 
     def show_search(self, query, results, images):
         self.busy = False
+        self.last_search = results
         self.store_avatars(images)
+        self.render_matchup(None)
         self.render_search(query, results)
+        self.fit_window()
         self.set_status(f"{len(results)} results  ·  {HOTKEY.upper()} for the lobby")
 
-    def show_report(self, path, results, parties, images):
+    def show_report(self, path, results, parties, images, matchup):
         self.busy = False
         self.store_avatars(images)
+        self.render_matchup(matchup)
         self.render(results, parties)
+        self.fit_window()
         self.set_status(f"{len(results)} players  ·  {HOTKEY.upper()} for a new screenshot")
         self.root.bell()  # audible cue when the report is ready while you're in game
 
     def close(self):
-        save_settings({"geometry": self.root.geometry(), "overlay": self.overlay.get()})
+        save_settings({"geometry": self.root.geometry(), "overlay": self.overlay.get()})  # merges, keeps "me"
         keyboard.unhook_all()
         self.root.destroy()
-
-
-def load_settings() -> dict:
-    """Saved window settings, or {} on first run (or if the file is unreadable)."""
-    try:
-        with open(SETTINGS_FILE, encoding="utf-8") as f:
-            return json.load(f)
-    except (OSError, ValueError):
-        return {}
-
-
-def save_settings(settings: dict) -> None:
-    try:
-        with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
-            json.dump(settings, f, indent=2)
-    except OSError as e:
-        logger.warning(f"Could not save settings ({e})")
 
 
 def main():

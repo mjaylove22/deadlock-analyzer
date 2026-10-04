@@ -123,6 +123,19 @@ class LookupLobbyTests(unittest.TestCase):
         self.assertIn(("HIGH WR", "good"), r["badges"])
         self.assertTrue(r["confident"])
 
+    def test_the_user_is_identified_from_settings_even_when_the_name_is_shared(self):
+        api = player_lookup.deadlock_api
+        profiles = {"Twin": [profile(1, "Twin"), profile(2, "Twin")]}   # strangers with the user's name
+        stats = [stat(1, PARADOX, 50)]                                   # a stranger plays the hero more
+        with patch.object(api, "get_profiles", return_value=[profile(2, "Twin")]) as get_profiles,              patch.object(api, "search_steam_profiles", side_effect=fake_search(profiles)),              patch.object(api, "get_hero_stats", return_value=stats),              patch.object(api, "fetch_rank_tiers", return_value=RANK_TIERS),              patch.object(api, "get_player_ranks", side_effect=lambda ids: [rank(a, 7, 2) for a in ids]):
+            results, _ = lookup_lobby([record("Twin", "Paradox")], HERO_IDS, HERO_NAMES,
+                                      me={"name": "Twin", "account_id": 2})
+        get_profiles.assert_called_once_with([2])
+        self.assertEqual(results[0]["account_id"], 2)
+        self.assertTrue(results[0]["is_me"])
+        self.assertTrue(results[0]["confident"])
+        self.assertEqual(results[0]["note"], "you (from settings)")
+
     def test_close_hero_history_call_is_marked_unsure(self):
         profiles = {"Twin": [profile(1, "Twin"), profile(2, "Twin")]}
         stats = [stat(1, PARADOX, 8), stat(2, PARADOX, 5)]  # the real "8 vs 5" case

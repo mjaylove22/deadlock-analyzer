@@ -18,6 +18,10 @@ For every player in the lobby, the app shows:
 
 Both teams sit side by side, so a full 6v6 lobby fits on one screen without scrolling.
 
+**Your matchup** (once the app knows which account is yours) appears in a strip at the bottom: your
+hero's win rate against each enemy hero, compared with your hero's average (red = harder than usual,
+green = easier), and the items most often bought by your hero against this enemy team.
+
 ## Ground rules
 
 The tool works **only from screenshots** and public web data. It does not read game memory, inject code,
@@ -52,6 +56,8 @@ Profile links are clickable.
 - **Analyze latest** re-runs the report on the newest screenshot; **Open screenshot...** picks any saved one.
 - **Search player:** type any Steam name to see every account with that name (avatar, rank, overall
   stats). A player the lookup couldn't find gets a **Search similar names** link.
+- **Tell the app who you are:** search your own Steam name and click **This is me** on your account.
+  You're then always identified exactly (even if others share your name), and your matchup appears.
 - Progress shows while it works ("Looking up player 5/12..."), and each team header sums up the team
   ("party of 3 · 2 new on hero · best rank Oracle 6").
 - Screenshots older than **7 days are deleted automatically** (except ones kept as test cases).
@@ -83,6 +89,8 @@ scoreboard_ocr.py    screenshot -> [{"player", "hero", "team"}]
 deadlock_api.py      thin client for the public Deadlock API
 identity.py          which same-named account is which; party detection
 player_lookup.py     whole-lobby lookup and command-line report
+matchups.py          your hero vs the enemy heroes, and popular items against them
+settings.py          settings.json: window layout and which account is you (stays on your PC)
 insights.py          stats on the current hero and badge rules
 report.py            wording shared by the terminal and the app
 tests/               unit tests (API calls are mocked)

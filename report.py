@@ -39,7 +39,7 @@ def most_played_text(r: Dict[str, Any]) -> str:
 
 def identity_text(r: Dict[str, Any]) -> str:
     """How the account was identified; empty when there was nothing to decide."""
-    if r["status"] != "found":
+    if r["status"] != "found" or r.get("is_me"):
         return ""
     fixed = f"OCR read {r['corrected_from']!r}; " if r.get("corrected_from") else ""
     if r["note"] == "unique name" and not fixed:
@@ -50,6 +50,8 @@ def identity_text(r: Dict[str, Any]) -> str:
 def badge_labels(r: Dict[str, Any]) -> List[Tuple[str, str]]:
     """The player's badges, plus how their account was identified when it wasn't a unique name."""
     labels = list(r["badges"])
+    if r.get("is_me"):
+        labels.insert(0, ("YOU", "you"))
     if r.get("corrected_from"):
         labels.append(("NAME FIXED", "info"))
     if r["status"] == "found":
@@ -75,6 +77,27 @@ def team_summary(team_results: List[Dict[str, Any]], team_parties: List[List[int
     if ranked:
         parts.append("best rank " + max(ranked, key=lambda rank: rank["badge"])["name"])
     return " · ".join(parts)
+
+
+MATCHUP_NOTABLE = 0.03  # 3 points above/below the hero's average counts as a good/bad matchup
+
+
+def matchup_kind(vs_average: float) -> str:
+    """"good", "bad" or "even" for colouring a matchup."""
+    if vs_average >= MATCHUP_NOTABLE:
+        return "good"
+    if vs_average <= -MATCHUP_NOTABLE:
+        return "bad"
+    return "even"
+
+
+def matchup_text(m: Dict[str, Any]) -> str:
+    """e.g. "Victor 43% (-7)": win rate, and points above/below the hero's average."""
+    return f"{m['enemy_hero']} {m['win_rate']:.0%} ({m['vs_average'] * 100:+.0f})"
+
+
+def items_text(matchup: Dict[str, Any]) -> str:
+    return "Popular vs this team: " + " · ".join(f"{i['name']} ({i['win_rate']:.0%})" for i in matchup["items"])
 
 
 def build_report(results: List[Dict[str, Any]], parties: List[List[int]]) -> List[Line]:

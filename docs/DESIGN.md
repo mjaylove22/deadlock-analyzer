@@ -27,6 +27,8 @@ screenshot ──► crop ──► Tesseract OCR ──► lines + positions �
 | `identity.py` | Decide which same-named account is which; detect parties. Pure logic, no network | standard library only |
 | `player_lookup.py` | Fetch candidates and stats for the whole lobby; `analyze_screenshot()` runs the full pipeline | `scoreboard_ocr`, `deadlock_api`, `identity` |
 | `insights.py` | Stats on the current hero and badge rules (one-trick, new on hero, ...). Pure logic, no network | standard library only |
+| `matchups.py` | Your hero vs the enemy heroes (relative to the hero's average) and popular items against them | `deadlock_api` |
+| `settings.py` | settings.json (gitignored): window layout and which account is you; saving merges | standard library only |
 | `report.py` | Report lines shared by the terminal and the app, so the two can't drift apart | standard library only |
 | `tests/` | Unit tests for parsing and lookup logic; the API is mocked | `unittest` (standard library) |
 | `utils/logger.py` | One place to configure logging to `logs/app.log` and the console | standard library |
@@ -133,14 +135,20 @@ Teams sit side by side with one card per player. Whether a full lobby fits was *
 - **Manual search** shows every account with the exact name (or the closest names), so a person can tell them apart by avatar, rank and stats.
 - **Why some players are never found:** one real "not found" player had no exact match in search, and none of the 196 friends of their identified teammates had that name either. The account simply isn't in the API's database, so no name-based method can find it. Valve's own match data (match ID → metadata, after the match) is the only fix for that case.
 
-### 4.13 Housekeeping
+### 4.13 Knowing who "you" are, and your matchup
+- The user's own account (name + exact account ID) is stored in `settings.json`, which is gitignored. A lobby player with that name is identified as that account with certainty, which fixed a real case where a stranger sharing the author's name had more games on the hero being played. Saving settings **merges** into the file, so the app's window settings (saved on close) and "me" can't erase each other.
+- **Matchups** come from one request returning every hero-vs-hero pair. A strong hero wins most matchups (one new hero won 57-65% against everyone), so each matchup is compared with **the hero's own average**, not with 50%.
+- **Items** are the ones most often bought by the user's hero *against this enemy team* (the API filters by enemy heroes), with win rates shown but not used for ranking: an item's win rate is inflated when mostly players who are already winning can afford it, so ranking by win rate would always recommend expensive late items.
+- Lanes are deliberately left out: the scoreboard doesn't show them.
+
+### 4.14 Housekeeping
 - Screenshots older than 7 days are deleted at startup and after each capture. Only files named like the app's own captures are touched, and a screenshot with an `.expected.json` (a regression test case) is never deleted.
 - Hero and rank lists are cached for the life of the app (`functools.lru_cache`); a failed request isn't cached, so it's retried next time.
 - The analysis reports progress through a callback, so the lookup code doesn't need to know about the window.
 
 ## 5. Testing
 
-`python -m unittest discover -s tests -v` runs 64 tests in about a second:
+`python -m unittest discover -s tests -v` runs 76 tests in about a second:
 - **Parser tests** use OCR output actually produced from real screenshots, including a noisy version, plus edge cases: headers, noise-only lines, duplicate player names, multi-word heroes, hero lines with nothing above them.
 - **Identity tests** use plain data to cover settling by unique name, friend links (including links listed by only one side and chains of settled players), ties falling back to hero history, and party grouping.
 - **Insights tests** cover each badge rule and its thresholds.

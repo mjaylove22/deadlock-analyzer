@@ -2,7 +2,7 @@
 
 import unittest
 
-from report import badge_labels, build_report, hero_stats_text, team_summary
+from report import badge_labels, build_report, hero_stats_text, matchup_kind, matchup_text, team_summary
 
 
 def result(player, hero, team, status="found", note="unique name", url=None, top=(), stats=None,
@@ -64,6 +64,20 @@ class WordingTests(unittest.TestCase):
         fixed["corrected_from"] = "Or. E"
         self.assertEqual(badge_labels(fixed), [("NAME FIXED", "info"), ("ID UNSURE", "warn")])
 
+
+
+class MatchupWordingTests(unittest.TestCase):
+    def test_text_and_kind(self):
+        m = {"enemy_hero": "Victor", "win_rate": 0.43, "vs_average": -0.07}
+        self.assertEqual(matchup_text(m), "Victor 43% (-7)")
+        self.assertEqual(matchup_kind(-0.07), "bad")
+        self.assertEqual(matchup_kind(0.04), "good")
+        self.assertEqual(matchup_kind(0.01), "even")
+
+    def test_you_badge_comes_first(self):
+        r = result("Me", "Lash", "friendly")
+        r["is_me"] = True
+        self.assertEqual(badge_labels(r)[0], ("YOU", "you"))
 
 
 class TeamSummaryTests(unittest.TestCase):

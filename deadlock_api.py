@@ -57,6 +57,34 @@ def fetch_rank_tiers() -> Dict[int, Dict[str, str]]:
     return {tier["tier"]: {"name": tier["name"], "color": tier["color"]} for tier in get_json("/v1/assets/ranks")}
 
 
+def get_profiles(account_ids: List[int]) -> List[Dict[str, Any]]:
+    """Steam profiles (same shape as search results) for specific accounts."""
+    return get_json("/v1/players/steam", {"account_ids": ",".join(str(a) for a in account_ids)})
+
+
+@functools.lru_cache(maxsize=None)
+def fetch_counter_stats() -> List[Dict[str, Any]]:
+    """Every hero-vs-hero pair: {"hero_id", "enemy_hero_id", "wins", "matches_played", ...}, all ranks."""
+    return get_json("/v1/analytics/hero-counter-stats")
+
+
+def get_item_stats(hero_id: int, enemy_hero_ids: List[int]) -> List[Dict[str, Any]]:
+    """Per-item {"item_id", "wins", "losses", "matches"} for one hero, in matches against these enemy heroes."""
+    return get_json("/v1/analytics/item-stats",
+                    {"hero_id": hero_id, "enemy_hero_ids": ",".join(str(h) for h in enemy_hero_ids)})
+
+
+@functools.lru_cache(maxsize=None)
+def fetch_items() -> Dict[int, Dict[str, Any]]:
+    """Shop items by id: {"name", "slot", "tier", "cost"}. Only buyable upgrades (not abilities etc.)."""
+    return {
+        item["id"]: {"name": item["name"], "slot": item.get("item_slot_type"),
+                     "tier": item.get("item_tier"), "cost": item.get("cost")}
+        for item in get_json("/v1/assets/items")
+        if item.get("type") == "upgrade" and item.get("shopable")
+    }
+
+
 def get_player_ranks(account_ids: List[int]) -> List[Dict[str, Any]]:
     """Rank after each player's latest ranked match: {"account_id", "rank" (tier), "subrank", ...}.
 
