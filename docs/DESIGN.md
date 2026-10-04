@@ -255,9 +255,18 @@ Checked against a real Street Brawl lobby where 2 of 8 players weren't found:
 - **Bringing the window forward without stealing focus:** a window that takes keyboard focus can minimise a fullscreen game. `pop_up()` uses `ShowWindow(SW_SHOWNOACTIVATE)` and `SetWindowPos` with `SWP_NOACTIVATE`: topmost for a moment, then back to normal unless overlay mode is on. Tested with the game focused: the window came back from minimised and the game kept focus.
 - With badges off, how an account was identified (ID UNSURE, NAME FIXED, YOU, PARTY) still shows: those are about whether to trust the card, not decoration.
 
+### 4.29 The matchup page
+- **The ask:** the lobby's matchup line (your hero's win rate against each enemy hero, and the most-bought items) was "basic and not absorbable". It's now a summary strip with a verdict (FAVOURABLE / EVEN / TOUGH) that opens a full page: an overall read, your hero with each ally's hero (synergy), and a card per enemy, toughest first.
+- **Each enemy card puts the hero and the player together:** the player's games, win rate and badges on that hero (red when they're dangerous: 20+ games at 55%+), then bars from your hero's average for the matchup overall and in lane, your K/D/A against them compared with usual, and three counter items.
+- **Counter items by lift, not popularity:** "win rate when bought" favours expensive late items, because only games that last long enough buy them. Each item is compared with itself: its win rate in these matches minus its usual win rate, minus how much the matchup moves every win rate. Items need 500+ games to be judged.
+- **A bug the page exposed:** the "in lane" numbers equalled the overall ones. The API's `same_lane_filter` **defaults to true** (in the spec, but easy to miss), so every matchup in the app (hero pages, the lobby strip) had been lane-only: 17,491 Paige vs Warden games instead of 67,873. It's now always sent explicitly, with a regression test.
+- **Light by loading late:** the page's 7-11 requests (matchups overall and in lane, synergy, item stats overall, against the team and against each enemy) run together only when the page is opened, each reused for an hour. The lobby itself still makes one matchup request.
+- **Street Brawl:** a 4v4 lobby uses Street Brawl stats for the strip and the page (before, the strip used normal-mode numbers), and hides the lane row: there's one lane.
+- Checking the page without disturbing the user's game: test windows open on the second monitor behind other windows and are captured with `PrintWindow`, which draws a window into an image even when it's covered.
+
 ## 5. Testing
 
-`python -m unittest discover -s tests -v` runs 143 tests in a few seconds:
+`python -m unittest discover -s tests -v` runs 148 tests in a few seconds:
 - **Parser tests** use OCR output actually produced from real screenshots, including a noisy version, plus edge cases: headers, noise-only lines, duplicate player names, multi-word heroes, hero lines with nothing above them.
 - **Identity tests** use plain data to cover settling by unique name, friend links (including links listed by only one side and chains of settled players), ties falling back to hero history, and party grouping.
 - **Insights tests** cover each badge rule and its thresholds.

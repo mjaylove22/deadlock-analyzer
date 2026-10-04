@@ -90,6 +90,14 @@ class ResponseCacheTests(unittest.TestCase):
         self.assertNotIn("match_mode", get_json.call_args_list[0].args[1])
         self.assertEqual(get_json.call_args_list[1].args[1]["match_mode"], "ranked")
 
+    def test_matchups_cover_all_games_unless_asked_for_lanes(self):
+        # Regression: the API's same_lane_filter defaults to true, so leaving it out silently
+        # counted only games where the two heroes laned against each other
+        with patch.object(deadlock_api, "get_json", return_value=[]) as get_json:
+            deadlock_api.fetch_counter_stats("normal")
+            deadlock_api.fetch_counter_stats("normal", same_lane=True)
+        self.assertEqual([c.args[1]["same_lane_filter"] for c in get_json.call_args_list], ["false", "true"])
+
     def test_badge_range_covers_whole_tiers(self):
         self.assertEqual(deadlock_api.badge_range((7, 9)), {"min_average_badge": 70, "max_average_badge": 99})
         self.assertEqual(deadlock_api.badge_range(None), {})

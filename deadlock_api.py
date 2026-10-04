@@ -202,10 +202,20 @@ def get_profiles(account_ids: List[int]) -> List[Dict[str, Any]]:
     return get_json("/v1/players/steam", {"account_ids": ",".join(str(a) for a in account_ids)})
 
 
-def fetch_counter_stats(game_mode: str = "normal", ranks: tuple = None) -> List[Dict[str, Any]]:
-    """Every hero-vs-hero pair: {"hero_id", "enemy_hero_id", "wins", "matches_played", ...}.
+def fetch_counter_stats(game_mode: str = "normal", ranks: tuple = None, same_lane: bool = False) -> List[Dict[str, Any]]:
+    """Every hero-vs-hero pair: {"hero_id", "enemy_hero_id", "wins", "matches_played", and both sides'
+    totals: "kills"/"enemy_kills", "deaths", "assists", "networth"...}. same_lane: only games where
+    the two heroes were assigned the same lane, i.e. laned against each other.
+    Always sent explicitly: the API's default is same lane only (a quarter of the games), which the
+    app used by mistake for all its matchups until this was checked against the spec.
     The server recomputes these hourly, so they're reused for an hour."""
-    return get_json("/v1/analytics/hero-counter-stats", {"game_mode": game_mode, **badge_range(ranks)}, max_age=3600)
+    params = {"game_mode": game_mode, **badge_range(ranks), "same_lane_filter": "true" if same_lane else "false"}
+    return get_json("/v1/analytics/hero-counter-stats", params, max_age=3600)
+
+
+def get_synergy_stats(game_mode: str = "normal") -> List[Dict[str, Any]]:
+    """Every pair of heroes on the same team: {"hero_id1", "hero_id2", "wins", "matches_played", ...}."""
+    return get_json("/v1/analytics/hero-synergy-stats", {"game_mode": game_mode}, max_age=3600)
 
 
 def get_item_stats(hero_id: int, enemy_hero_ids: List[int] = (), game_mode: str = "normal",

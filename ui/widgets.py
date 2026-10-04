@@ -276,16 +276,25 @@ def data_table(parent, columns: Sequence[Column], rows: List[Dict[str, Any]], he
     return tree
 
 
-def matchup_strip(parent, matchup: Dict[str, Any]) -> ctk.CTkFrame:
-    """Your hero against each enemy hero (vs your hero's average), and popular items against them."""
-    outer, inner = card(parent, padding=9, fill="surface")
+def matchup_strip(parent, matchup: Dict[str, Any], on_open: Optional[Callable[[], None]] = None) -> ctk.CTkFrame:
+    """A summary of your matchup: the overall read, your hero against each enemy hero, and items
+    popular against them. on_open: clicking it opens the full matchup page."""
+    outer, inner = card(parent, padding=9, fill="surface", hoverable=on_open is not None)
     top = tk.Frame(inner, bg=COLORS["surface"])
     top.pack(fill="x")
     hero_label(top, matchup["hero"], "surface", size=26, font_size=11).pack(side="left")
-    label(top, f"  YOUR MATCHUP · averages {matchup['average_win_rate']:.0%}   vs", color="dim", bg="surface").pack(side="left", padx=(0, 8))
+    shift = matchup.get("expected", matchup["average_win_rate"]) - matchup["average_win_rate"]
+    word = "FAVOURABLE" if shift >= 0.01 else "TOUGH" if shift <= -0.01 else "EVEN"
+    label(top, f"  YOUR MATCHUP", color="dim", bg="surface").pack(side="left")
+    pill(top, f"{word} {shift * 100:+.1f}", MATCHUP_COLORS["good" if shift >= 0.01 else "bad" if shift <= -0.01 else "even"],
+         size=9).pack(side="left", padx=(8, 10))
+    label(top, "vs", color="dim", bg="surface").pack(side="left", padx=(0, 6))
     for m in matchup["matchups"]:  # toughest first
         pill(top, matchup_text(m), MATCHUP_COLORS[matchup_kind(m["vs_average"])], size=9,
              image=images.hero_badge(m["enemy_hero"], 18, kind="ctk")).pack(side="left", padx=(0, 5))
+    if on_open:
+        label(top, "Full matchup  >", size=10, bold=True, color="link", bg="surface", cursor="hand2").pack(side="right")
+        outer.after_idle(lambda: bind_click(outer, on_open))
     if matchup["items"]:
         row = tk.Frame(inner, bg=COLORS["surface"])
         row.pack(fill="x", pady=(5, 0))

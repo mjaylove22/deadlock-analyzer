@@ -14,7 +14,7 @@ from typing import Any, Dict
 import assets
 import deadlock_api
 from match_review import REVIEW_STATS, MatchUnavailable, match_review
-from matchups import hero_breakdown
+from matchups import hero_breakdown, matchup_details
 from player_lookup import search_player
 from profiles import (API_GAME_MODES, LOW_SAMPLE_GAMES, MATCH_TYPES, RANK_BANDS, hero_rank_curve, hero_tier_list, hero_trends,
                       player_profile, teammates, when)
@@ -24,8 +24,8 @@ from ui import images
 from ui.theme import (BADGE_COLORS, COLORS, ITEM_SLOT_COLORS, MATCHUP_COLORS, PARTY_COLORS, button, card, dropdown,
                       label, pill, segmented, switch)
 from version import __version__
-from ui.charts import (ChartTable, Column, change_text, change_tip, hero_cell, trend_cell, trend_chart, trend_color,
-                       trend_tip)
+from ui.charts import (ChartTable, Column, advantage_bar, change_text, change_tip, hero_cell, trend_cell, trend_chart,
+                       trend_color, trend_tip, verdict)
 from ui.widgets import item_tile, item_tooltip_text, tooltip
 from ui.widgets import bind_click, data_table, hero_label, matchup_strip, player_card, rank_pill
 
@@ -219,7 +219,8 @@ class LobbyPage(Page):
 
         show = get_preferences()
         if lobby.get("matchup") and show["show_matchup"]:
-            matchup_strip(self.frame, lobby["matchup"]).pack(side="bottom", fill="x", pady=(6, 0))
+            matchup_strip(self.frame, lobby["matchup"], on_open=lambda: self.app.navigate(MatchupPage)).pack(
+                side="bottom", fill="x", pady=(6, 0))
         results, parties = lobby["results"], lobby["parties"]
         party_of = {i: (PARTY_COLORS[n % len(PARTY_COLORS)], f"PARTY {chr(65 + n)}")
                     for n, party in enumerate(parties) for i in party}
@@ -240,6 +241,191 @@ class LobbyPage(Page):
                 r = results[i]
                 player_card(frame, r, COLORS[team], self.app.avatars, party=party_of.get(i), show=show,
                             on_open=lambda r=r: self.app.open_player(r["account_id"]), on_search=self.app.search)
+
+
+def counter_item_tip(item: Dict[str, Any], against: str) -> str:
+    lines = [item["name"], f"{item['win_rate']:.0%} win rate against {against}, {item['usual_win_rate']:.0%} usually",
+             f"About {item['lift'] * 100:+.1f} points beyond what the matchup itself does"]
+    if item.get("bought_share"):
+        lines.append(f"Bought in {item['bought_share']:.0%} of these games")
+    return "\n".join(lines)
+
+
+class MatchupPage(Page):
+    """Your hero against this lobby: the overall read, each enemy (hero and player), and what to buy."""
+    nav = "lobby"
+
+    def build(self):
+        lobby = self.app.lobby
+        matchup = lobby.get("matchup") if lobby else None
+        if not matchup:
+            self.heading("Your matchup")
+            self.message("Your matchup appears here once you're in a lobby and the app knows your account\n"
+                         "(search your Steam name, open your page, and click \"Set as my account\").")
+            return
+        results = lobby["results"]
+        me = next(r for r in results if r.get("is_me"))
+        ids = {name: hero_id for hero_id, name in self.app.hero_names_by_id().items()}
+        enemies = [r for r in results if r["team"] != me["team"] and r["hero"] in ids]
+        allies = [r for r in results if r["team"] == me["team"] and not r.get("is_me") and r["hero"] in ids]
+        key = ("matchup", lobby["time"])
+        if key in self.app.cache:
+            self.show(self.app.cache[key], matchup, me, enemies, allies, ids)
+            return
+        self.message(f"Loading your {me['hero']} matchup...")
+
+        def work():
+            details = matchup_details(ids[me["hero"]], [ids[r["hero"]] for r in enemies],
+                                      [ids[r["hero"]] for r in allies], matchup.get("game_mode", "normal"))
+            shown = details["team_items"] + [i for e in details["enemies"] for i in e.get("counter_items", [])]
+            deadlock_api.parallel(lambda: assets.load_many((i["image"] for i in shown), assets.ITEM_MAX_SIDE),
+                                  lambda: assets.load(images.hero_card_url(me["hero"]), assets.PORTRAIT_MAX_SIDE))
+            return details
+
+        def done(details):
+            self.app.cache[key] = details
+            self.show(details, matchup, me, enemies, allies, ids)
+
+        def failed(error):
+            self.clear(self.frame)
+            self.heading("Your matchup")
+            self.unavailable(self.frame, "your matchup", bg="bg")
+        self.app.run_task(work, done, failed)
+
+    def show(self, d, matchup, me, enemy_results, ally_results, ids):
+        self.clear(self.frame)
+        hero = me["hero"]
+        names = {hero_id: name for name, hero_id in ids.items()}
+        players = {ids[r["hero"]]: r for r in enemy_results + ally_results}  # each hero is in a match once
+        mode = "Street Brawl" if d["game_mode"] == "street_brawl" else "normal"
+        shift = d["expected"] - d["average_win_rate"]
+        word, kind = verdict(shift)
+
+        # The overall read
+        outer, top = card(self.frame, padding=14)
+        outer.pack(fill="x")
+        portrait = images.hero_card(hero, 96)
+        if portrait:
+            tk.Label(top, image=portrait, bg=COLORS["card"]).pack(side="left", padx=(0, 16))
+        summary = tk.Frame(top, bg=COLORS["card"])
+        summary.pack(side="left", fill="y")
+        label(summary, "YOUR MATCHUP", size=9, color="dim", bold=True, bg="card").pack(anchor="w")
+        label(summary, f"{hero} vs this team", size=20, heading=True, bg="card",
+              color=images.readable_on_dark(images.hero_color(hero))).pack(anchor="w")
+        line = tk.Frame(summary, bg=COLORS["card"])
+        line.pack(anchor="w", pady=(4, 4))
+        label(line, f"≈ {d['expected']:.1%}", size=18, bold=True, bg="card",
+              color={"good": "win", "bad": "loss", "even": "text"}[kind]).pack(side="left")
+        pill(line, f"{word} {shift * 100:+.1f}", MATCHUP_COLORS[kind], size=10).pack(side="left", padx=10)
+        label(summary, f"Your {hero} wins {d['average_win_rate']:.1%} of {mode} games; against these heroes, about "
+                       f"{shift * 100:+.1f} points. A rough read: the players matter more than the heroes.",
+              size=9, color="dim", bg="card", justify="left", wraplength=470).pack(anchor="w")
+        if d["allies"]:
+            team = tk.Frame(top, bg=COLORS["card"])
+            team.pack(side="right", anchor="n")
+            label(team, "WITH YOUR TEAM", size=9, color="dim", bold=True, bg="card").pack(anchor="e", pady=(0, 6))
+            for a in d["allies"]:
+                row = tk.Frame(team, bg=COLORS["card"])
+                row.pack(anchor="e", pady=2)
+                ally = names.get(a["hero_id"], "?")
+                hero_label(row, ally, "card", size=22, color=COLORS["text"]).pack(side="left", padx=(0, 8))
+                faded = a["games"] < LOW_SAMPLE_GAMES
+                advantage_bar(row, a["vs_average"], width=90, faded=faded).pack(side="left", padx=(0, 6))
+                label(row, f"{a['vs_average'] * 100:+.1f}", size=9, bold=True, bg="card",
+                      color="faint" if faded else "win" if a["vs_average"] >= 0 else "loss", width=5, anchor="e").pack(side="left")
+                tooltip(row, f"{hero} with {ally}: {a['win_rate']:.1%} win rate in {a['games']:,} games\n"
+                             f"({a['vs_average'] * 100:+.1f} vs your {hero}'s average)" + ("\nFew games: take it lightly" if faded else ""))
+
+        # Each enemy, toughest first
+        label(self.frame, "AGAINST EACH ENEMY  ·  toughest first  ·  bars: your win rate against their hero, "
+                          "from your usual (the middle line)", size=9, color="dim", bold=True).pack(anchor="w", pady=(12, 4))
+        grid = tk.Frame(self.frame, bg=COLORS["bg"])
+        grid.pack(fill="x")
+        per_row = 3 if len(d["enemies"]) > 4 else 2  # 6v6: two rows of three, so the whole page fits
+        grid.columnconfigure(tuple(range(per_row)), weight=1, uniform="enemies")
+        for n, e in enumerate(d["enemies"]):
+            box_outer, box = card(grid, padding=10)
+            column = n % per_row
+            box_outer.grid(row=n // per_row, column=column, sticky="nsew", pady=4,
+                           padx=(0 if column == 0 else 5, 0 if column == per_row - 1 else 5))
+            self.enemy_card(box, e, players.get(e["hero_id"]), names.get(e["hero_id"], "?"), hero, d)
+
+        # What to buy against the whole team
+        if d["team_items"]:
+            shelf_outer, shelf = card(self.frame, padding=12)
+            shelf_outer.pack(fill="x", pady=(8, 0))
+            label(shelf, "BUY AGAINST THIS TEAM", size=9, color="dim", bold=True, bg="card").pack(anchor="w")
+            label(shelf, "items that win more than they usually do against these heroes (hover for details)",
+                  size=9, color="faint", bg="card").pack(anchor="w", pady=(0, 8))
+            row = tk.Frame(shelf, bg=COLORS["card"])
+            row.pack(fill="x")
+            for item in d["team_items"]:
+                cell = tk.Frame(row, bg=COLORS["card"])
+                cell.pack(side="left", padx=(0, 18))
+                tk.Label(cell, image=images.item_icon(item, 34), bg=COLORS["card"]).pack(side="left", padx=(0, 8))
+                text = tk.Frame(cell, bg=COLORS["card"])
+                text.pack(side="left")
+                label(text, item["name"], size=10, bg="card").pack(anchor="w")
+                label(text, f"{item['lift'] * 100:+.1f} vs usual", size=9, bold=True, color="win", bg="card").pack(anchor="w")
+                tooltip(cell, counter_item_tip(item, "this team"))
+        self.app.set_status(f"{hero} vs this team · hover bars and items for the numbers")
+
+    def enemy_card(self, box, e, player, enemy, hero, d):
+        head = tk.Frame(box, bg=COLORS["card"])
+        head.pack(fill="x")
+        hero_label(head, enemy, "card", size=30, font_size=12).pack(side="left")
+        if player:
+            label(head, f"  {player['player']}", color="dim", bg="card").pack(side="left")
+            rp = rank_pill(head, player.get("rank"))
+            if rp:
+                rp.pack(side="right")
+        # The player on this hero: how dangerous are they?
+        threat = tk.Frame(box, bg=COLORS["card"])
+        threat.pack(fill="x", pady=(4, 6))
+        stats = (player or {}).get("hero_stats")
+        if player and player["status"] == "found" and stats:
+            danger = stats["games"] >= 20 and stats["win_rate"] >= 0.55
+            label(threat, f"{stats['games']} game{'' if stats['games'] == 1 else 's'} on {enemy} · {stats['win_rate']:.0%} WR · {stats['kda']:.1f} KDA",
+                  size=9, color="loss" if danger else "text", bold=danger, bg="card").pack(side="left")
+            for text, kind in player["badges"][:2]:
+                pill(threat, text, BADGE_COLORS[kind], size=8).pack(side="left", padx=(6, 0))
+        else:
+            label(threat, f"First recorded game on {enemy}" if player and player["status"] == "found" else "Player not identified",
+                  size=9, color="faint", bg="card").pack(side="left")
+
+        if e["win_rate"] is None:
+            label(box, f"Too few {hero} vs {enemy} games to judge", size=9, color="faint", bg="card").pack(anchor="w")
+            return
+        rows = [("Matchup", e["win_rate"], e["vs_average"], e["games"])]
+        if d["game_mode"] == "normal" and e["lane_win_rate"] is not None:
+            rows.append(("In lane", e["lane_win_rate"], e["lane_vs_average"], e["lane_games"]))
+        for title, win_rate, shift, games in rows:
+            row = tk.Frame(box, bg=COLORS["card"])
+            row.pack(fill="x", pady=1)
+            label(row, title, size=9, color="dim", bg="card", width=7, anchor="w").pack(side="left")
+            faded = games < LOW_SAMPLE_GAMES
+            advantage_bar(row, shift, width=120, faded=faded).pack(side="left", padx=(0, 8))
+            label(row, f"{win_rate:.1%}", size=10, bold=True, bg="card").pack(side="left")
+            label(row, f"  {shift * 100:+.1f}", size=9, bold=True, bg="card",
+                  color="faint" if faded else "win" if shift >= 0 else "loss").pack(side="left")
+            where = "when laning against them" if title == "In lane" else "in all games together"
+            tooltip(row, f"{hero} vs {enemy} {where}: {win_rate:.1%} in {games:,} games\n"
+                         f"{shift * 100:+.1f} vs your {hero}'s average of {d['average_win_rate']:.1%}")
+        if e["kda"] and d["usual_kda"]:
+            kills, deaths, assists = e["kda"]
+            usual = d["usual_kda"]
+            label(box, f"Your K/D/A vs them {kills:.1f}/{deaths:.1f}/{assists:.1f}  ·  usually {usual[0]:.1f}/{usual[1]:.1f}/{usual[2]:.1f}",
+                  size=9, color="dim", bg="card").pack(anchor="w", pady=(4, 0))
+        if e["counter_items"]:
+            row = tk.Frame(box, bg=COLORS["card"])
+            row.pack(fill="x", pady=(6, 0))
+            label(row, "Buy vs them", size=9, color="dim", bg="card").pack(side="left", padx=(0, 8))
+            for item in e["counter_items"]:
+                cell = tk.Frame(row, bg=COLORS["card"])
+                cell.pack(side="left", padx=(0, 10))
+                tk.Label(cell, image=images.item_icon(item, 24), bg=COLORS["card"]).pack(side="left", padx=(0, 4))
+                label(cell, f"{item['lift'] * 100:+.1f}", size=9, bold=True, color="win", bg="card").pack(side="left")
+                tooltip(cell, counter_item_tip(item, enemy))
 
 
 class SearchPage(Page):

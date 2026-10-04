@@ -57,11 +57,42 @@ class BuildMatchupTests(unittest.TestCase):
         matchup, items = self.build(results)
         self.assertEqual(matchup["hero"], "Me")
         self.assertEqual([m["enemy_hero"] for m in matchup["matchups"]], ["A"])
-        items.assert_called_once_with(ME, [A])
+        self.assertEqual(items.call_args.args[:2], (ME, [A]))
+
+    def test_four_a_side_is_street_brawl_and_six_is_normal(self):
+        def lobby(per_team):
+            return [{"team": team} for team in ("friendly", "enemy") for _ in range(per_team)]
+        self.assertEqual(matchups.lobby_mode(lobby(4)), "street_brawl")
+        self.assertEqual(matchups.lobby_mode(lobby(6)), "normal")
 
     def test_none_when_the_user_is_not_in_the_lobby(self):
         matchup, _ = self.build([{"hero": "A", "team": "enemy"}])
         self.assertIsNone(matchup)
+
+
+def item_stat(item_id, wins, matches):
+    return {"item_id": item_id, "wins": wins, "matches": matches}
+
+
+class ItemLiftTests(unittest.TestCase):
+    ITEMS = {1: {"name": "Late Big Item"}, 2: {"name": "Counter Item"}, 3: {"name": "Rare Item"}}
+
+    def test_items_are_compared_with_themselves_and_the_matchup(self):
+        usual = [item_stat(1, 6000, 10000), item_stat(2, 5000, 10000), item_stat(3, 50, 100)]
+        # A hard matchup (-2 points for the hero): the late item keeps its usual edge over that, the
+        # counter item gains 4 points on its usual, and the rare item has too few games to judge
+        here = [item_stat(1, 580, 1000), item_stat(2, 520, 1000), item_stat(3, 90, 100)]
+        lifted = matchups.item_lift(here, usual, self.ITEMS, matchup_shift=-0.02, games=4000)
+        self.assertEqual([i["name"] for i in lifted], ["Counter Item"])
+        self.assertAlmostEqual(lifted[0]["lift"], 0.04)
+        self.assertAlmostEqual(lifted[0]["bought_share"], 0.25)
+
+    def test_nothing_to_compare_gives_nothing(self):
+        self.assertEqual(matchups.item_lift(None, [], self.ITEMS, 0.0), [])
+
+    def test_expected_win_rate_adds_the_average_shift(self):
+        self.assertAlmostEqual(matchups.expected_win_rate(0.55, [{"vs_average": -0.02}, {"vs_average": 0.04}]), 0.56)
+        self.assertEqual(matchups.expected_win_rate(0.55, []), 0.55)
 
 
 class HeroBreakdownTests(unittest.TestCase):

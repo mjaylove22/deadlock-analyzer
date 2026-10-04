@@ -283,6 +283,33 @@ def trend_tip(total_weeks: int):
     return tip
 
 
+# --- matchups
+ADVANTAGE_SCALE = 0.06  # an advantage bar is full at 6 points better (or worse) than the hero's average
+
+
+def verdict(shift: float) -> Tuple[str, str]:
+    """(word, MATCHUP_COLORS key) for how a whole matchup shifts the hero's average win rate."""
+    if shift >= 0.01:
+        return "FAVOURABLE", "good"
+    if shift <= -0.01:
+        return "TOUGH", "bad"
+    return "EVEN", "even"
+
+
+def advantage_bar(parent, shift: float, bg: str = "card", width: int = 150, height: int = 12,
+                  faded: bool = False) -> tk.Canvas:
+    """A bar out from the middle line (the hero's own average): right and green when better than
+    usual, left and red when worse. Faded when it rests on few games."""
+    canvas = tk.Canvas(parent, width=width, height=height, bg=COLORS[bg], highlightthickness=0)
+    middle = width / 2
+    canvas.create_rectangle(0, 2, width, height - 2, fill=COLORS["button"], outline="")
+    end = middle + max(-1.0, min(1.0, shift / ADVANTAGE_SCALE)) * (middle - 1)
+    canvas.create_rectangle(min(middle, end), 1, max(middle, end), height - 1, outline="",
+                            fill=COLORS["win"] if shift >= 0 else COLORS["loss"], stipple="gray50" if faded else "")
+    canvas.create_line(middle, 0, middle, height, fill=COLORS["text"])
+    return canvas
+
+
 # --- the hero page's chart
 def trend_chart(parent, hero: str, trend: Dict[str, Any], total_weeks: int, bg: str = "card",
                 height: int = 92) -> tk.Canvas:
