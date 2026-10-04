@@ -11,3 +11,6 @@ logs/
 # Local AI-tool settings
 .qwen/
 .claude/
+
+# Private notes (interview prep etc.)
+notes/

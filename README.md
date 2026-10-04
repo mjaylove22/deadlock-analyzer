@@ -64,7 +64,12 @@ scoreboard_ocr.py    screenshot -> [{"player", "hero", "team"}]
 deadlock_api.py      thin client for the public Deadlock API
 player_lookup.py     name -> account -> hero stats; command-line report
 tests/               unit tests (API calls are mocked)
+docs/DESIGN.md       design decisions and technology choices
 utils/logger.py      logging to logs/app.log and the console
 ```
 
-Not affiliated with or endorsed by Valve.
+For the reasoning behind the design, see [docs/DESIGN.md](docs/DESIGN.md).
+
+## License
+
+[MIT](LICENSE). Not affiliated with or endorsed by Valve.
