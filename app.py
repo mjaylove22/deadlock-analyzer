@@ -406,6 +406,11 @@ class AnalyzerApp:
 
 def main():
     setup_logger()
+    try:
+        # Its own taskbar identity, so Windows shows the app's icon instead of grouping it under Python
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("DeadlockAnalyzer")
+    except Exception:
+        pass
     root = ctk.CTk()  # a CustomTkinter window: dark title bar on Windows
     # Optional: python app.py path/to/screenshot.png opens straight onto that screenshot
     AnalyzerApp(root, open_screenshot=sys.argv[1] if len(sys.argv) > 1 else None)
