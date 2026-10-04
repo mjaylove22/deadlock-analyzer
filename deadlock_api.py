@@ -117,11 +117,14 @@ def search_steam_profiles(name: str, limit: int = 50) -> List[Dict[str, Any]]:
                     {"search_query": name, "limit": limit, "min_matches_played_last_30d": 0})
 
 
-def get_hero_stats(account_ids: List[int], game_mode: str = "normal") -> List[Dict[str, Any]]:
+def get_hero_stats(account_ids: List[int], game_mode: str = "normal", match_mode: str = None) -> List[Dict[str, Any]]:
     """Per-hero stats for one or more accounts (one entry per account+hero pair).
-    game_mode: "normal" (the API default) or "street_brawl"."""
-    return get_json("/v1/players/hero-stats",
-                    {"account_ids": ",".join(str(a) for a in account_ids), "game_mode": game_mode})
+    game_mode: "normal" (the API default) or "street_brawl". match_mode: "ranked" or "unranked"
+    (default: both)."""
+    params = {"account_ids": ",".join(str(a) for a in account_ids), "game_mode": game_mode}
+    if match_mode:
+        params["match_mode"] = match_mode
+    return get_json("/v1/players/hero-stats", params)
 
 
 def get_match_history(account_id: int) -> List[Dict[str, Any]]:
@@ -181,6 +184,23 @@ def get_item_stats(hero_id: int, enemy_hero_ids: List[int] = (), game_mode: str 
     if enemy_hero_ids:
         params["enemy_hero_ids"] = ",".join(str(h) for h in enemy_hero_ids)
     return get_json("/v1/analytics/item-stats", params, max_age=3600)
+
+
+def fetch_rank_curves(game_mode: str = "normal") -> Dict[str, Dict[str, List[int]]]:
+    """Every hero's [wins, games] at each rank tier: {hero_id: {tier: [wins, games]}} (string keys,
+    as stored in JSON). The API's per-rank answer is ~1.6 MB with 24 fields per row; only these
+    numbers are kept, on disk for 6 hours (the server recomputes its stats hourly)."""
+    def build():
+        rows = get_json("/v1/analytics/hero-stats", {"game_mode": game_mode, "bucket": "avg_badge"}, max_age=0)
+        curves: Dict[str, Dict[str, List[int]]] = {}
+        for row in rows:
+            tier = row["bucket"] // 10  # buckets are badges: tier * 10 + subrank; 0 = unranked matches
+            if tier:
+                totals = curves.setdefault(str(row["hero_id"]), {}).setdefault(str(tier), [0, 0])
+                totals[0] += row["matches"] - row["losses"]
+                totals[1] += row["matches"]
+        return curves
+    return disk_cached(f"rank_curves_{game_mode}", build, max_age=6 * 3600)
 
 
 def get_hero_bans(ranks: tuple = None) -> List[Dict[str, Any]]:

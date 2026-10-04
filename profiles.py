@@ -14,6 +14,16 @@ import deadlock_api
 from player_lookup import fetch_ranks
 
 GAME_MODES = {1: "Normal", 4: "Street Brawl"}
+
+# Ways to split a player's games. Street Brawl is always unranked, so these don't overlap.
+# name -> (game_mode, match_mode) as the hero-stats endpoint expects; None = no filter
+MATCH_TYPES = {
+    "All": ("normal", None),
+    "Ranked": ("normal", "ranked"),
+    "Unranked": ("normal", "unranked"),
+    "Street Brawl": ("street_brawl", None),
+}
+LOW_SAMPLE_GAMES = 1000  # rank-curve bars with fewer games than this are drawn faded
 API_GAME_MODES = {"Normal": "normal", "Street Brawl": "street_brawl"}  # names the stats endpoints expect
 PLAYERS_PER_MATCH = {"normal": 12, "street_brawl": 8}
 RECENT_MATCHES_SHOWN = 20
@@ -35,6 +45,13 @@ def match_won(match: Dict[str, Any]) -> bool:
     return match["match_result"] == match["player_team"]
 
 
+def match_type(match: Dict[str, Any]) -> str:
+    """"Ranked", "Unranked" or "Street Brawl" (or "Other" for e.g. private lobbies)."""
+    if match["game_mode"] == 4:
+        return "Street Brawl"
+    return {1: "Unranked", 4: "Ranked"}.get(match["match_mode"], "Other")
+
+
 def describe_match(match: Dict[str, Any], hero_names_by_id: Dict[int, str]) -> Dict[str, Any]:
     """One match-history entry as display-ready values."""
     return {
@@ -46,15 +63,16 @@ def describe_match(match: Dict[str, Any], hero_names_by_id: Dict[int, str]) -> D
         "minutes": round(match["match_duration_s"] / 60),
         "start_time": match["start_time"],
         "mode": GAME_MODES.get(match["game_mode"], "Other"),
+        "type": match_type(match),
         "ranked": match["match_mode"] == 4,
     }
 
 
 def mode_breakdown(matches: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Games and win rate per game mode, most-played mode first."""
+    """Games and win rate per match type (Ranked / Unranked / Street Brawl), most played first."""
     modes = {}
     for m in matches:
-        name = GAME_MODES.get(m["game_mode"], "Other")
+        name = match_type(m)
         entry = modes.setdefault(name, {"mode": name, "games": 0, "wins": 0})
         entry["games"] += 1
         entry["wins"] += match_won(m)
@@ -112,12 +130,14 @@ def tier_rows(stats: List[Dict[str, Any]], hero_names_by_id: Dict[int, str],
     return sorted(rows, key=lambda r: r["win_rate"], reverse=True)
 
 
-def player_profile(account_id: int, hero_names_by_id: Dict[int, str], game_mode: str = "normal") -> Dict[str, Any]:
-    """Everything the player page shows, in one call (run it on a worker thread)."""
+def player_profile(account_id: int, hero_names_by_id: Dict[int, str], match_type_name: str = "All") -> Dict[str, Any]:
+    """Everything the player page shows, in one call (run it on a worker thread).
+    match_type_name picks which games the hero table covers (see MATCH_TYPES)."""
+    game_mode, match_mode = MATCH_TYPES[match_type_name]
     profiles, history, heroes, ranks = deadlock_api.parallel(
         lambda: deadlock_api.get_profiles([account_id]),
         lambda: deadlock_api.get_match_history(account_id),
-        lambda: deadlock_api.get_hero_stats([account_id], game_mode),
+        lambda: deadlock_api.get_hero_stats([account_id], game_mode, match_mode),
         lambda: fetch_ranks([account_id]))
     profile = profiles[0] if profiles else {}
     matches = sorted(history, key=lambda m: m["start_time"], reverse=True)
@@ -127,13 +147,21 @@ def player_profile(account_id: int, hero_names_by_id: Dict[int, str], game_mode:
         "profile_url": profile.get("profileurl"),
         "avatar_url": profile.get("avatarfull") or profile.get("avatarmedium"),
         "recent_30d": profile.get("matches_played_last_30d"),
-        "game_mode": game_mode,
+        "match_type": match_type_name,
         "rank": ranks.get(account_id),
         "heroes": hero_rows(heroes, hero_names_by_id),
         "modes": mode_breakdown(matches),
         "recent": [describe_match(m, hero_names_by_id) for m in matches[:RECENT_MATCHES_SHOWN]],
         "total_matches": len(matches),
     }
+
+
+def hero_rank_curve(hero_id: int) -> List[Dict[str, Any]]:
+    """A hero's win rate at each rank tier (normal matches): [{"tier", "name", "win_rate", "games"}]."""
+    curve = deadlock_api.fetch_rank_curves("normal").get(str(hero_id), {})
+    names = {r["tier"]: r["name"] for r in deadlock_api.fetch_rank_assets()}
+    return [{"tier": tier, "name": names.get(tier, str(tier)), "games": games, "win_rate": wins / games}
+            for tier, (wins, games) in sorted((int(t), v) for t, v in curve.items()) if games]
 
 
 def hero_tier_list(hero_names_by_id: Dict[int, str], game_mode: str = "normal", ranks: tuple = None) -> List[Dict[str, Any]]:

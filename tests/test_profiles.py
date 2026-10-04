@@ -2,14 +2,14 @@
 
 import unittest
 
-from profiles import RANK_BANDS, describe_match, hero_rows, mode_breakdown, tier_rows, top_mates, when
+from profiles import RANK_BANDS, describe_match, hero_rows, match_type, mode_breakdown, tier_rows, top_mates, when
 
 NAMES = {1: "Haze", 2: "Rem", 3: "Newbie"}
 
 
-def match(game_mode=1, won=True, hero_id=1, start=1000):
+def match(game_mode=1, won=True, hero_id=1, start=1000, match_mode=1):
     # A win is "the player's team is the winning team"; player_match_outcome is usually 0 (invalid)
-    return {"match_id": start, "hero_id": hero_id, "game_mode": game_mode, "match_mode": 1, "player_team": 0,
+    return {"match_id": start, "hero_id": hero_id, "game_mode": game_mode, "match_mode": match_mode, "player_team": 0,
             "match_result": 0 if won else 1, "player_match_outcome": 0, "player_kills": 5, "player_deaths": 2,
             "player_assists": 9, "net_worth": 30000, "match_duration_s": 1830, "start_time": start}
 
@@ -23,11 +23,17 @@ class ProfilesTests(unittest.TestCase):
         m = describe_match(match(game_mode=4), NAMES)
         self.assertEqual((m["hero"], m["mode"], m["minutes"]), ("Haze", "Street Brawl", 30))
 
-    def test_mode_breakdown_most_played_first(self):
-        matches = [match(1, True), match(1, False), match(1, True), match(4, True)]
+    def test_mode_breakdown_splits_ranked_unranked_and_street_brawl(self):
+        matches = [match(1, True), match(1, False), match(1, True), match(4, True), match(1, True, match_mode=4)]
         rows = mode_breakdown(matches)
-        self.assertEqual([(r["mode"], r["games"]) for r in rows], [("Normal", 3), ("Street Brawl", 1)])
+        self.assertEqual([(r["mode"], r["games"]) for r in rows], [("Unranked", 3), ("Street Brawl", 1), ("Ranked", 1)])
         self.assertAlmostEqual(rows[0]["win_rate"], 2 / 3)
+
+    def test_match_type(self):
+        self.assertEqual(match_type(match(1, match_mode=4)), "Ranked")
+        self.assertEqual(match_type(match(1, match_mode=1)), "Unranked")
+        self.assertEqual(match_type(match(4, match_mode=1)), "Street Brawl")  # always unranked
+        self.assertEqual(describe_match(match(1, match_mode=4), NAMES)["type"], "Ranked")
 
     def test_hero_rows_skip_unplayed_and_sort_by_games(self):
         entries = [{"hero_id": 1, "matches_played": 5, "wins": 4, "kills": 10, "deaths": 5, "assists": 10},

@@ -62,9 +62,9 @@ The app has pages, with a **Back** button (or Alt+Left) and the title as a link 
 | **Home** | Your account, the last lobby, the strongest heroes right now and your recent matches |
 | **Lobby** | Both teams side by side, with your matchup at the bottom. Click any player to open their page |
 | **Heroes** | Every hero's win rate, pick rate, ban share, games and KDA, for Normal or Street Brawl and any rank band. Click a heading to sort, or a hero to open it |
-| **Hero** | A hero's best and toughest matchups (against its own average) and its most-bought items, by mode and rank band |
+| **Hero** | A hero's best and toughest matchups (against its own average), its most-bought items, and its win rate at every rank, by mode and rank band |
 | **My Stats** | Your own player page |
-| **Player** | Avatar, rank, games and win rate per game mode, who they play with most, a sortable per-hero table (Normal or Street Brawl) and recent matches (click one for its review) |
+| **Player** | Avatar, rank, games and win rate for ranked, unranked and Street Brawl, who they play with most, a sortable per-hero table (All / Ranked / Unranked / Street Brawl) and recent matches with their type (click one for its review) |
 | **Match review** | A finished match: victory or defeat, your K/D/A, net worth, damage, healing and last hits with your place in the lobby and how they compare with your usual on that hero, your final build, the net-worth lead over time and both scoreboards |
 | **Search** | Type any Steam name in the top bar to see every account with that name, or a **match ID** to open its review |
 
@@ -73,8 +73,9 @@ The app has pages, with a **Back** button (or Alt+Left) and the title as a link 
 - **Overlay** keeps the window semi-transparent and on top of the game (needs **borderless windowed**
   mode). The window asks Windows to leave it out of screen captures, so it never hides the scoreboard.
 - Screenshots older than **7 days are deleted automatically** (except ones kept as test cases).
-- **Light:** about 65 MB of memory and a ~1.6 MB image/data cache. API answers are reused for a few
-  minutes, so going Back or revisiting a page is instant.
+- **Light:** ~3,400 lines of Python, about 70 MB of memory, the window opens in ~0.4 s, and the local
+  cache stays around 2 MB. API answers are reused for a few minutes, so going Back or revisiting a
+  page is instant. The biggest piece is the Tesseract OCR engine (~116 MB, installed separately).
 
 **Terminal:**
 

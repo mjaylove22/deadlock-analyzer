@@ -58,6 +58,22 @@ class ResponseCacheTests(unittest.TestCase):
                 deadlock_api.get_json("/v1/x", {"n": n})
         self.assertEqual(len(deadlock_api._memory), 3)
 
+    def test_rank_curves_condense_badges_into_tiers(self):
+        rows = [{"hero_id": 7, "bucket": 71, "matches": 100, "losses": 40},   # Emissary 1
+                {"hero_id": 7, "bucket": 76, "matches": 50, "losses": 30},    # Emissary 6: same tier
+                {"hero_id": 7, "bucket": 0, "matches": 999, "losses": 1}]     # unranked matches: left out
+        with patch.object(deadlock_api, "get_json", return_value=rows), \
+             patch.object(deadlock_api, "disk_cached", side_effect=lambda name, build, max_age: build()):
+            curves = deadlock_api.fetch_rank_curves()
+        self.assertEqual(curves, {"7": {"7": [80, 150]}})
+
+    def test_hero_stats_match_mode_is_only_sent_when_asked(self):
+        with patch.object(deadlock_api, "get_json", return_value=[]) as get_json:
+            deadlock_api.get_hero_stats([1])
+            deadlock_api.get_hero_stats([1], match_mode="ranked")
+        self.assertNotIn("match_mode", get_json.call_args_list[0].args[1])
+        self.assertEqual(get_json.call_args_list[1].args[1]["match_mode"], "ranked")
+
     def test_badge_range_covers_whole_tiers(self):
         self.assertEqual(deadlock_api.badge_range((7, 9)), {"min_average_badge": 70, "max_average_badge": 99})
         self.assertEqual(deadlock_api.badge_range(None), {})

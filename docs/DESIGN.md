@@ -195,14 +195,19 @@ Teams sit side by side with one card per player. Whether a full lobby fits was *
 ### 4.20 Ban share, not ban rate
 The ban endpoint returns how many times each hero was banned, but not how many matches those bans came from, so a true ban rate would need a guessed number of bans per match. The app shows **ban share**: each hero's part of all recorded bans. Every hero is divided by the same total, so the ranking matches a ban rate; only the scale differs, and it's labelled. A hero missing from the ban data (a brand-new hero) shows "-", not "0%", which would claim nobody bans it.
 
-### 4.21 Housekeeping
+### 4.21 Stats by rank, and ranked vs unranked
+- **Hero win rate at every rank** comes from **one** request: the analytics endpoint's `bucket=avg_badge` groups every hero's stats by rank. The answer is ~1.6 MB (24 fields per row); only wins and games per hero per tier are kept, on disk for 6 hours: **8 KB**, and every hero's chart is then instant. Ranks with under 1,000 games (e.g. Eternus) are drawn faded, as less reliable.
+- **Player pages split Ranked / Unranked / Street Brawl.** Match history marks each match (`match_mode` 4 = ranked; Street Brawl is always unranked, so the three don't overlap), and the per-hero table uses the hero-stats endpoint's `match_mode` filter (default: both).
+- **Size check** (measured): ~3,400 lines of app code and ~1,100 of tests; committed files 282 KB; Python packages ~18 MB (Pillow 16 MB of that) plus the Tesseract engine (~116 MB, separate install); ~70 MB of memory with a 12-player lobby loaded; window on screen in ~0.4 s; local cache ~2 MB.
+
+### 4.22 Housekeeping
 - Screenshots older than 7 days are deleted at startup and after each capture. Only files named like the app's own captures are touched, and a screenshot with an `.expected.json` (a regression test case) is never deleted.
 - Hero and rank lists are cached for the life of the app (`functools.lru_cache`); a failed request isn't cached, so it's retried next time.
 - The analysis reports progress through a callback, so the lookup code doesn't need to know about the window.
 
 ## 5. Testing
 
-`python -m unittest discover -s tests -v` runs 101 tests in about a second:
+`python -m unittest discover -s tests -v` runs 104 tests in about a second:
 - **Parser tests** use OCR output actually produced from real screenshots, including a noisy version, plus edge cases: headers, noise-only lines, duplicate player names, multi-word heroes, hero lines with nothing above them.
 - **Identity tests** use plain data to cover settling by unique name, friend links (including links listed by only one side and chains of settled players), ties falling back to hero history, and party grouping.
 - **Insights tests** cover each badge rule and its thresholds.

@@ -16,7 +16,8 @@ import deadlock_api
 from match_review import REVIEW_STATS, MatchUnavailable, match_review
 from matchups import hero_breakdown
 from player_lookup import search_player
-from profiles import API_GAME_MODES, RANK_BANDS, hero_tier_list, player_profile, teammates, when
+from profiles import (API_GAME_MODES, LOW_SAMPLE_GAMES, MATCH_TYPES, RANK_BANDS, hero_rank_curve, hero_tier_list,
+                      player_profile, teammates, when)
 from report import TEAM_TITLES, team_summary
 from settings import get_me, save_settings
 from ui import images
@@ -319,6 +320,8 @@ class HeroPage(Page):
             hero_id = next(i for i, n in names.items() if n == hero)
             tiers = self.app.cache.get(("tiers", mode, band)) or hero_tier_list(names, API_GAME_MODES[mode], BANDS[band])
             breakdown = hero_breakdown(hero_id, names, API_GAME_MODES[mode], BANDS[band])
+            # Win rate at each rank: normal matches only (Street Brawl isn't ranked)
+            breakdown["by_rank"] = hero_rank_curve(hero_id) if mode == "Normal" else []
             assets.load(images.hero_card_url(hero), assets.PORTRAIT_MAX_SIDE)
             return tiers, breakdown
         self.app.run_task(work, lambda result: self.show(*result))
@@ -351,7 +354,7 @@ class HeroPage(Page):
         dropdown(controls, list(BANDS), self.band, lambda band: self.app.open_hero(self.hero, self.mode, band, push=False)).pack(anchor="e", pady=(8, 0))
 
         columns = tk.Frame(self.frame, bg=COLORS["bg"])
-        columns.pack(fill="both", expand=True, pady=(14, 0))
+        columns.pack(fill="x", pady=(14, 0))  # not expand: the rank chart sits right below, not at the bottom
         for c in range(3):
             columns.columnconfigure(c, weight=1, uniform="hero")
         average = f"vs its {b['average_win_rate']:.1%} average"
@@ -385,6 +388,14 @@ class HeroPage(Page):
         legend.pack(anchor="w", pady=(10, 0))
         for slot, color in ITEM_SLOT_COLORS.items():
             pill(legend, slot.title(), color, size=8).pack(side="left", padx=(0, 4))
+
+        if b.get("by_rank"):
+            ranks_outer, ranks = card(self.frame, padding=12)
+            ranks_outer.pack(fill="x", pady=(12, 0))
+            label(ranks, "WIN RATE BY RANK", size=9, color="dim", bold=True, bg="card").pack(anchor="w")
+            label(ranks, f"normal matches at each rank · faded bars have under {LOW_SAMPLE_GAMES:,} games",
+                  size=9, color="faint", bg="card").pack(anchor="w")
+            rank_bars(ranks, b["by_rank"]).pack(fill="x", pady=(6, 0))
         self.app.set_status(f"{self.hero} · click a matchup to open that hero")
 
 
@@ -497,6 +508,35 @@ class MatchPage(Page):
         self.app.set_status(f"Match {r['match_id']} · click a player to open their page")
 
 
+def rank_bars(parent, by_rank, height: int = 120) -> tk.Canvas:
+    """One bar per rank, up from a 50% line when above it (green) and down when below (red)."""
+    canvas = tk.Canvas(parent, height=height, bg=COLORS["card"], highlightthickness=0)
+
+    def draw(event=None):
+        canvas.delete("all")
+        width = canvas.winfo_width()
+        if width < 50:
+            return
+        middle = (height - 30) / 2 + 4               # leave room below for the rank names
+        biggest = max(abs(r["win_rate"] - 0.5) for r in by_rank) or 0.01
+        slot = width / len(by_rank)
+        canvas.create_line(0, middle, width, middle, fill=COLORS["faint"], dash=(2, 3))
+        canvas.create_text(2, middle - 2, text="50%", anchor="sw", fill=COLORS["faint"], font=("Segoe UI", 8))
+        for n, r in enumerate(by_rank):
+            x = slot * n + slot / 2
+            bar = (r["win_rate"] - 0.5) / biggest * (middle - 16)
+            color = COLORS["win"] if bar >= 0 else COLORS["loss"]
+            faded = r["games"] < LOW_SAMPLE_GAMES   # few games: less reliable, so drawn lighter
+            canvas.create_rectangle(x - slot * 0.3, middle, x + slot * 0.3, middle - bar, fill=color, outline="",
+                                    stipple="gray50" if faded else "")
+            canvas.create_text(x, middle - bar - (8 if bar >= 0 else -8), text=f"{r['win_rate']:.1%}",
+                               fill=COLORS["text"], font=("Segoe UI", 8, "bold"))
+            canvas.create_text(x, height - 18, text=r["name"], fill=COLORS["dim"], font=("Segoe UI", 8))
+            canvas.create_text(x, height - 6, text=f"{r['games']:,}", fill=COLORS["faint"], font=("Segoe UI", 7))
+    canvas.bind("<Configure>", draw)  # redraw on resize
+    return canvas
+
+
 def ordinal(n: int) -> str:
     return f"{n}{'th' if 10 <= n % 100 <= 20 else {1: 'st', 2: 'nd', 3: 'rd'}.get(n % 10, 'th')}"
 
@@ -533,13 +573,13 @@ def lead_chart(parent, lead, height: int = 70) -> tk.Canvas:
 class PlayerPage(Page):
     nav = None
 
-    def build(self, account_id: int, mode: str = "Normal", nav: str = None):
+    def build(self, account_id: int, mode: str = "All", nav: str = None):
         self.nav = nav
         self.account_id, self.mode = account_id, mode
         self.message("Loading player...")
 
         def work():
-            profile = player_profile(account_id, self.app.hero_names_by_id(), API_GAME_MODES[mode])
+            profile = player_profile(account_id, self.app.hero_names_by_id(), mode)
             if profile["heroes"]:
                 assets.load(images.hero_card_url(profile["heroes"][0]["hero"]), assets.PORTRAIT_MAX_SIDE)  # main hero's portrait
             return profile, self.app.avatars.download([profile["avatar_url"]])
@@ -606,7 +646,7 @@ class PlayerPage(Page):
         row = tk.Frame(self.frame, bg=COLORS["bg"])
         row.pack(fill="x", pady=(12, 8))
         label(row, "Hero stats", size=14, heading=True).pack(side="left")
-        segmented(row, MODES, self.mode, self.switch_mode).pack(side="left", padx=14)
+        segmented(row, list(MATCH_TYPES), self.mode, self.switch_mode).pack(side="left", padx=14)
         label(row, "Recent matches", size=14, heading=True).pack(side="right")
 
         tables = tk.Frame(self.frame, bg=COLORS["bg"])
@@ -626,7 +666,8 @@ class PlayerPage(Page):
                 ("last_played", "Last played", 85, when, "center"),
             ], list(p["heroes"]), height=14, hero_key="hero")
         else:
-            self.message(f"No recorded {self.mode} matches.", left)
+            kind = "" if self.mode == "All" else self.mode.lower() + " "
+            self.message(f"No recorded {kind}matches.", left)
 
         if p["recent"]:
             for m in p["recent"]:
@@ -636,7 +677,7 @@ class PlayerPage(Page):
                 ("start_time", "When", 70, when, "center"),
                 ("result", "Result", 55, str, "center"),
                 ("kda_text", "K/D/A", 70, str, "center"),
-                ("mode", "Mode", 90, str, "center"),
+                ("type", "Type", 90, str, "center"),
             ], list(p["recent"]), height=14, tag=lambda m: "win" if m["won"] else "loss", hero_key="hero",
                 on_click=lambda m: self.app.open_match(m["match_id"]))
         else:
