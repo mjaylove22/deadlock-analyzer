@@ -46,9 +46,21 @@ def search_steam_profiles(name: str, limit: int = 50) -> List[Dict[str, Any]]:
                     {"search_query": name, "limit": limit, "min_matches_played_last_30d": 0})
 
 
-def get_hero_stats(account_ids: List[int]) -> List[Dict[str, Any]]:
-    """Per-hero stats for one or more accounts (one entry per account+hero pair)."""
-    return get_json("/v1/players/hero-stats", {"account_ids": ",".join(str(a) for a in account_ids)})
+def get_hero_stats(account_ids: List[int], game_mode: str = "normal") -> List[Dict[str, Any]]:
+    """Per-hero stats for one or more accounts (one entry per account+hero pair).
+    game_mode: "normal" (the API default) or "street_brawl"."""
+    return get_json("/v1/players/hero-stats",
+                    {"account_ids": ",".join(str(a) for a in account_ids), "game_mode": game_mode})
+
+
+def get_match_history(account_id: int) -> List[Dict[str, Any]]:
+    """A player's recorded matches (not guaranteed newest first; sort by start_time)."""
+    return get_json(f"/v1/players/{account_id}/match-history")
+
+
+def get_global_hero_stats(game_mode: str = "normal") -> List[Dict[str, Any]]:
+    """Every hero's totals across all recorded matches: {"hero_id", "matches", "losses", "total_kills", ...}."""
+    return get_json("/v1/analytics/hero-stats", {"game_mode": game_mode})
 
 
 @functools.lru_cache(maxsize=None)

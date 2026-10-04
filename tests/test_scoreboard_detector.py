@@ -8,7 +8,10 @@ from PIL import Image, ImageDraw
 
 from scoreboard_detector import PLAYERS_TAB_BOX, is_scoreboard_open, tab_correlation, tab_difference
 
-SCREENSHOTS = sorted(glob.glob(os.path.join(os.path.dirname(__file__), "..", "screenshots", "screenshot_*_*.png")))
+# Only screenshots confirmed to show the scoreboard (they have hand-checked .expected.json answers);
+# any other capture in the folder could be of anything, e.g. a hotkey press outside the game
+SCREENSHOTS = [path.replace(".expected.json", ".png") for path in sorted(glob.glob(
+    os.path.join(os.path.dirname(__file__), "..", "screenshots", "screenshot_*.expected.json")))]
 
 
 class DetectorTests(unittest.TestCase):
