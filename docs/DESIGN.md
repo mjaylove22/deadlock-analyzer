@@ -140,7 +140,7 @@ Teams sit side by side with one card per player. Whether a full lobby fits was *
 
 ## 5. Testing
 
-`python -m unittest discover -s tests -v` runs 69 tests in about a second:
+`python -m unittest discover -s tests -v` runs 64 tests in about a second:
 - **Parser tests** use OCR output actually produced from real screenshots, including a noisy version, plus edge cases: headers, noise-only lines, duplicate player names, multi-word heroes, hero lines with nothing above them.
 - **Identity tests** use plain data to cover settling by unique name, friend links (including links listed by only one side and chains of settled players), ties falling back to hero history, and party grouping.
 - **Insights tests** cover each badge rule and its thresholds.
