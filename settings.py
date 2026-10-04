@@ -37,6 +37,30 @@ def save_settings(changes: Dict[str, Any]) -> None:
         logger.warning(f"Could not save settings ({e})")
 
 
+# Choices on the Settings page, with their defaults. Stored under "preferences", so new choices can be
+# added later without touching old settings files.
+PREFERENCES = {
+    "pop_up": False,             # bring the window to the front when a lobby is captured in game
+    "sound": True,               # a sound when the lobby is ready
+    "reshow_same_lobby": True,   # reopening the scoreboard in the same lobby shows the lobby again
+    "show_rank": True,
+    "show_hero_stats": True,
+    "show_badges": True,
+    "show_most_played": True,
+    "show_matchup": True,
+}
+
+
+def get_preferences() -> Dict[str, bool]:
+    saved = load_settings().get("preferences", {})
+    return {key: saved.get(key, default) for key, default in PREFERENCES.items()}
+
+
+def set_preference(key: str, value: bool) -> None:
+    saved = load_settings().get("preferences", {})
+    save_settings({"preferences": dict(saved, **{key: value})})
+
+
 def get_me() -> Optional[Dict[str, Any]]:
     """{"name", "account_id"} of the user's own Steam account, if they've set it."""
     me = load_settings().get("me")

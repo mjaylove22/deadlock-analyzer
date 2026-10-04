@@ -248,9 +248,15 @@ Checked against a real Street Brawl lobby where 2 of 8 players weren't found:
 - **Tried and dropped:** looking for a missing player in found teammates' Steam friend lists. Those lists came back empty for that lobby, so it would have added a large request for nothing.
 - Each lookup now logs how many players were found and why the others weren't, and each capture is logged, so a report like "it kept waiting" can be checked.
 
+### 4.28 Settings: what pops up
+- **The report:** "in Street Brawl it just kept saying waiting on scoreboard". The detector recognised that match's screenshots perfectly. The cause was by design: reopening the scoreboard in the same lobby skips the lookups, and the app only said so in the status bar. In Street Brawl heroes are known from the loading screen, so every later look at the scoreboard was "the same lobby".
+- **Settings page:** when the scoreboard opens, the app can bring itself to the front, play a sound, and show the lobby again even if nothing changed (no new lookups). Separately, each part of a lobby card can be turned off: rank, current-hero stats, badges, most-played heroes, and the matchup strip. Choices are saved under `preferences` in settings.json with defaults in code, so adding a choice later doesn't touch old files.
+- **Bringing the window forward without stealing focus:** a window that takes keyboard focus can minimise a fullscreen game. `pop_up()` uses `ShowWindow(SW_SHOWNOACTIVATE)` and `SetWindowPos` with `SWP_NOACTIVATE`: topmost for a moment, then back to normal unless overlay mode is on. Tested with the game focused: the window came back from minimised and the game kept focus.
+- With badges off, how an account was identified (ID UNSURE, NAME FIXED, YOU, PARTY) still shows: those are about whether to trust the card, not decoration.
+
 ## 5. Testing
 
-`python -m unittest discover -s tests -v` runs 138 tests in a few seconds:
+`python -m unittest discover -s tests -v` runs 140 tests in a few seconds:
 - **Parser tests** use OCR output actually produced from real screenshots, including a noisy version, plus edge cases: headers, noise-only lines, duplicate player names, multi-word heroes, hero lines with nothing above them.
 - **Identity tests** use plain data to cover settling by unique name, friend links (including links listed by only one side and chains of settled players), ties falling back to hero history, and party grouping.
 - **Insights tests** cover each badge rule and its thresholds.

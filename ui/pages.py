@@ -19,10 +19,10 @@ from player_lookup import search_player
 from profiles import (API_GAME_MODES, LOW_SAMPLE_GAMES, MATCH_TYPES, RANK_BANDS, hero_rank_curve, hero_tier_list, hero_trends,
                       player_profile, teammates, when)
 from report import TEAM_TITLES, team_summary
-from settings import get_me, save_settings
+from settings import get_me, get_preferences, save_settings, set_preference
 from ui import images
 from ui.theme import (BADGE_COLORS, COLORS, ITEM_SLOT_COLORS, MATCHUP_COLORS, PARTY_COLORS, button, card, dropdown,
-                      label, pill, segmented)
+                      label, pill, segmented, switch)
 from version import __version__
 from ui.charts import (ChartTable, Column, change_text, change_tip, hero_cell, trend_cell, trend_chart, trend_color,
                        trend_tip)
@@ -30,6 +30,7 @@ from ui.widgets import item_tile, item_tooltip_text, tooltip
 from ui.widgets import bind_click, data_table, hero_label, matchup_strip, player_card, rank_pill
 
 MODES = list(API_GAME_MODES)  # ["Normal", "Street Brawl"]
+HOTKEY_TEXT = "Ctrl+Shift+D"
 BANDS = dict(RANK_BANDS)      # label -> (lowest tier, highest tier) or None
 
 
@@ -216,7 +217,8 @@ class LobbyPage(Page):
             self.message("No players found in that screenshot.\n\nMake sure the Esc menu is open on the PLAYERS tab.")
             return
 
-        if lobby.get("matchup"):
+        show = get_preferences()
+        if lobby.get("matchup") and show["show_matchup"]:
             matchup_strip(self.frame, lobby["matchup"]).pack(side="bottom", fill="x", pady=(6, 0))
         results, parties = lobby["results"], lobby["parties"]
         party_of = {i: (PARTY_COLORS[n % len(PARTY_COLORS)], f"PARTY {chr(65 + n)}")
@@ -236,7 +238,7 @@ class LobbyPage(Page):
             label(head, team_summary([results[i] for i in members], team_parties), color="dim").pack(side="left", padx=12)
             for i in members:
                 r = results[i]
-                player_card(frame, r, COLORS[team], self.app.avatars, party=party_of.get(i),
+                player_card(frame, r, COLORS[team], self.app.avatars, party=party_of.get(i), show=show,
                             on_open=lambda r=r: self.app.open_player(r["account_id"]), on_search=self.app.search)
 
 
@@ -805,6 +807,55 @@ class PlayerPage(Page):
         save_settings({"me": {"name": p["name"], "account_id": p["account_id"]}})
         self.app.set_status(f"Saved: you are {p['name']}. You'll be identified exactly in every lobby.")
         self.app.open_player(p["account_id"], mode=self.mode, nav=self.nav, push=False)
+
+
+class SettingsPage(Page):
+    """What happens when the scoreboard opens in game, and what the lobby cards show."""
+    nav = "settings"
+    WHEN_OPEN = [
+        ("pop_up", "Bring the app to the front",
+         "Puts the window above others without taking keyboard focus from the game. Best with the app "
+         "on a second monitor: on the game's monitor it covers the game."),
+        ("sound", "Play a sound when the lobby is ready", ""),
+        ("reshow_same_lobby", "Show the lobby again when nothing changed",
+         "Reopening the scoreboard in the same lobby (mid-match, or in Street Brawl, where heroes are "
+         "known from the start) jumps back to the Lobby page, without looking anyone up again."),
+    ]
+    CARD_PARTS = [
+        ("show_rank", "Rank", ""),
+        ("show_hero_stats", "Stats on their current hero", "Games, win rate, KDA and damage on the hero they're playing."),
+        ("show_badges", "Badges", "ONE-TRICK, HIGH WR, NEW ON HERO... ID UNSURE and NAME FIXED always show."),
+        ("show_most_played", "Most-played heroes", ""),
+        ("show_matchup", "Your matchup", "Your hero against each enemy hero, and popular items against them."),
+    ]
+
+    def build(self):
+        self.heading("Settings", "saved on this PC · changes apply right away")
+        self.variables = []  # tkinter forgets variables nobody holds
+        grid = tk.Frame(self.frame, bg=COLORS["bg"])
+        grid.pack(fill="x")
+        grid.columnconfigure((0, 1), weight=1, uniform="settings")
+        when_outer, when = section(grid, "When the scoreboard opens in game")
+        when_outer.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        cards_outer, cards = section(grid, "Lobby cards show")
+        cards_outer.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
+        self.option(when, "Watch for the scoreboard (auto-detect)",
+                    f"Same as the switch at the top. Off: press {HOTKEY_TEXT} in game to capture instead.",
+                    self.app.auto_detect, self.app.apply_auto_detect)
+        prefs = get_preferences()
+        for parent, options in ((when, self.WHEN_OPEN), (cards, self.CARD_PARTS)):
+            for key, title, note in options:
+                variable = tk.BooleanVar(value=prefs[key])
+                self.variables.append(variable)
+                self.option(parent, title, note, variable, lambda k=key, v=variable: set_preference(k, v.get()))
+        self.app.set_status("Settings")
+
+    def option(self, parent, title: str, note: str, variable, command):
+        row = tk.Frame(parent, bg=COLORS["card"])
+        row.pack(fill="x", pady=(0, 12))
+        switch(row, title, variable, command).pack(anchor="w")
+        if note:
+            label(row, note, size=9, color="dim", bg="card", justify="left", wraplength=430).pack(anchor="w", padx=(40, 0))
 
 
 class SetupPage(Page):

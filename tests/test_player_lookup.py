@@ -221,7 +221,7 @@ class LooksLikeMisreadTests(unittest.TestCase):
 
     def test_stylised_letters_match_plain_ones(self):
         self.assertTrue(same_name("ｍｏｏｎｄｏｇ", "m o o n d o g"))  # full-width letters, as OCR spaces them out
-        self.assertTrue(same_name("Fizz​Pop", "Fizz Pop"))  # an invisible zero-width space
+        self.assertTrue(same_name("Fizz\u200bPop", "Fizz Pop"))  # an invisible zero-width space
 
     def test_lookalike_spellings_most_likely_first(self):
         self.assertEqual(player_lookup.lookalike_names("pierix")[0], "plerix")

@@ -164,9 +164,11 @@ def hero_label(parent, hero: str, bg: str, size: int = 22, font_size: int = 10, 
 
 def player_card(parent, r: Dict[str, Any], accent: str, avatars: AvatarCache,
                 on_open: Optional[Callable[[], None]] = None, on_search: Optional[Callable[[str], None]] = None,
-                party: Optional[Tuple[str, str]] = None) -> ctk.CTkFrame:
+                party: Optional[Tuple[str, str]] = None, show: Optional[Dict[str, bool]] = None) -> ctk.CTkFrame:
     """One player: avatar, name, rank, stats on their hero, badges and most-played heroes.
-    Clicking the card opens the player's page (when they were found)."""
+    Clicking the card opens the player's page (when they were found). show: the Settings page's
+    choices ("show_rank", ...); anything missing is shown."""
+    shown = lambda part: (show or {}).get(part, True)  # noqa: E731
     clickable = r["status"] == "found" and on_open is not None
     outer, body = card(parent, padding=8, hoverable=clickable)
     outer.pack(fill="x", pady=2)
@@ -180,7 +182,7 @@ def player_card(parent, r: Dict[str, Any], accent: str, avatars: AvatarCache,
     info.columnconfigure(0, weight=1)
 
     label(info, r["player"], size=11, bold=True, bg="card", heading=True, anchor="w").grid(row=0, column=0, sticky="w")
-    rp = rank_pill(info, r.get("rank"))
+    rp = rank_pill(info, r.get("rank")) if shown("show_rank") else None
     if rp:
         rp.grid(row=0, column=1, sticky="e")
 
@@ -188,9 +190,11 @@ def player_card(parent, r: Dict[str, Any], accent: str, avatars: AvatarCache,
     line.grid(row=1, column=0, columnspan=2, sticky="w", pady=(1, 0))
     if r.get("hero"):  # search results have no current hero
         hero_label(line, r["hero"], "card", size=18).pack(side="left", padx=(0, 10))
-    label(line, hero_stats_text(r), bg="card", color="text").pack(side="left")
+    if shown("show_hero_stats"):
+        label(line, hero_stats_text(r), bg="card", color="text").pack(side="left")
 
-    badges = badge_labels(r)
+    # With badges off, how the account was identified (ID UNSURE, NAME FIXED...) still shows: it's about trust
+    badges = badge_labels(r if shown("show_badges") else dict(r, badges=[]))
     if party_label:
         badges.insert(0, (party_label, "party"))
     if badges:
@@ -199,7 +203,7 @@ def player_card(parent, r: Dict[str, Any], accent: str, avatars: AvatarCache,
         for text, kind in badges:
             pill(row, text, party_color if kind == "party" else BADGE_COLORS[kind]).pack(side="left", padx=(0, 4))
 
-    details = most_played_text(r)
+    details = most_played_text(r) if shown("show_most_played") else ""
     if details:
         label(info, details, size=9, color="dim", bg="card", anchor="w").grid(row=3, column=0, columnspan=2, sticky="w", pady=(2, 0))
 

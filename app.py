@@ -37,8 +37,9 @@ from player_lookup import analyze_records, read_lobby
 import game_window
 import layout as layout_module
 from screenshot_manager import SCREENSHOT_DIR, capture_and_save_screenshot, delete_old_screenshots, get_screenshot_path
-from settings import get_me, load_settings, save_settings
-from ui.pages import HeroesPage, HeroPage, HomePage, LobbyPage, MatchPage, PlayerPage, SearchPage, SetupPage
+from settings import get_me, get_preferences, load_settings, save_settings
+from ui.pages import (HeroesPage, HeroPage, HomePage, LobbyPage, MatchPage, PlayerPage, SearchPage, SettingsPage,
+                      SetupPage)
 from ui import images
 from ui.theme import COLORS, FONT, HEADING_FONT, label, setup_styles, switch
 from ui.widgets import AvatarCache, hide_tooltip
@@ -51,10 +52,14 @@ POLL_MS = 100
 CAPTURE_DELAY_MS = 150   # time for Windows to repaint after the window turns invisible (older Windows only)
 CAPTURE_HIDE_MS = 50     # time for Windows to apply "hide from capture" before the app's own screenshot
 WDA_NONE, WDA_EXCLUDEFROMCAPTURE = 0x0, 0x11  # SetWindowDisplayAffinity modes
+# For pop_up(): window positions that change the stacking order without moving, resizing or activating
+HWND_TOPMOST, HWND_NOTOPMOST = -1, -2
+SWP_NOSIZE, SWP_NOMOVE, SWP_NOACTIVATE = 0x1, 0x2, 0x10
+SW_SHOWNOACTIVATE = 4
 OVERLAY_ALPHA = 0.9
 WATCH_INTERVAL_S = 1.0   # how often auto-detect checks for the scoreboard (one check takes ~6 ms)
 SETTLE_S = 0.5           # after the scoreboard appears, wait for the menu animation before capturing
-NAV_TABS = [("lobby", "Lobby"), ("heroes", "Heroes"), ("mystats", "My Stats")]
+NAV_TABS = [("lobby", "Lobby"), ("heroes", "Heroes"), ("mystats", "My Stats"), ("settings", "Settings")]
 ICON_PATH = paths.resource("assets", "icon.ico")
 
 
@@ -174,7 +179,8 @@ class AnalyzerApp:
             self.navigate(page_class, push=False, **options)
 
     def open_tab(self, key: str):
-        {"lobby": self.open_lobby, "heroes": self.open_heroes, "mystats": self.open_my_stats}[key]()
+        {"lobby": self.open_lobby, "heroes": self.open_heroes, "mystats": self.open_my_stats,
+         "settings": lambda: self.navigate(SettingsPage)}[key]()
 
     def open_lobby(self):
         self.navigate(LobbyPage)
@@ -384,7 +390,7 @@ class AnalyzerApp:
             self.apply_overlay()  # back to normal: opacity, and visible to screen sharing unless overlay is on
         delete_old_screenshots()
         logger.info(f"{'Auto-detect' if auto else 'Manual'} capture: {os.path.basename(path)}")
-        self.start_analysis(path, auto)
+        self.start_analysis(path, auto, from_game=True)
 
     def analyze_latest(self):
         if self.busy:
@@ -405,11 +411,12 @@ class AnalyzerApp:
             self.busy = True
             self.start_analysis(path)
 
-    def start_analysis(self, path: str, auto: bool = False):
+    def start_analysis(self, path: str, auto: bool = False, from_game: bool = False):
+        """from_game: captured in game (auto-detect or the hotkey), not opened from a file."""
         self.set_status(f"Reading {os.path.basename(path)}...")
-        threading.Thread(target=self._analyze, args=(path, auto), daemon=True).start()
+        threading.Thread(target=self._analyze, args=(path, auto, from_game), daemon=True).start()
 
-    def _analyze(self, path: str, auto: bool = False):
+    def _analyze(self, path: str, auto: bool = False, from_game: bool = False):
         """Worker thread: OCR, then look everyone up. No tkinter calls here, only queued callables.
         (Not run_task: a lobby should arrive even if the user is browsing another page.)"""
         try:
@@ -437,7 +444,7 @@ class AnalyzerApp:
             matchup, images = deadlock_api.parallel(
                 matchup, lambda: self.avatars.download(r.get("avatar_url") for r in results))
             lobby = {"path": path, "records": records, "results": results, "parties": parties,
-                     "matchup": matchup, "images": images, "time": time.time()}
+                     "matchup": matchup, "images": images, "time": time.time(), "from_game": from_game}
             self.events.put(lambda: self.show_lobby(lobby))
         except Exception as e:
             logger.exception("Analysis failed")
@@ -453,12 +460,36 @@ class AnalyzerApp:
         self.navigate(LobbyPage, push=not isinstance(self.page, LobbyPage))
         watching = "watching for the scoreboard" if self.watching else f"{HOTKEY.upper()} for a new screenshot"
         self.set_status(f"{len(lobby['results'])} players  ·  {watching}")
-        self.root.bell()  # audible cue when the report is ready while you're in game
+        prefs = get_preferences()
+        if prefs["sound"]:
+            self.root.bell()  # audible cue when the report is ready while you're in game
+        if lobby["from_game"] and prefs["pop_up"]:
+            self.pop_up()
 
     def same_lobby(self):
         logger.info("Same lobby as the last capture; nothing to look up")
         self.busy = False
-        self.set_status("Same lobby as before; nothing new  ·  watching for the scoreboard...")
+        prefs = get_preferences()
+        if prefs["reshow_same_lobby"] and self.lobby:
+            self.navigate(LobbyPage, push=not isinstance(self.page, LobbyPage))
+            if prefs["pop_up"]:
+                self.pop_up()
+        self.set_status("Same lobby as before, so no new lookups  ·  watching for the scoreboard")
+
+    def pop_up(self):
+        """Bring the window above the others without taking keyboard focus from the game (a window
+        that grabs focus can minimise a fullscreen game). Keeps it on top only in overlay mode."""
+        try:
+            user32 = ctypes.windll.user32
+            hwnd = user32.GetParent(self.root.winfo_id())
+            if user32.IsIconic(hwnd):
+                user32.ShowWindow(hwnd, SW_SHOWNOACTIVATE)  # un-minimise without activating
+            flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE
+            user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, flags)
+            if not self.overlay.get():
+                user32.SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, flags)
+        except Exception:
+            logger.exception("Could not bring the window to the front")
 
     def analysis_failed(self, error: str):
         self.busy = False

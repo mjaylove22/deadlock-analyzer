@@ -75,6 +75,7 @@ The app has pages, with a **Back** button (or Alt+Left) and the title as a link 
 |---|---|
 | **Home** | Your account, the last lobby, the strongest heroes right now and your recent matches |
 | **Lobby** | Both teams side by side, with your matchup at the bottom. Click any player to open their page |
+| **Settings** | What happens when the scoreboard opens in game (bring the app to the front without taking focus from the game, a sound, show the lobby again when nothing changed) and what the lobby cards show (rank, current-hero stats, badges, most-played heroes, your matchup) |
 | **Heroes** | Every hero's win rate, pick rate, ban share, games and KDA, for Normal or Street Brawl and any rank band, with a 12-week trend line per hero and whether it's rising, falling or steady. Hover a trend line for each week's numbers; click a heading to sort, or a hero to open it |
 | **Hero** | A hero's win rate over the last 12 weeks (hover for each week), its best and toughest matchups (against its own average), its most-bought items with icons, and its win rate at every rank, by mode and rank band |
 | **My Stats** | Your own player page |
