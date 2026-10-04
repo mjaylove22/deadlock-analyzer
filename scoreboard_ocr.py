@@ -10,6 +10,7 @@ import logging
 import os
 import re
 import sys
+import unicodedata
 from typing import Dict, List, Optional, Tuple
 
 import pytesseract
@@ -143,8 +144,10 @@ HERO_MISREAD_MIN_LENGTH = 5  # only 39 hero names to confuse, so a slightly shor
 
 
 def squash(text: str) -> str:
-    """Lower case, without spaces: OCR adds and drops spaces."""
-    return "".join(text.lower().split())
+    """Lower case, without spaces, and with stylised letters made plain: OCR adds and drops spaces,
+    and some Steam names use full-width letters ("ｍｏｏｎｄｏｇ") or invisible characters."""
+    plain = unicodedata.normalize("NFKC", text).lower()
+    return "".join(c for c in plain if not c.isspace() and unicodedata.category(c) != "Cf")
 
 
 def looks_like_misread(ocr_text: str, real_text: str, min_length: int = MISREAD_MIN_LENGTH) -> bool:

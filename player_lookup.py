@@ -41,6 +41,54 @@ def is_likely_bot(record: Dict[str, str]) -> bool:
     return record["player"].lower() == record["hero"].lower()
 
 
+# Characters OCR mixes up in Steam names, as (what OCR read, what it really was), most common
+# first. Names are compared in lower case, so capital I and lower-case l are both "i" / "l" here.
+LOOKALIKES = [("i", "l"), ("l", "i"), ("1", "l"), ("l", "1"), ("i", "1"), ("0", "o"), ("o", "0"),
+              ("m", "rn"), ("rn", "m"), ("w", "vv"), ("d", "cl"), ("5", "s"), ("s", "5"), ("8", "b"),
+              ("b", "8"), ("u", "v"), ("v", "u"), ("e", "c"), ("c", "e")]
+MAX_LOOKALIKES = 6        # extra searches per name that had no exact match
+LOOKALIKE_RESULTS = 10    # an exact name ranks first, so a few results are enough
+
+
+def lookalike_names(name: str, limit: int = MAX_LOOKALIKES) -> List[str]:
+    """Spellings OCR could have misread as this name, one mix-up each, most likely first.
+    e.g. "pierix" -> "plerix": a lower-case L read as i."""
+    lowered = name.lower()
+    variants: List[str] = []
+    for read, real in LOOKALIKES:
+        start = lowered.find(read)
+        while start != -1 and len(variants) < limit:
+            variant = lowered[:start] + real + lowered[start + len(read):]
+            if variant not in variants:
+                variants.append(variant)
+            start = lowered.find(read, start + 1)
+    return variants[:limit]
+
+
+def corrected(profiles: List[Dict[str, Any]], real_name: str) -> List[Dict[str, Any]]:
+    """Candidates for a name OCR misread; the real Steam name is shown, and they count as unsure."""
+    candidates = [as_candidate(c) for c in profiles if same_name(c["personaname"], real_name)]
+    for c in candidates:
+        c["corrected_name"] = real_name.strip()
+    return candidates
+
+
+def find_lookalike(name: str) -> List[Dict[str, Any]]:
+    """Search the spellings OCR could have misread as this name (all at once); the first one that
+    is someone's exact Steam name wins. The name search alone often misses these: the real account
+    for "pierix" was 54th in its results, but first when searching "plerix"."""
+    variants = lookalike_names(name)
+    if not variants:
+        return []
+    searches = deadlock_api.parallel(*[lambda v=v: deadlock_api.search_steam_profiles(v, LOOKALIKE_RESULTS)
+                                       for v in variants], allow_failures=True)
+    for results in searches:
+        for c in results or []:
+            if any(same_name(c["personaname"], v) for v in variants):
+                return corrected(results, c["personaname"])
+    return []
+
+
 def find_candidates(name: str) -> Tuple[List[Dict[str, Any]], str]:
     """Accounts whose Steam name exactly matches, plus a note explaining an empty result.
 
@@ -51,18 +99,17 @@ def find_candidates(name: str) -> Tuple[List[Dict[str, Any]], str]:
     exact = [as_candidate(c) for c in results if same_name(c["personaname"], name)]
     if exact:
         return exact, ""
-    if not results:
-        return [], "no similar names"
 
     # No exact match: maybe OCR swapped one character. The API ranks results by similarity,
     # so the first plausible misread is the best one.
     misread = next((c["personaname"] for c in results if looks_like_misread(name, c["personaname"])), None)
     if misread:
-        near = [as_candidate(c) for c in results if same_name(c["personaname"], misread)]
-        for c in near:
-            c["corrected_name"] = misread.strip()
-        return near, ""
-    return [], f"closest name: {results[0]['personaname']!r}"
+        return corrected(results, misread), ""
+    # Not among the results: search the likely misreadings themselves
+    lookalike = find_lookalike(name)
+    if lookalike:
+        return lookalike, ""
+    return [], f"closest name: {results[0]['personaname']!r}" if results else "no similar names"
 
 
 def same_name(a: str, b: str) -> bool:
@@ -138,6 +185,16 @@ def lookup_lobby(records: List[Dict[str, str]], hero_ids_by_name: Dict[str, int]
             result.update(corrected_from=result["player"], player=candidates[0]["corrected_name"])
         candidates_by_player[i] = candidates
 
+    if any(r["status"] in ("not found", "error") for r in results) or \
+            any(len(cs) > 1 or "corrected_name" in cs[0] for cs in candidates_by_player.values()):
+        report_progress(progress, "Checking live matches...")
+        for i, candidate in live_match_candidates(results, candidates_by_player, hero_ids_by_name, me).items():
+            candidates_by_player[i] = [candidate]
+            if not same_name(candidate["name"], results[i]["player"]):
+                results[i].update(corrected_from=results[i].get("corrected_from") or results[i]["player"],
+                                  player=candidate["name"])
+            results[i].update(status=None, note="", live=True)
+
     # One batch request each for every candidate's hero stats and rank, both at the same time
     all_ids = list(dict.fromkeys(c["account_id"] for cs in candidates_by_player.values() for c in cs))
     stats_by_account = defaultdict(list)
@@ -166,6 +223,8 @@ def lookup_lobby(records: List[Dict[str, str]], hero_ids_by_name: Dict[str, int]
     for i in resolved:
         if results[i]["is_me"]:
             resolved[i] = (resolved[i][0], "you (from settings)")
+        elif results[i].get("live"):
+            resolved[i] = (resolved[i][0], "exact: this match is in the live match list")
     for i, (account, reason) in resolved.items():
         entries = stats_by_account[account["account_id"]]
         hero_id = hero_ids_by_name.get(results[i]["hero"])
@@ -178,7 +237,44 @@ def lookup_lobby(records: List[Dict[str, str]], hero_ids_by_name: Dict[str, int]
 
     apply_ranks(results, ranks)
     parties = find_parties(resolved, {i: results[i]["team"] for i in resolved})
+    missing = [f"{r['player']} ({r['note']})" for r in results if r["status"] in ("not found", "error")]
+    logger.info(f"Lobby lookup: {sum(r['status'] == 'found' for r in results)} found, "
+                f"{sum(r['status'] == 'skipped' for r in results)} bots" + (f", not found: {'; '.join(missing)}" if missing else ""))
     return results, parties
+
+
+def live_match_candidates(results: List[Dict[str, Any]], candidates_by_player: Dict[int, List[Dict[str, Any]]],
+                          hero_ids_by_name: Dict[str, int], me: Optional[Dict[str, Any]]) -> Dict[int, Dict[str, Any]]:
+    """{result index: candidate} from the live match list, for players not identified for sure.
+
+    The API knows every account in the top ~200 matches being played. The accounts we're sure of
+    (the user, unique names) find the match; it must have this lobby's heroes, then each hero's
+    account is exact. Usually there's no such match, which costs one small request."""
+    sure = [cs[0]["account_id"] for cs in candidates_by_player.values() if len(cs) == 1 and "corrected_name" not in cs[0]]
+    if me:
+        sure.append(me["account_id"])
+    if not sure:
+        return {}
+    try:
+        matches = deadlock_api.get_active_matches(list(dict.fromkeys(sure)))
+    except Exception as e:
+        logger.info(f"Live match check failed ({e})")
+        return {}
+    lobby_heroes = {hero_ids_by_name.get(r["hero"]) for r in results} - {None}
+    for match in matches:
+        by_hero = {p["hero_id"]: p["account_id"] for p in match.get("players", [])}
+        if len(lobby_heroes & set(by_hero)) < max(len(lobby_heroes) - 1, 1):
+            continue  # a different match one of these accounts is in
+        wanted = {i: by_hero[hero_ids_by_name[r["hero"]]] for i, r in enumerate(results)
+                  if r["status"] != "skipped" and hero_ids_by_name.get(r["hero"]) in by_hero
+                  and not (i in candidates_by_player and len(candidates_by_player[i]) == 1
+                           and "corrected_name" not in candidates_by_player[i][0])}
+        if not wanted:
+            return {}
+        profiles = {p["account_id"]: p for p in deadlock_api.get_profiles(list(wanted.values()))}
+        return {i: dict(as_candidate(profiles[a]), name=profiles[a]["personaname"])
+                for i, a in wanted.items() if a in profiles}
+    return {}
 
 
 SEARCH_RESULTS_SHOWN = 6

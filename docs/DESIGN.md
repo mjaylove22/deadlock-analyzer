@@ -239,9 +239,18 @@ The ban endpoint returns how many times each hero was banned, but not how many m
 - **A canvas table** (`ui/charts.py`) replaced the ttk table on the Heroes page: ttk tables can only show text and one image per row, so they can't hold a chart. The canvas draws the 39 rows (469 shapes) in 6 ms, redraws one trend cell under the mouse in 0.02 ms, and keeps sorting and click-to-open. The other tables stay ttk.
 - **Found on the way:** the API refuses a rank filter for Street Brawl ("Cannot filter by average badge for street brawl game mode"), so choosing a rank band there failed. Street Brawl now always uses all ranks, with the filter greyed out and a hover note explaining why.
 
+### 4.27 Finding more players
+Checked against a real Street Brawl lobby where 2 of 8 players weren't found:
+- **"plerix" read as "pierix"** (a lower-case L as i). The name search ranks results by similarity, and the real account came 54th for "pierix", beyond the 50 the app asks for. Asking for 200 was rejected: every result carries a friend list, so it's ~500 KB per player, ~6 MB per lobby. Instead, when a name has no exact match, up to 6 **look-alike spellings** (l/i/1, o/0, rn/m, vv/w...) are searched at once, 10 results each (~30 KB). The exact name ranks first for the right spelling. The player is shown under the real name with NAME FIXED and ID UNSURE.
+- **No results came back as an error:** the API answers a search with no matches with a 404 ("No Steam profiles found."), which showed the player as an error instead of "not found".
+- **Stylised names:** names are compared after Unicode NFKC normalisation, without invisible characters, so full-width letters ("ｍｏｏｎｄｏｇ", which OCR reads as "m o o n d o g") match plain ones. The search itself can't find such names, so this only helps when they're among the results.
+- **The live match list:** the API knows every account in the top ~200 matches being played. When a lobby has unsure or missing players, one small request with the accounts that are certain (the user, unique names) looks for the match; if its heroes are this lobby's, every hero's account is exact. Usually there's no such match.
+- **Tried and dropped:** looking for a missing player in found teammates' Steam friend lists. Those lists came back empty for that lobby, so it would have added a large request for nothing.
+- Each lookup now logs how many players were found and why the others weren't, and each capture is logged, so a report like "it kept waiting" can be checked.
+
 ## 5. Testing
 
-`python -m unittest discover -s tests -v` runs 132 tests in a few seconds:
+`python -m unittest discover -s tests -v` runs 138 tests in a few seconds:
 - **Parser tests** use OCR output actually produced from real screenshots, including a noisy version, plus edge cases: headers, noise-only lines, duplicate player names, multi-word heroes, hero lines with nothing above them.
 - **Identity tests** use plain data to cover settling by unique name, friend links (including links listed by only one side and chains of settled players), ties falling back to hero history, and party grouping.
 - **Insights tests** cover each badge rule and its thresholds.

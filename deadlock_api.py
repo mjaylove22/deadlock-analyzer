@@ -10,6 +10,7 @@ import logging
 import os
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from collections import OrderedDict
@@ -131,9 +132,21 @@ def search_steam_profiles(name: str, limit: int = 50) -> List[Dict[str, Any]]:
     The API hides accounts with fewer than 5 recorded matches in the last 30 days by default.
     Bot matches aren't recorded, so that filter can hide the very player we're looking for;
     it is turned off here, and same-named accounts are told apart by hero history instead.
+    Each result carries the account's friend list, so results are ~3 KB each: keep limit small.
     """
-    return get_json("/v1/players/steam-search",
-                    {"search_query": name, "limit": limit, "min_matches_played_last_30d": 0})
+    try:
+        return get_json("/v1/players/steam-search",
+                        {"search_query": name, "limit": limit, "min_matches_played_last_30d": 0})
+    except urllib.error.HTTPError as e:
+        if e.code == 404:  # the API's answer when nothing matches: "No Steam profiles found."
+            return []
+        raise
+
+
+def get_active_matches(account_ids: List[int]) -> List[Dict[str, Any]]:
+    """Live matches that include any of these accounts, with every player's account and hero.
+    Only the top ~200 matches being played (the game's Watch tab) are known, so usually empty."""
+    return get_json("/v1/matches/active", {"account_ids": ",".join(str(a) for a in account_ids)}, max_age=60)
 
 
 def get_hero_stats(account_ids: List[int], game_mode: str = "normal", match_mode: str = None) -> List[Dict[str, Any]]:

@@ -39,7 +39,7 @@ def record(player, hero, team="friendly"):
 
 
 def fake_search(profiles_by_name):
-    return lambda name: profiles_by_name.get(name, [])
+    return lambda name, limit=50: profiles_by_name.get(name, [])
 
 
 class LookupLobbyTests(unittest.TestCase):
@@ -50,13 +50,15 @@ class LookupLobbyTests(unittest.TestCase):
         guard.start()
         self.addCleanup(guard.stop)
 
-    def run_lookup(self, records, profiles_by_name, stats=()):
+    def run_lookup(self, records, profiles_by_name, stats=(), live=(), me=None, live_profiles=()):
         api = player_lookup.deadlock_api
         with patch.object(api, "search_steam_profiles", side_effect=fake_search(profiles_by_name)), \
              patch.object(api, "get_hero_stats", return_value=list(stats)) as get_stats, \
              patch.object(api, "fetch_rank_tiers", return_value=RANK_TIERS), \
-             patch.object(api, "get_player_ranks", side_effect=lambda ids: [rank(a, 7, 2) for a in ids]):
-            results, parties = lookup_lobby(records, HERO_IDS, HERO_NAMES)
+             patch.object(api, "get_player_ranks", side_effect=lambda ids: [rank(a, 7, 2) for a in ids]), \
+             patch.object(api, "get_active_matches", return_value=list(live)), \
+             patch.object(api, "get_profiles", return_value=list(live_profiles)):
+            results, parties = lookup_lobby(records, HERO_IDS, HERO_NAMES, me=me)
         return results, parties, get_stats
 
     def test_bot_named_after_its_hero_is_skipped_without_api_calls(self):
@@ -142,6 +144,36 @@ class LookupLobbyTests(unittest.TestCase):
         results, _, _ = self.run_lookup([record("Twin", "Paradox")], profiles, stats)
         self.assertFalse(results[0]["confident"])
 
+    def test_a_misread_found_by_searching_its_lookalike_spelling(self):
+        # Real case: "plerix" read as "pierix". Searching "pierix" put the real account 54th of
+        # its results, beyond what the app asks for; searching "plerix" puts it first.
+        profiles = {"pierix": [profile(9, "Pier"), profile(8, "Virgin")], "plerix": [profile(1, "plerix")]}
+        results, _, _ = self.run_lookup([record("pierix", "Paradox")], profiles)
+        r = results[0]
+        self.assertEqual((r["status"], r["account_id"], r["player"], r["corrected_from"]), ("found", 1, "plerix", "pierix"))
+        self.assertFalse(r["confident"])  # the name was a guess
+
+    def test_no_results_at_all_is_not_found_not_an_error(self):
+        results, _, _ = self.run_lookup([record("zzqx", "Paradox")], {})
+        self.assertEqual((results[0]["status"], results[0]["note"]), ("not found", "no similar names"))
+
+    def test_a_live_match_gives_exact_accounts(self):
+        # Two strangers share the name "Twin"; the live match list says which one is playing Paradox
+        profiles = {"Twin": [profile(1, "Twin"), profile(2, "Twin")], "Solo": [profile(5, "Solo")]}
+        live = [{"match_id": 77, "players": [{"account_id": 2, "hero_id": PARADOX}, {"account_id": 5, "hero_id": GRAVES}]}]
+        results, _, _ = self.run_lookup([record("Twin", "Paradox"), record("Solo", "Graves")], profiles,
+                                        live=live, live_profiles=[profile(2, "Twin")])
+        self.assertEqual((results[0]["account_id"], results[0]["confident"]), (2, True))
+        self.assertIn("live match", results[0]["note"])
+
+    def test_a_live_match_with_other_heroes_is_someone_elses(self):
+        profiles = {"Twin": [profile(1, "Twin"), profile(2, "Twin")], "Solo": [profile(5, "Solo")]}
+        live = [{"match_id": 77, "players": [{"account_id": 2, "hero_id": 99}, {"account_id": 5, "hero_id": 98}]}]
+        results, _, _ = self.run_lookup([record("Twin", "Paradox"), record("Solo", "Graves")], profiles,
+                                        stats=[stat(1, PARADOX, 30)], live=live, live_profiles=[profile(2, "Twin")])
+        self.assertEqual(results[0]["account_id"], 1)  # decided by hero history as before
+        self.assertNotIn("live match", results[0]["note"])
+
     def test_network_error_is_reported_not_raised(self):
         with patch.object(player_lookup.deadlock_api, "search_steam_profiles", side_effect=OSError("timed out")):
             results, _ = lookup_lobby([record("Someone", "Paradox")], HERO_IDS, HERO_NAMES)
@@ -186,6 +218,15 @@ class LooksLikeMisreadTests(unittest.TestCase):
 
     def test_one_swapped_character(self):
         self.assertTrue(looks_like_misread("Or. Night Owl", "Dr. Night Owl"))
+
+    def test_stylised_letters_match_plain_ones(self):
+        self.assertTrue(same_name("ｍｏｏｎｄｏｇ", "m o o n d o g"))  # full-width letters, as OCR spaces them out
+        self.assertTrue(same_name("Fizz​Pop", "Fizz Pop"))  # an invisible zero-width space
+
+    def test_lookalike_spellings_most_likely_first(self):
+        self.assertEqual(player_lookup.lookalike_names("pierix")[0], "plerix")
+        self.assertIn("modern", player_lookup.lookalike_names("rnodern"))
+        self.assertLessEqual(len(player_lookup.lookalike_names("lilililililil")), player_lookup.MAX_LOOKALIKES)
 
     def test_insertions_deletions_and_short_names_are_rejected(self):
         self.assertFalse(looks_like_misread("Kovas", "Kovmas"))

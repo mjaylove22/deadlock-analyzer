@@ -383,6 +383,7 @@ class AnalyzerApp:
         finally:
             self.apply_overlay()  # back to normal: opacity, and visible to screen sharing unless overlay is on
         delete_old_screenshots()
+        logger.info(f"{'Auto-detect' if auto else 'Manual'} capture: {os.path.basename(path)}")
         self.start_analysis(path, auto)
 
     def analyze_latest(self):
@@ -455,6 +456,7 @@ class AnalyzerApp:
         self.root.bell()  # audible cue when the report is ready while you're in game
 
     def same_lobby(self):
+        logger.info("Same lobby as the last capture; nothing to look up")
         self.busy = False
         self.set_status("Same lobby as before; nothing new  ·  watching for the scoreboard...")
 
