@@ -358,17 +358,19 @@ class AnalyzerApp:
                 self.events.put(self.same_lobby)
                 return
             results, parties = analyze_records(records, progress=self.progress, me=get_me())
-            matchup = None
-            if any(r.get("is_me") for r in results):
-                self.progress("Loading your matchup...")
+            def matchup():
+                if not any(r.get("is_me") for r in results):
+                    return None
                 try:
                     heroes = deadlock_api.fetch_heroes()
-                    matchup = build_matchup(results, {h["name"]: h["id"] for h in heroes},
-                                            {h["id"]: h["name"] for h in heroes})
+                    return build_matchup(results, {h["name"]: h["id"] for h in heroes},
+                                         {h["id"]: h["name"] for h in heroes})
                 except Exception:
                     logger.exception("Matchup failed")  # the lobby report is still useful without it
-            self.progress("Loading avatars...")
-            images = AvatarCache.download(r.get("avatar_url") for r in results)
+                    return None
+            self.progress("Loading your matchup and avatars...")
+            matchup, images = deadlock_api.parallel(
+                matchup, lambda: AvatarCache.download(r.get("avatar_url") for r in results))
             lobby = {"path": path, "records": records, "results": results, "parties": parties,
                      "matchup": matchup, "images": images, "time": time.time()}
             self.events.put(lambda: self.show_lobby(lobby))

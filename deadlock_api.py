@@ -6,33 +6,102 @@ the API's OpenAPI spec (https://api.deadlock-api.com/openapi.json) and real resp
 
 import functools
 import json
+import os
+import threading
+import time
 import urllib.parse
 import urllib.request
-from typing import Any, Dict, List
+from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Callable, Dict, List
 
 BASE_URL = "https://api.deadlock-api.com"
 TIMEOUT_SECONDS = 10
 
+# Responses are remembered so going Back or revisiting a page doesn't wait on the network again.
+# Callers must treat returned data as read-only: the same object is handed out until it expires.
+CACHE_SECONDS = 300            # most answers: reused for 5 minutes
+ASSET_CACHE_SECONDS = 86400    # hero/rank/item lists change rarely: kept on disk for a day
+MAX_CACHED = 300               # oldest entries are dropped beyond this, to keep memory small
+DISK_CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "api")
 
-def get_json(path: str, params: Dict[str, Any] = None) -> Any:
-    """GET an API path and return the decoded JSON body."""
-    url = BASE_URL + path
-    if params:
-        url += "?" + urllib.parse.urlencode(params)
+_memory: "OrderedDict[str, tuple]" = OrderedDict()  # url -> (time fetched, data)
+_lock = threading.Lock()
+
+
+def _download(url: str) -> Any:
     request = urllib.request.Request(url, headers={"User-Agent": "deadlock-analyzer (learning project)"})
     with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
-@functools.lru_cache(maxsize=None)  # rarely changes: fetch once per run (failures aren't cached)
+def disk_cached(name: str, build: Callable[[], Any], max_age: float = ASSET_CACHE_SECONDS) -> Any:
+    """build()'s result, kept on disk between runs as cache/api/<name>.json. Only slim, processed
+    data is stored (the raw hero and item responses are 2 MB and 6 MB). If rebuilding fails, an old
+    copy is better than nothing (e.g. offline)."""
+    path = os.path.join(DISK_CACHE_DIR, name + ".json")
+    if os.path.exists(path) and time.time() - os.path.getmtime(path) < max_age:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    try:
+        data = build()
+    except OSError:
+        if os.path.exists(path):
+            with open(path, encoding="utf-8") as f:
+                return json.load(f)
+        raise
+    os.makedirs(DISK_CACHE_DIR, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+    return data
+
+
+def get_json(path: str, params: Dict[str, Any] = None, max_age: float = CACHE_SECONDS) -> Any:
+    """GET an API path and return the decoded JSON body, reusing answers younger than max_age
+    seconds (0 = always fetch)."""
+    url = BASE_URL + path
+    if params:
+        url += "?" + urllib.parse.urlencode(params)
+    now = time.time()
+    with _lock:
+        hit = _memory.get(url)
+        if hit and now - hit[0] < max_age:
+            _memory.move_to_end(url)
+            return hit[1]
+    data = _download(url)
+    with _lock:
+        _memory[url] = (now, data)
+        _memory.move_to_end(url)
+        while len(_memory) > MAX_CACHED:
+            _memory.popitem(last=False)
+    return data
+
+
+def parallel(*calls: Callable[[], Any]) -> List[Any]:
+    """Run independent API calls at the same time; results come back in the same order.
+    Waiting for the slowest call beats waiting for all of them one after another."""
+    with ThreadPoolExecutor(max_workers=min(len(calls), 8)) as pool:
+        return list(pool.map(lambda call: call(), calls))
+
+
+@functools.lru_cache(maxsize=None)
+def fetch_hero_assets() -> List[Dict[str, Any]]:
+    """Playable heroes: {"id", "name", "icon", "card", "color"} (image URLs and the hero's colour)."""
+    def build():
+        return [
+            {"id": h["id"], "name": h["name"],
+             "icon": (h.get("images") or {}).get("icon_image_small"),
+             "card": (h.get("images") or {}).get("icon_hero_card"),
+             "color": (h.get("colors") or {}).get("style_hex") or "#4a5a6a"}
+            for h in get_json("/v1/assets/heroes", max_age=ASSET_CACHE_SECONDS)
+            if h["player_selectable"] and not h["disabled"] and not h["in_development"]
+        ]
+    return disk_cached("heroes", build)
+
+
 def fetch_heroes() -> List[Dict[str, Any]]:
-    """Return heroes a player can actually pick right now, as {"id", "name"} dicts."""
-    heroes = get_json("/v1/assets/heroes")
-    return [
-        {"id": hero["id"], "name": hero["name"]}
-        for hero in heroes
-        if hero["player_selectable"] and not hero["disabled"] and not hero["in_development"]
-    ]
+    """Heroes a player can actually pick right now, as {"id", "name"} dicts."""
+    return [{"id": h["id"], "name": h["name"]} for h in fetch_hero_assets()]
 
 
 def search_steam_profiles(name: str, limit: int = 50) -> List[Dict[str, Any]]:
@@ -58,28 +127,37 @@ def get_match_history(account_id: int) -> List[Dict[str, Any]]:
     return get_json(f"/v1/players/{account_id}/match-history")
 
 
-def get_global_hero_stats(game_mode: str = "normal") -> List[Dict[str, Any]]:
-    """Every hero's totals across all recorded matches: {"hero_id", "matches", "losses", "total_kills", ...}."""
-    return get_json("/v1/analytics/hero-stats", {"game_mode": game_mode})
+def badge_range(ranks: tuple = None) -> Dict[str, int]:
+    """Analytics filter for matches whose average rank falls in (lowest tier, highest tier).
+    Badges are tier * 10 + subrank, e.g. Emissary 3 = 73."""
+    if not ranks:
+        return {}
+    low, high = ranks
+    return {"min_average_badge": low * 10, "max_average_badge": high * 10 + 9}
 
 
-@functools.lru_cache(maxsize=None)
-def fetch_hero_assets() -> List[Dict[str, Any]]:
-    """Full hero assets (images, colours) for playable heroes."""
-    return [h for h in get_json("/v1/assets/heroes")
-            if h["player_selectable"] and not h["disabled"] and not h["in_development"]]
+def get_global_hero_stats(game_mode: str = "normal", ranks: tuple = None) -> List[Dict[str, Any]]:
+    """Every hero's totals across recorded matches: {"hero_id", "matches", "losses", "total_kills", ...}.
+    ranks: (lowest tier, highest tier) to only count matches at that skill level."""
+    return get_json("/v1/analytics/hero-stats", {"game_mode": game_mode, **badge_range(ranks)}, max_age=3600)
 
 
 @functools.lru_cache(maxsize=None)
 def fetch_rank_assets() -> List[Dict[str, Any]]:
-    """Full rank assets (tier, name, colour, emblem images)."""
-    return get_json("/v1/assets/ranks")
+    """Ranks: {"tier", "name", "color", "emblems": {"1": url, ... "6": url}} (small emblem per subrank)."""
+    def build():
+        return [
+            {"tier": r["tier"], "name": r["name"], "color": r["color"],
+             "emblems": {str(n): (r.get("images") or {}).get(f"small_subrank{n}") for n in range(1, 7)}}
+            for r in get_json("/v1/assets/ranks", max_age=ASSET_CACHE_SECONDS)
+        ]
+    return disk_cached("ranks", build)
 
 
 @functools.lru_cache(maxsize=None)
 def fetch_rank_tiers() -> Dict[int, Dict[str, str]]:
     """Rank tier number -> {"name", "color"}, e.g. 7 -> Emissary. Tier 0 (Obscurus) means unranked."""
-    return {tier["tier"]: {"name": tier["name"], "color": tier["color"]} for tier in get_json("/v1/assets/ranks")}
+    return {tier["tier"]: {"name": tier["name"], "color": tier["color"]} for tier in fetch_rank_assets()}
 
 
 def get_profiles(account_ids: List[int]) -> List[Dict[str, Any]]:
@@ -87,27 +165,37 @@ def get_profiles(account_ids: List[int]) -> List[Dict[str, Any]]:
     return get_json("/v1/players/steam", {"account_ids": ",".join(str(a) for a in account_ids)})
 
 
-@functools.lru_cache(maxsize=None)
-def fetch_counter_stats() -> List[Dict[str, Any]]:
-    """Every hero-vs-hero pair: {"hero_id", "enemy_hero_id", "wins", "matches_played", ...}, all ranks."""
-    return get_json("/v1/analytics/hero-counter-stats")
+def fetch_counter_stats(game_mode: str = "normal", ranks: tuple = None) -> List[Dict[str, Any]]:
+    """Every hero-vs-hero pair: {"hero_id", "enemy_hero_id", "wins", "matches_played", ...}.
+    The server recomputes these hourly, so they're reused for an hour."""
+    return get_json("/v1/analytics/hero-counter-stats", {"game_mode": game_mode, **badge_range(ranks)}, max_age=3600)
 
 
-def get_item_stats(hero_id: int, enemy_hero_ids: List[int]) -> List[Dict[str, Any]]:
-    """Per-item {"item_id", "wins", "losses", "matches"} for one hero, in matches against these enemy heroes."""
-    return get_json("/v1/analytics/item-stats",
-                    {"hero_id": hero_id, "enemy_hero_ids": ",".join(str(h) for h in enemy_hero_ids)})
+def get_item_stats(hero_id: int, enemy_hero_ids: List[int] = (), game_mode: str = "normal",
+                   ranks: tuple = None) -> List[Dict[str, Any]]:
+    """Per-item {"item_id", "wins", "losses", "matches"} for one hero, optionally only in matches
+    against these enemy heroes."""
+    params = {"hero_id": hero_id, "game_mode": game_mode, **badge_range(ranks)}
+    if enemy_hero_ids:
+        params["enemy_hero_ids"] = ",".join(str(h) for h in enemy_hero_ids)
+    return get_json("/v1/analytics/item-stats", params, max_age=3600)
+
+
+def get_mate_stats(account_id: int, min_matches: int = 10) -> List[Dict[str, Any]]:
+    """Teammates a player has played at least min_matches with: {"mate_id", "wins", "matches_played", ...}.
+    Without the filter this returns every teammate ever (3,400+ entries, ~275 KB, for one player)."""
+    return get_json(f"/v1/players/{account_id}/mate-stats", {"min_matches_played": min_matches})
 
 
 @functools.lru_cache(maxsize=None)
 def fetch_items() -> Dict[int, Dict[str, Any]]:
     """Shop items by id: {"name", "slot", "tier", "cost"}. Only buyable upgrades (not abilities etc.)."""
-    return {
-        item["id"]: {"name": item["name"], "slot": item.get("item_slot_type"),
-                     "tier": item.get("item_tier"), "cost": item.get("cost")}
-        for item in get_json("/v1/assets/items")
-        if item.get("type") == "upgrade" and item.get("shopable")
-    }
+    def build():  # stored as a list: JSON object keys can't be numbers
+        return [{"id": item["id"], "name": item["name"], "slot": item.get("item_slot_type"),
+                 "tier": item.get("item_tier"), "cost": item.get("cost")}
+                for item in get_json("/v1/assets/items", max_age=ASSET_CACHE_SECONDS)
+                if item.get("type") == "upgrade" and item.get("shopable")]
+    return {item["id"]: item for item in disk_cached("items", build)}
 
 
 def get_player_ranks(account_ids: List[int]) -> List[Dict[str, Any]]:

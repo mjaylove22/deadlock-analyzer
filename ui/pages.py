@@ -12,7 +12,7 @@ import webbrowser
 from typing import Any, Dict
 
 import assets
-from player_lookup import attach_ranks, search_player
+from player_lookup import search_player
 from profiles import API_GAME_MODES, hero_tier_list, player_profile, when
 from report import TEAM_TITLES, team_summary
 from settings import get_me, save_settings
@@ -304,9 +304,8 @@ class PlayerPage(Page):
 
         def work():
             profile = player_profile(account_id, self.app.hero_names_by_id(), API_GAME_MODES[mode])
-            attach_ranks([profile])
             if profile["heroes"]:
-                assets.load(images.hero_card_url(profile["heroes"][0]["hero"]))  # main hero's portrait
+                assets.load(images.hero_card_url(profile["heroes"][0]["hero"]), assets.PORTRAIT_MAX_SIDE)  # main hero's portrait
             return profile, self.app.avatars.download([profile["avatar_url"]])
         self.app.run_task(work, lambda result: self.show(*result))
 

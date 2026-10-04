@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import deadlock_api
+from player_lookup import fetch_ranks
 
 GAME_MODES = {1: "Normal", 4: "Street Brawl"}
 API_GAME_MODES = {"Normal": "normal", "Street Brawl": "street_brawl"}  # names the stats endpoints expect
@@ -95,9 +96,13 @@ def tier_rows(stats: List[Dict[str, Any]], hero_names_by_id: Dict[int, str],
 
 def player_profile(account_id: int, hero_names_by_id: Dict[int, str], game_mode: str = "normal") -> Dict[str, Any]:
     """Everything the player page shows, in one call (run it on a worker thread)."""
-    profiles = deadlock_api.get_profiles([account_id])
+    profiles, history, heroes, ranks = deadlock_api.parallel(
+        lambda: deadlock_api.get_profiles([account_id]),
+        lambda: deadlock_api.get_match_history(account_id),
+        lambda: deadlock_api.get_hero_stats([account_id], game_mode),
+        lambda: fetch_ranks([account_id]))
     profile = profiles[0] if profiles else {}
-    matches = sorted(deadlock_api.get_match_history(account_id), key=lambda m: m["start_time"], reverse=True)
+    matches = sorted(history, key=lambda m: m["start_time"], reverse=True)
     return {
         "account_id": account_id,
         "name": profile.get("personaname", f"Account {account_id}"),
@@ -105,7 +110,8 @@ def player_profile(account_id: int, hero_names_by_id: Dict[int, str], game_mode:
         "avatar_url": profile.get("avatarfull") or profile.get("avatarmedium"),
         "recent_30d": profile.get("matches_played_last_30d"),
         "game_mode": game_mode,
-        "heroes": hero_rows(deadlock_api.get_hero_stats([account_id], game_mode), hero_names_by_id),
+        "rank": ranks.get(account_id),
+        "heroes": hero_rows(heroes, hero_names_by_id),
         "modes": mode_breakdown(matches),
         "recent": [describe_match(m, hero_names_by_id) for m in matches[:RECENT_MATCHES_SHOWN]],
         "total_matches": len(matches),

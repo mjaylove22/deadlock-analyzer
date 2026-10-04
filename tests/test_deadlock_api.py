@@ -1,5 +1,7 @@
 """Tests for the request parameters sent to the Deadlock API (no network: get_json is mocked)."""
 
+import io
+import json
 import unittest
 from unittest.mock import patch
 
@@ -16,6 +18,48 @@ class SearchSteamProfilesTests(unittest.TestCase):
         self.assertEqual(path, "/v1/players/steam-search")
         self.assertEqual(params["min_matches_played_last_30d"], 0)
         self.assertEqual(params["search_query"], "Grey Mirage")
+
+
+class ResponseCacheTests(unittest.TestCase):
+    def setUp(self):
+        deadlock_api._memory.clear()
+        self.addCleanup(deadlock_api._memory.clear)
+
+    def fake_urlopen(self):
+        calls = []
+
+        def urlopen(request, timeout):
+            calls.append(request.full_url)
+            return io.BytesIO(json.dumps({"n": len(calls)}).encode())
+        return calls, urlopen
+
+    def test_repeat_requests_are_answered_from_memory(self):
+        calls, urlopen = self.fake_urlopen()
+        with patch.object(deadlock_api.urllib.request, "urlopen", side_effect=urlopen):
+            first = deadlock_api.get_json("/v1/x", {"a": 1})
+            second = deadlock_api.get_json("/v1/x", {"a": 1})
+            other = deadlock_api.get_json("/v1/x", {"a": 2})   # different parameters: a different answer
+        self.assertEqual(len(calls), 2)
+        self.assertIs(first, second)
+        self.assertNotEqual(first, other)
+
+    def test_max_age_zero_always_fetches(self):
+        calls, urlopen = self.fake_urlopen()
+        with patch.object(deadlock_api.urllib.request, "urlopen", side_effect=urlopen):
+            deadlock_api.get_json("/v1/x")
+            deadlock_api.get_json("/v1/x", max_age=0)
+        self.assertEqual(len(calls), 2)
+
+    def test_memory_is_capped(self):
+        calls, urlopen = self.fake_urlopen()
+        with patch.object(deadlock_api.urllib.request, "urlopen", side_effect=urlopen), \
+             patch.object(deadlock_api, "MAX_CACHED", 3):
+            for n in range(5):
+                deadlock_api.get_json("/v1/x", {"n": n})
+        self.assertEqual(len(deadlock_api._memory), 3)
+
+    def test_parallel_keeps_order(self):
+        self.assertEqual(deadlock_api.parallel(lambda: 1, lambda: 2, lambda: 3), [1, 2, 3])
 
 
 if __name__ == "__main__":

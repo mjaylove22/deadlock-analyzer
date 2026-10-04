@@ -119,20 +119,29 @@ def lookup_lobby(records: List[Dict[str, str]], hero_ids_by_name: Dict[str, int]
                     hero_stats=None, badges=[], confident=False, rank=None, corrected_from=None,
                     avatar_url=None, is_me=False) for r in records]
 
-    candidates_by_player = {}
-    for i, result in enumerate(results):
-        report_progress(progress, f"Looking up {result['player']} ({i + 1}/{len(results)})...")
+    for result in results:
         if is_likely_bot(result):
             result.update(status="skipped", note="name matches hero, likely a bot")
-            continue
+    to_search = [(i, r) for i, r in enumerate(results) if r["status"] != "skipped"]
+
+    def candidates_for(result):
+        """(candidates, note, is_me); candidates is None if the lookup failed."""
         try:
             if me and same_name(result["player"], me["name"]):
-                candidates, note = my_candidate(me), ""
-                result["is_me"] = True
-            else:
-                candidates, note = find_candidates(result["player"])
+                return my_candidate(me), "", True
+            return (*find_candidates(result["player"]), False)
         except Exception as e:
-            result.update(status="error", note=str(e))
+            return None, str(e), False
+
+    # Every player's name is searched at the same time, not one after another
+    report_progress(progress, f"Looking up {len(to_search)} players...")
+    found = deadlock_api.parallel(*[lambda r=r: candidates_for(r) for _, r in to_search]) if to_search else []
+
+    candidates_by_player = {}
+    for (i, result), (candidates, note, is_me) in zip(to_search, found):
+        result["is_me"] = is_me
+        if candidates is None:
+            result.update(status="error", note=note)
             continue
         if not candidates:
             result.update(status="not found", note=note)
@@ -142,16 +151,22 @@ def lookup_lobby(records: List[Dict[str, str]], hero_ids_by_name: Dict[str, int]
             result.update(corrected_from=result["player"], player=candidates[0]["corrected_name"])
         candidates_by_player[i] = candidates
 
-    # One batch request covers every candidate in the lobby (the API accepts up to 1000 ids)
+    # One batch request each for every candidate's hero stats and rank, both at the same time
     all_ids = list(dict.fromkeys(c["account_id"] for cs in candidates_by_player.values() for c in cs))
     stats_by_account = defaultdict(list)
+    ranks = {}
     if all_ids:
-        report_progress(progress, "Loading hero stats...")
-        try:
-            for entry in deadlock_api.get_hero_stats(all_ids):
-                stats_by_account[entry["account_id"]].append(entry)
-        except Exception as e:
-            logger.warning(f"Could not load hero stats ({e}); identities will rely on names and friends only")
+        report_progress(progress, "Loading hero stats and ranks...")
+
+        def stats():
+            try:
+                return deadlock_api.get_hero_stats(all_ids)
+            except Exception as e:
+                logger.warning(f"Could not load hero stats ({e}); identities will rely on names and friends only")
+                return []
+        entries, ranks = deadlock_api.parallel(stats, lambda: fetch_ranks(all_ids))
+        for entry in entries:
+            stats_by_account[entry["account_id"]].append(entry)
 
     for i, candidates in candidates_by_player.items():
         hero_id = hero_ids_by_name.get(results[i]["hero"])
@@ -174,8 +189,7 @@ def lookup_lobby(records: List[Dict[str, str]], hero_ids_by_name: Dict[str, int]
                           badges=compute_badges(entries, hero_id),
                           confident=is_confident(candidates_by_player[i], reason))
 
-    report_progress(progress, "Loading ranks...")
-    attach_ranks(results)
+    apply_ranks(results, ranks)
     parties = find_parties(resolved, {i: results[i]["team"] for i in resolved})
     return results, parties
 
@@ -196,9 +210,11 @@ def search_player(name: str, hero_names_by_id: Dict[int, str], progress: Progres
     if not shown:
         return []
 
-    report_progress(progress, "Loading hero stats...")
+    report_progress(progress, "Loading stats...")
+    ids = [c["account_id"] for c in shown]
+    entries, ranks = deadlock_api.parallel(lambda: deadlock_api.get_hero_stats(ids), lambda: fetch_ranks(ids))
     stats_by_account = defaultdict(list)
-    for entry in deadlock_api.get_hero_stats([c["account_id"] for c in shown]):
+    for entry in entries:
         stats_by_account[entry["account_id"]].append(entry)
 
     results = []
@@ -212,8 +228,7 @@ def search_player(name: str, hero_names_by_id: Dict[int, str], progress: Progres
                             top_heroes=top_heroes(entries, hero_names_by_id),
                             totals={"games": games, "win_rate": wins / games if games else 0.0,
                                     "recent": c.get("matches_played_last_30d")}))
-    report_progress(progress, "Loading ranks...")
-    attach_ranks(results)
+    apply_ranks(results, ranks)
     return results
 
 
@@ -234,25 +249,36 @@ def is_confident(candidates: List[Dict[str, Any]], reason: str) -> bool:
     return games[0] > 0 and games[0] >= 2 * games[1]
 
 
-def attach_ranks(results: List[Dict[str, Any]]) -> None:
-    """Add {"name", "subrank", "color"} ranks for found players, using one batch request."""
-    ids = [r["account_id"] for r in results if r["account_id"]]
-    if not ids:
-        return
+def fetch_ranks(account_ids: List[int]) -> Dict[int, Dict[str, Any]]:
+    """{account_id: {"name", "color", "badge"}} from one batch request ({} if it fails)."""
+    if not account_ids:
+        return {}
     try:
         tiers = deadlock_api.fetch_rank_tiers()
-        ranks = {r["account_id"]: r for r in deadlock_api.get_player_ranks(ids)}
+        entries = deadlock_api.get_player_ranks(account_ids)
     except Exception as e:
         logger.warning(f"Could not load ranks ({e})")
-        return
+        return {}
+    ranks = {}
+    for entry in entries:
+        tier = tiers.get(entry["rank"])
+        if tier:
+            # Tier 0 (Obscurus) means no recent ranked games. "badge" (tier * 10 + subrank) lets ranks be compared
+            name = "Unranked" if entry["rank"] == 0 else f"{tier['name']} {entry['subrank']}"
+            ranks[entry["account_id"]] = {"name": name, "color": tier["color"],
+                                          "badge": entry["rank"] * 10 + entry["subrank"]}
+    return ranks
+
+
+def apply_ranks(results: List[Dict[str, Any]], ranks: Dict[int, Dict[str, Any]]) -> None:
     for result in results:
-        rank = ranks.get(result["account_id"])
-        if rank and rank["rank"] in tiers:
-            tier = tiers[rank["rank"]]
-            # Tier 0 (Obscurus) means no recent ranked games
-            name = "Unranked" if rank["rank"] == 0 else f"{tier['name']} {rank['subrank']}"
-            # "badge" (tier * 10 + subrank) is kept so ranks can be compared
-            result["rank"] = {"name": name, "color": tier["color"], "badge": rank["rank"] * 10 + rank["subrank"]}
+        if result.get("account_id") in ranks:
+            result["rank"] = ranks[result["account_id"]]
+
+
+def attach_ranks(results: List[Dict[str, Any]]) -> None:
+    """Add ranks to found players, using one batch request."""
+    apply_ranks(results, fetch_ranks([r["account_id"] for r in results if r.get("account_id")]))
 
 
 def hero_maps() -> Tuple[Dict[str, int], Dict[int, str]]:

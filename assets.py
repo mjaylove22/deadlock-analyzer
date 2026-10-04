@@ -20,6 +20,8 @@ import deadlock_api
 logger = logging.getLogger(__name__)
 
 CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "images")
+ICON_MAX_SIDE = 96      # hero icons and rank emblems are shown at 18-26 px; 96 keeps them sharp
+PORTRAIT_MAX_SIDE = 240  # hero portraits are shown 110 px tall
 
 _images: Dict[str, Image.Image] = {}  # url -> image, once loaded
 _lock = threading.Lock()
@@ -29,8 +31,10 @@ def _cache_path(url: str) -> str:
     return os.path.join(CACHE_DIR, hashlib.sha1(url.encode()).hexdigest() + ".png")
 
 
-def load(url: str) -> Optional[Image.Image]:
-    """The image at url, from memory, then disk, then the network. None if it can't be had."""
+def load(url: str, max_side: int = ICON_MAX_SIDE) -> Optional[Image.Image]:
+    """The image at url, from memory, then disk, then the network. None if it can't be had.
+    Images are stored no bigger than max_side pixels: the originals are up to 512 px (220 KB per
+    rank emblem) but are shown at 18-26 px, so full size would only waste disk and memory."""
     if not url:
         return None
     with _lock:
@@ -40,12 +44,16 @@ def load(url: str) -> Optional[Image.Image]:
     try:
         if os.path.exists(path):
             image = Image.open(path).convert("RGBA")
+            if max(image.size) > max_side:  # saved before images were shrunk: shrink it now
+                image.thumbnail((max_side, max_side), Image.LANCZOS)
+                image.save(path, optimize=True)
         else:
             request = urllib.request.Request(url, headers={"User-Agent": "deadlock-analyzer (learning project)"})
             with urllib.request.urlopen(request, timeout=10) as response:
                 image = Image.open(io.BytesIO(response.read())).convert("RGBA")
+            image.thumbnail((max_side, max_side), Image.LANCZOS)
             os.makedirs(CACHE_DIR, exist_ok=True)
-            image.save(path)
+            image.save(path, optimize=True)
     except Exception as e:
         logger.warning(f"Could not load image {url}: {e}")
         return None
@@ -70,15 +78,7 @@ def load_many(urls: Iterable[str]) -> None:
 
 def hero_art() -> Dict[str, Dict[str, str]]:
     """Hero name -> {"icon": small icon url, "card": portrait url, "color": the hero's hex colour}."""
-    art = {}
-    for hero in deadlock_api.fetch_hero_assets():
-        images = hero.get("images") or {}
-        art[hero["name"]] = {
-            "icon": images.get("icon_image_small"),
-            "card": images.get("icon_hero_card"),
-            "color": (hero.get("colors") or {}).get("style_hex") or "#4a5a6a",
-        }
-    return art
+    return {h["name"]: {"icon": h["icon"], "card": h["card"], "color": h["color"]} for h in deadlock_api.fetch_hero_assets()}
 
 
 def rank_emblem_url(tier: int, subrank: int) -> Optional[str]:
@@ -87,8 +87,7 @@ def rank_emblem_url(tier: int, subrank: int) -> Optional[str]:
         return None
     for rank in deadlock_api.fetch_rank_assets():
         if rank["tier"] == tier:
-            images = rank.get("images") or {}
-            return images.get(f"small_subrank{subrank}") or images.get("small_subrank1") or images.get("large")
+            return rank["emblems"].get(str(subrank)) or rank["emblems"].get("1")
     return None
 
 
@@ -97,5 +96,5 @@ def preload() -> None:
     art = hero_art()
     urls = [a["icon"] for a in art.values()]
     for rank in deadlock_api.fetch_rank_assets():
-        urls += [url for key, url in (rank.get("images") or {}).items() if key.startswith("small_subrank") and not key.endswith("webp")]
+        urls += [url for url in rank["emblems"].values() if url]
     load_many(urls)
