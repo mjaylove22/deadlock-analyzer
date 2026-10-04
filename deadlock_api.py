@@ -64,6 +64,19 @@ def get_global_hero_stats(game_mode: str = "normal") -> List[Dict[str, Any]]:
 
 
 @functools.lru_cache(maxsize=None)
+def fetch_hero_assets() -> List[Dict[str, Any]]:
+    """Full hero assets (images, colours) for playable heroes."""
+    return [h for h in get_json("/v1/assets/heroes")
+            if h["player_selectable"] and not h["disabled"] and not h["in_development"]]
+
+
+@functools.lru_cache(maxsize=None)
+def fetch_rank_assets() -> List[Dict[str, Any]]:
+    """Full rank assets (tier, name, colour, emblem images)."""
+    return get_json("/v1/assets/ranks")
+
+
+@functools.lru_cache(maxsize=None)
 def fetch_rank_tiers() -> Dict[int, Dict[str, str]]:
     """Rank tier number -> {"name", "color"}, e.g. 7 -> Emissary. Tier 0 (Obscurus) means unranked."""
     return {tier["tier"]: {"name": tier["name"], "color": tier["color"]} for tier in get_json("/v1/assets/ranks")}

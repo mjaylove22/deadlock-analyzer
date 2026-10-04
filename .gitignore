@@ -17,3 +17,6 @@ notes/
 
 # Per-user app settings (window position, overlay mode)
 settings.json
+
+# Downloaded hero and rank images (re-downloaded if missing)
+cache/

@@ -16,7 +16,8 @@ For every player in the lobby, the app shows:
 - **ID UNSURE** when the account match is a close call, so you know when not to trust it
 - **NAME FIXED** when OCR misread one character of a name and the real Steam name was found
 
-Both teams sit side by side, so a full 6v6 lobby fits on one screen without scrolling.
+Both teams sit side by side, so a full 6v6 lobby fits on one screen without scrolling. Heroes are shown
+with their portraits and ranks with their emblems (downloaded once, then kept in a local `cache/` folder).
 
 **Your matchup** (once the app knows which account is yours) appears in a strip at the bottom: your
 hero's win rate against each enemy hero, compared with your hero's average (red = harder than usual,
@@ -89,7 +90,8 @@ python -m unittest discover -s tests -v
 
 ```
 app.py               desktop app: window, navigation, background tasks, capture and auto-detect
-ui/                  theme, reusable widgets (cards, sortable tables) and the pages
+ui/                  theme, images, reusable widgets (cards, sortable tables) and the pages
+assets.py            hero portraits and rank emblems, cached on disk
 scoreboard_detector.py  spots the open scoreboard from a tiny screen grab
 Deadlock Analyzer.pyw  double-click launcher (no console window)
 screenshot_manager.py

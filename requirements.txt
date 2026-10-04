@@ -2,3 +2,4 @@ mss==9.0.1
 keyboard==0.13.5
 pytesseract==0.3.13
 Pillow==12.3.0
+customtkinter==6.0.0

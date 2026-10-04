@@ -32,6 +32,7 @@ screenshot ──► crop ──► Tesseract OCR ──► lines + positions �
 | `scoreboard_detector.py` | Spots the open scoreboard from a tiny grab of the PLAYERS tab (colour + pattern match) | `mss`, `Pillow` |
 | `profiles.py` | Player pages (per-hero stats by mode, recent matches, mode summary) and the hero tier list | `deadlock_api` |
 | `ui/` | Theme, reusable widgets (cards, sortable tables, avatars) and the pages | `tkinter`, `Pillow` |
+| `assets.py` | Hero portraits, hero colours and rank emblems from the API, cached on disk | `deadlock_api`, `Pillow` |
 | `report.py` | Report lines shared by the terminal and the app, so the two can't drift apart | standard library only |
 | `tests/` | Unit tests for parsing and lookup logic; the API is mocked | `unittest` (standard library) |
 | `utils/logger.py` | One place to configure logging to `logs/app.log` and the console | standard library |
@@ -46,6 +47,7 @@ Each module has one job, and data flows one way: OCR knows nothing about stats, 
 | **Tesseract** (via `pytesseract`) | Text recognition | Free, offline, mature open-source OCR engine. Running locally means no screenshots leave the machine. `pytesseract` is a thin Python wrapper around the Tesseract executable |
 | **Pillow** | Cropping images | The standard Python imaging library; cropping is all that's needed |
 | **mss** | Screenshots | Fast, dependency-free screen capture |
+| **CustomTkinter** | Rounded, modern widgets | A small, popular add-on to tkinter: rounded cards, switches, segmented buttons and a dark title bar without changing frameworks |
 | **tkinter** (standard library) | App window | Ships with Python, so nothing to install, and enough for a text report with colours and clickable links |
 | **keyboard** | Global hotkey | Lets the capture run in the background while the game has focus. It only *listens* for a key combination; it never sends input to the game |
 | **urllib** (standard library) | HTTP requests | Only three GET requests are needed. Avoiding `requests` keeps the dependency list short; `deadlock_api.py` is the only file that would change if that ever stopped being true |
@@ -160,7 +162,15 @@ Teams sit side by side with one card per player. Whether a full lobby fits was *
 - **Tables** are `ttk.Treeview`, styled dark (the default Windows theme ignores colours, so the `clam` theme is used). Clicking a heading sorts by that column: numbers biggest first, text A-Z, click again to reverse.
 - **Checked visually:** every page was photographed with real data and adjusted (table borders, fitting the player page in 880 px, filling the empty Home page).
 
-### 4.16 Housekeeping
+### 4.16 Visual design
+- **CustomTkinter** (a small add-on to tkinter) supplies what plain tkinter can't: rounded cards, pills, buttons, a segmented Normal/Street Brawl switch, toggle switches, a search box with placeholder text and Windows' dark title bar. Plain text stays as ordinary tk labels, because CustomTkinter draws every widget on a canvas, which is slower; that keeps a 12-player lobby quick to draw.
+- **A small design system** in `ui/theme.py`: background / surface / card layers, one accent colour (cyan) plus orange for the enemy team, Segoe UI Semibold for headings, 12 px card corners. Pages only use the helpers (`card`, `pill`, `button`, `segmented`, `switch`, `label`), so the look changes in one place.
+- **Images from the API's assets:** each hero's small icon sits on a circle in **that hero's own colour** (from the assets), because some icons are nearly black and would vanish on a dark theme. Rank pills show the rank's emblem, and rank colours are lightened until readable as text (Obscurus is #333333). Player pages show the main hero's portrait. Steam avatars are drawn as circles with a ring in the team or party colour.
+- **Disk cache:** 105 hero and rank images are downloaded once into `cache/` (gitignored): 4 s on the first run, 0.02 s afterwards. They load in the background at startup, then the current page redraws.
+- **Hover:** clickable cards light up their border. Recolouring the whole card would mean recolouring every widget inside it; the border is one change.
+- **Measured, not eyeballed:** a full 6v6 lobby needed 1,061 px at first (Windows then maximised the window). Measuring each part showed the height was spread evenly across 12 cards of ~112 px, so the cards were tightened and the default window raised to 960 px (fits a 1080p screen). The window also never grows past the screen any more.
+
+### 4.17 Housekeeping
 - Screenshots older than 7 days are deleted at startup and after each capture. Only files named like the app's own captures are touched, and a screenshot with an `.expected.json` (a regression test case) is never deleted.
 - Hero and rank lists are cached for the life of the app (`functools.lru_cache`); a failed request isn't cached, so it's retried next time.
 - The analysis reports progress through a callback, so the lookup code doesn't need to know about the window.

@@ -23,9 +23,11 @@ import tkinter as tk
 from tkinter import filedialog
 from typing import Any, Callable, Dict
 
+import customtkinter as ctk
 import keyboard
 import mss
 
+import assets
 import deadlock_api
 from matchups import build_matchup
 from player_lookup import analyze_records, read_lobby
@@ -33,7 +35,8 @@ from scoreboard_detector import grab_tab, is_scoreboard_open
 from screenshot_manager import capture_and_save_screenshot, delete_old_screenshots, get_screenshot_path
 from settings import get_me, load_settings, save_settings
 from ui.pages import HeroesPage, HomePage, LobbyPage, PlayerPage, SearchPage, SetupPage
-from ui.theme import COLORS, FONT, label, setup_styles
+from ui import images
+from ui.theme import COLORS, FONT, HEADING_FONT, label, setup_styles, switch
 from ui.widgets import AvatarCache
 from utils.logger import setup_logger
 
@@ -46,6 +49,7 @@ OVERLAY_ALPHA = 0.9
 WATCH_INTERVAL_S = 1.0   # how often auto-detect checks for the scoreboard (one check takes ~6 ms)
 SETTLE_S = 0.5           # after the scoreboard appears, wait for the menu animation before capturing
 NAV_TABS = [("lobby", "Lobby"), ("heroes", "Heroes"), ("mystats", "My Stats")]
+ICON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "icon.png")
 
 
 class AnalyzerApp:
@@ -68,15 +72,23 @@ class AnalyzerApp:
         self.watching = self.auto_detect.get()  # plain copy for the watcher thread (tk variables are main-thread only)
 
         root.title("Deadlock Analyzer")
-        root.geometry(settings.get("geometry", "1180x880"))
+        root.geometry(settings.get("geometry", "1180x960"))  # a full 6v6 lobby needs ~950 px
         root.minsize(1100, 760)
-        root.configure(bg=COLORS["bg"])
+        if isinstance(root, ctk.CTk):
+            root.configure(fg_color=COLORS["bg"])
+        else:
+            root.configure(bg=COLORS["bg"])
         setup_styles(root)
+        try:
+            self.icon = tk.PhotoImage(file=ICON_PATH)  # kept on self: tkinter drops images nobody references
+            root.iconphoto(True, self.icon)
+        except tk.TclError:
+            pass
         self._build_top_bar()
-        self.status = label(root, color="dim", bg="header", anchor="w", padx=14, pady=4)
+        self.status = label(root, color="dim", bg="surface", anchor="w", padx=14, pady=5)
         self.status.pack(side="bottom", fill="x")
         self.container = tk.Frame(root, bg=COLORS["bg"])
-        self.container.pack(fill="both", expand=True, padx=16, pady=14)
+        self.container.pack(fill="both", expand=True, padx=16, pady=10)
 
         keyboard.add_hotkey(HOTKEY, lambda: self.events.put(self.capture))
         root.protocol("WM_DELETE_WINDOW", self.close)
@@ -86,6 +98,7 @@ class AnalyzerApp:
         self.hidden_from_capture = self.exclude_from_capture()
         delete_old_screenshots()
         threading.Thread(target=self._watch, daemon=True).start()
+        threading.Thread(target=self._preload_images, daemon=True).start()
 
         self.navigate(HomePage)
         self.set_status("Watching for the scoreboard..." if self.watching else f"Press {HOTKEY.upper()} in game to capture")
@@ -96,33 +109,40 @@ class AnalyzerApp:
     # ---- top bar and navigation ------------------------------------------------------------
 
     def _build_top_bar(self):
-        bar = tk.Frame(self.root, bg=COLORS["header"], padx=10, pady=8)
+        bar = tk.Frame(self.root, bg=COLORS["surface"], padx=12, pady=10)
         bar.pack(fill="x")
-        self.back_button = tk.Button(bar, text="<", command=self.back, relief="flat", font=(FONT, 12, "bold"),
-                                     bg=COLORS["header"], fg=COLORS["text"], activebackground=COLORS["button"],
-                                     disabledforeground=COLORS["button"], width=2, cursor="hand2")
+        tk.Frame(self.root, bg=COLORS["card_border"], height=1).pack(fill="x")  # hairline under the bar
+        self.back_button = ctk.CTkButton(bar, text="\u2190", command=self.back, width=34, height=32, corner_radius=8,
+                                         font=(FONT, 15), fg_color=COLORS["button"], hover_color=COLORS["button_hover"],
+                                         text_color=COLORS["text"], text_color_disabled=COLORS["faint"])
         self.back_button.pack(side="left")
-        title = label(bar, "DEADLOCK ANALYZER", size=14, bold=True, bg="header", cursor="hand2", padx=8)
-        title.pack(side="left")
-        title.bind("<Button-1>", lambda event: self.navigate(HomePage))
+        title = tk.Frame(bar, bg=COLORS["surface"], cursor="hand2")
+        title.pack(side="left", padx=(12, 6))
+        label(title, "DEADLOCK", size=14, heading=True, bg="surface", cursor="hand2").pack(side="left")
+        label(title, " ANALYZER", size=14, heading=True, color="accent", bg="surface", cursor="hand2").pack(side="left")
+        for widget in (title, *title.winfo_children()):
+            widget.bind("<Button-1>", lambda event: self.navigate(HomePage))
 
         self.tabs = {}
         for key, text in NAV_TABS:
-            tab = label(bar, text, size=11, color="dim", bg="header", cursor="hand2", padx=12, pady=2)
-            tab.pack(side="left", padx=(10 if key == "lobby" else 0, 0))
+            holder = tk.Frame(bar, bg=COLORS["surface"])
+            holder.pack(side="left", padx=(14 if key == "lobby" else 2, 0))
+            tab = label(holder, text, size=11, color="dim", bg="surface", cursor="hand2", padx=10, pady=4)
+            tab.pack()
+            underline = tk.Frame(holder, bg=COLORS["surface"], height=2)
+            underline.pack(fill="x", padx=8)
             tab.bind("<Button-1>", lambda event, k=key: self.open_tab(k))
-            self.tabs[key] = tab
+            self.tabs[key] = (tab, underline)
 
         for text, variable, command in (("Overlay", self.overlay, self.apply_overlay),
                                         ("Auto-detect", self.auto_detect, self.apply_auto_detect)):
-            tk.Checkbutton(bar, text=text, variable=variable, command=command, bg=COLORS["header"], fg=COLORS["text"],
-                           selectcolor=COLORS["button"], activebackground=COLORS["header"],
-                           activeforeground=COLORS["text"], font=(FONT, 10)).pack(side="right", padx=(8, 0))
-        self.search_box = tk.Entry(bar, width=24, bg=COLORS["button"], fg=COLORS["text"], relief="flat",
-                                   insertbackground=COLORS["text"], font=(FONT, 10))
-        self.search_box.pack(side="right", padx=(6, 8), ipady=4)
+            switch(bar, text, variable, command).pack(side="right", padx=(10, 0))
+        self.search_box = ctk.CTkEntry(bar, width=240, height=32, corner_radius=8, border_width=1,
+                                       placeholder_text="Search a player...", font=(FONT, 11),
+                                       fg_color=COLORS["button"], border_color=COLORS["card_border"],
+                                       text_color=COLORS["text"], placeholder_text_color=COLORS["faint"])
+        self.search_box.pack(side="right", padx=(0, 10))
         self.search_box.bind("<Return>", lambda event: self.search(self.search_box.get()))
-        label(bar, "Search player", color="dim", bg="header").pack(side="right")
 
     def navigate(self, page_class, push: bool = True, **options):
         """Show a page. push=False replaces the current page instead of adding a Back step."""
@@ -134,10 +154,11 @@ class AnalyzerApp:
             self.page.frame.destroy()
         self.page = page_class(self, self.container, **options)
         self.page.frame.pack(fill="both", expand=True)
-        self.back_button.config(state="normal" if self.history else "disabled")
-        for key, tab in self.tabs.items():
+        self.back_button.configure(state="normal" if self.history else "disabled")
+        for key, (tab, underline) in self.tabs.items():
             active = key == self.page.nav
-            tab.config(fg=COLORS["friendly"] if active else COLORS["dim"], font=(FONT, 11, "bold" if active else "normal"))
+            tab.config(fg=COLORS["text"] if active else COLORS["dim"], font=(HEADING_FONT if active else FONT, 11))
+            underline.config(bg=COLORS["accent"] if active else COLORS["surface"])
         self.fit_window()
 
     def back(self):
@@ -178,7 +199,8 @@ class AnalyzerApp:
     def fit_window(self):
         """Grow the window if the content needs more height than it has (e.g. a small saved size)."""
         self.root.update_idletasks()
-        needed = self.root.winfo_reqheight()
+        # Never taller than the screen (minus room for the taskbar), or Windows maximises the window
+        needed = min(self.root.winfo_reqheight(), self.root.winfo_screenheight() - 80)
         if self.root.state() == "normal" and self.root.winfo_height() < needed:
             self.root.geometry(f"{self.root.winfo_width()}x{needed}")
 
@@ -211,6 +233,23 @@ class AnalyzerApp:
         except queue.Empty:
             pass
         self.root.after(POLL_MS, self.poll)
+
+    def _preload_images(self):
+        """Background: hero icons and rank emblems (from the disk cache after the first run), then
+        redraw the current page so it gets its images."""
+        try:
+            art = assets.hero_art()
+            assets.preload()
+        except Exception:
+            logger.exception("Could not preload images")
+            return
+
+        def ready():
+            images.set_hero_art(art)
+            if self.current:
+                page_class, options = self.current
+                self.navigate(page_class, push=False, **options)
+        self.events.put(ready)
 
     def hero_names_by_id(self) -> Dict[int, str]:
         return {h["id"]: h["name"] for h in deadlock_api.fetch_heroes()}
@@ -365,7 +404,7 @@ class AnalyzerApp:
 
 def main():
     setup_logger()
-    root = tk.Tk()
+    root = ctk.CTk()  # a CustomTkinter window: dark title bar on Windows
     # Optional: python app.py path/to/screenshot.png opens straight onto that screenshot
     AnalyzerApp(root, open_screenshot=sys.argv[1] if len(sys.argv) > 1 else None)
     root.mainloop()
