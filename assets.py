@@ -16,10 +16,11 @@ from typing import Dict, Iterable, Optional
 from PIL import Image
 
 import deadlock_api
+import paths
 
 logger = logging.getLogger(__name__)
 
-CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "images")
+CACHE_DIR = paths.data("cache", "images")
 ICON_MAX_SIDE = 96      # hero icons and rank emblems are shown at 18-26 px; 96 keeps them sharp
 PORTRAIT_MAX_SIDE = 240  # hero portraits are shown 110 px tall
 

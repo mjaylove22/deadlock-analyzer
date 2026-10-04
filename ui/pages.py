@@ -23,6 +23,7 @@ from settings import get_me, save_settings
 from ui import images
 from ui.theme import (BADGE_COLORS, COLORS, ITEM_SLOT_COLORS, MATCHUP_COLORS, PARTY_COLORS, button, card, dropdown,
                       label, pill, segmented)
+from version import __version__
 from ui.widgets import bind_click, data_table, hero_label, matchup_strip, player_card, rank_pill
 
 MODES = list(API_GAME_MODES)  # ["Normal", "Street Brawl"]
@@ -75,7 +76,10 @@ class HomePage(Page):
     nav = "home"
 
     def build(self):
-        label(self.frame, "Deadlock Analyzer", size=26, heading=True).pack(anchor="w")
+        title = tk.Frame(self.frame, bg=COLORS["bg"])
+        title.pack(anchor="w")
+        label(title, "Deadlock Analyzer", size=26, heading=True).pack(side="left")
+        label(title, f"v{__version__}", size=11, color="dim").pack(side="left", padx=(10, 0), pady=(10, 0))
         watching = ("Auto-detect is on: open the Esc menu on the PLAYERS tab in game and your lobby appears here."
                     if self.app.watching else "Auto-detect is off: press Ctrl+Shift+D in game to capture the lobby.")
         label(self.frame, watching, size=11, color="dim").pack(anchor="w", pady=(0, 18))

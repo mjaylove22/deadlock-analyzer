@@ -30,11 +30,13 @@ from PIL import Image
 
 import assets
 import deadlock_api
+import paths
+from version import __version__
 from matchups import build_matchup
 from player_lookup import analyze_records, read_lobby
 import game_window
 import layout as layout_module
-from screenshot_manager import capture_and_save_screenshot, delete_old_screenshots, get_screenshot_path
+from screenshot_manager import SCREENSHOT_DIR, capture_and_save_screenshot, delete_old_screenshots, get_screenshot_path
 from settings import get_me, load_settings, save_settings
 from ui.pages import HeroesPage, HeroPage, HomePage, LobbyPage, MatchPage, PlayerPage, SearchPage, SetupPage
 from ui import images
@@ -53,7 +55,7 @@ OVERLAY_ALPHA = 0.9
 WATCH_INTERVAL_S = 1.0   # how often auto-detect checks for the scoreboard (one check takes ~6 ms)
 SETTLE_S = 0.5           # after the scoreboard appears, wait for the menu animation before capturing
 NAV_TABS = [("lobby", "Lobby"), ("heroes", "Heroes"), ("mystats", "My Stats")]
-ICON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "icon.png")
+ICON_PATH = paths.resource("assets", "icon.ico")
 
 
 class AnalyzerApp:
@@ -84,8 +86,9 @@ class AnalyzerApp:
             root.configure(bg=COLORS["bg"])
         setup_styles(root)
         try:
-            self.icon = tk.PhotoImage(file=ICON_PATH)  # kept on self: tkinter drops images nobody references
-            root.iconphoto(True, self.icon)
+            # An .ico has a sharp image for every size Windows asks for. Setting one also stops
+            # CustomTkinter from putting its own icon on the window 200 ms after start.
+            root.iconbitmap(default=ICON_PATH)
         except tk.TclError:
             pass
         self._build_top_bar()
@@ -394,7 +397,7 @@ class AnalyzerApp:
     def open_screenshot(self):
         if self.busy:
             return
-        path = filedialog.askopenfilename(title="Open a scoreboard screenshot", initialdir="screenshots",
+        path = filedialog.askopenfilename(title="Open a scoreboard screenshot", initialdir=SCREENSHOT_DIR,
                                           filetypes=[("PNG screenshots", "*.png"), ("All files", "*.*")])
         if path:
             self.busy = True
@@ -463,6 +466,7 @@ class AnalyzerApp:
 
 def main():
     setup_logger()
+    logger.info(f"Deadlock Analyzer {__version__} starting ({'installed' if paths.INSTALLED else 'from source'})")
     try:
         # Its own taskbar identity, so Windows shows the app's icon instead of grouping it under Python
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("DeadlockAnalyzer")

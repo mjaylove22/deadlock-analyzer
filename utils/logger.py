@@ -3,13 +3,17 @@ import os
 import sys
 from datetime import datetime
 
+import paths
+
+LOG_DIR = paths.data("logs")
+
 def setup_logger():
     """Setup logging with file and console output. Call once, from a script's entry point.
 
     Handlers go on the root logger so every module's logging.getLogger(__name__) is captured.
     """
     # Create logs directory if it doesn't exist
-    os.makedirs('logs', exist_ok=True)
+    os.makedirs(LOG_DIR, exist_ok=True)
 
     # Configure the root logger
     root = logging.getLogger()
@@ -24,7 +28,7 @@ def setup_logger():
         )
         
         # File handler
-        file_handler = logging.FileHandler('logs/app.log')
+        file_handler = logging.FileHandler(os.path.join(LOG_DIR, 'app.log'))
         file_handler.setFormatter(formatter)
         root.addHandler(file_handler)
         

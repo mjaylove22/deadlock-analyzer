@@ -10,9 +10,11 @@ import json
 import logging
 from typing import Any, Dict, Optional
 
+import paths
+
 logger = logging.getLogger(__name__)
 
-SETTINGS_FILE = "settings.json"
+SETTINGS_FILE = paths.data("settings.json")
 
 
 def load_settings() -> Dict[str, Any]:

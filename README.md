@@ -30,7 +30,8 @@ modify game files, automate input, or interact with anti-cheat in any way.
 
 ## How it works
 
-1. **Capture**: the app (`app.py`) runs in the background and takes a screenshot when you press `Ctrl+Shift+D`.
+1. **Capture**: the app (`app.py`) runs in the background and takes a screenshot when the scoreboard opens
+   (auto-detect) or when you press `Ctrl+Shift+D`.
 2. **OCR**: `scoreboard_ocr.py` crops the scoreboard's player list and runs Tesseract once.
    Every scoreboard row is two lines, a Steam name and then `<Hero> Level N`, so each line containing
    a hero name and "Level" is paired with the line above it. Each line's vertical position decides the team.
@@ -41,16 +42,28 @@ modify game files, automate input, or interact with anti-cheat in any way.
    - Friends on the same team are reported as a party.
    - Players whose name equals their hero (bots in bot lobbies) are skipped.
 
-## Setup
+## Install
 
+**Windows 10/11:** download `DeadlockAnalyzer-Setup-<version>.exe` from
+[Releases](https://github.com/mjaylove22/deadlock-analyzer/releases) and run it. Python and Tesseract are
+included, so nothing else is needed (28 MB download, 87 MB installed). It installs for your Windows
+user only (no admin prompt) and adds Start-menu and desktop shortcuts. Uninstalling it from Windows'
+*Installed apps* list also removes its settings, cache and screenshots.
+
+Windows may show **"Windows protected your PC"**, because the installer isn't code-signed: click
+**More info**, then **Run anyway**.
+
+**From source:**
 1. Python 3.13+ and [Tesseract OCR](https://github.com/UB-Mannheim/tesseract/wiki) (installed to `C:\Program Files\Tesseract-OCR`).
 2. `pip install -r requirements.txt`
+3. Optional: `python make_shortcut.py` puts a **Deadlock Analyzer** icon on your desktop.
+
+**Building the installer:** `pip install -r requirements-dev.txt`, `winget install JRSoftware.InnoSetup`,
+then `python installer/build.py`. The installer appears in `dist/`.
 
 ## Usage
 
-**Desktop shortcut:** run `python make_shortcut.py` once to put a **Deadlock Analyzer** icon on your desktop.
-
-**App (no terminal needed):** double-click the desktop icon (or `Deadlock Analyzer.pyw`) and leave it running. In game, just open
+**App:** start it from the desktop or Start-menu icon (from source: `Deadlock Analyzer.pyw`) and leave it running. In game, just open
 the Esc menu on the **PLAYERS** tab: **auto-detect** notices the scoreboard, captures it and shows the lobby
 (a sound plays when it's ready). Reopening the menu in the same lobby doesn't redo the work.
 `Ctrl+Shift+D` still captures on demand.
@@ -120,6 +133,9 @@ matchups.py          your hero vs the enemy heroes, and popular items against th
 profiles.py          player pages (per-hero stats, recent matches, modes) and the hero tier list
 match_review.py      post-game review: condenses a match's data, saved on disk
 settings.py          settings.json: window layout and which account is you (stays on your PC)
+paths.py             where shipped files and the app's own files live, from source or installed
+version.py           the version number, shown on the Home page and used by the installer
+installer/           build.py (Tesseract trim + PyInstaller + Inno Setup), setup.iss, licence notices
 make_shortcut.py     creates the desktop shortcut
 insights.py          stats on the current hero and badge rules
 report.py            wording shared by the terminal and the app

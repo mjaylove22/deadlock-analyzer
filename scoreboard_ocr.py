@@ -7,6 +7,7 @@ Usage (debug view of the raw OCR lines and parsed rows):
 """
 
 import logging
+import os
 import re
 import sys
 from typing import Dict, List, Optional, Tuple
@@ -15,9 +16,16 @@ import pytesseract
 from PIL import Image, ImageFilter
 
 import deadlock_api
+import paths
 import layout as layout_module  # "layout" alone would clash with the local variable names
 
 logger = logging.getLogger(__name__)
+
+# The installed app ships its own trimmed Tesseract; from source, use the normal install if present
+for candidate in (paths.resource("tesseract", "tesseract.exe"), r"C:\Program Files\Tesseract-OCR\tesseract.exe"):
+    if os.path.exists(candidate):
+        pytesseract.pytesseract.tesseract_cmd = candidate
+        break
 
 # Scoreboard geometry, measured on 1920x1080 screenshots of the Esc menu's PLAYERS tab.
 # Other screen sizes are located with layout.py and scaled back to this size before reading.

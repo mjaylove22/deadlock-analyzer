@@ -15,6 +15,8 @@ from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Dict, List
 
+import paths
+
 BASE_URL = "https://api.deadlock-api.com"
 TIMEOUT_SECONDS = 10
 
@@ -23,7 +25,7 @@ TIMEOUT_SECONDS = 10
 CACHE_SECONDS = 300            # most answers: reused for 5 minutes
 ASSET_CACHE_SECONDS = 86400    # hero/rank/item lists change rarely: kept on disk for a day
 MAX_CACHED = 300               # oldest entries are dropped beyond this, to keep memory small
-DISK_CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "api")
+DISK_CACHE_DIR = paths.data("cache", "api")
 
 _memory: "OrderedDict[str, tuple]" = OrderedDict()  # url -> (time fetched, data)
 _lock = threading.Lock()

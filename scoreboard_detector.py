@@ -21,11 +21,13 @@ from typing import Optional, Tuple
 import mss
 from PIL import Image, ImageChops, ImageStat
 
+import paths
+
 # Where the PLAYERS tab sits on a 1920x1080 screen (left, top, right, bottom)
 PLAYERS_TAB_BOX = (1705, 108, 1890, 128)
 MATCH_THRESHOLD = 15
 MIN_CORRELATION = 0.9
-REFERENCE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "players_tab.png")
+REFERENCE_PATH = paths.resource("assets", "players_tab.png")
 
 _reference: Optional[Image.Image] = None
 _reference_sums: Optional[tuple] = None  # (pixel bytes, sum, n * variance), computed once

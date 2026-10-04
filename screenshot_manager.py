@@ -9,22 +9,23 @@ import mss
 import mss.tools
 
 import game_window
+import paths
 
 logger = logging.getLogger(__name__)
 
 SCREENSHOT_NAME = re.compile(r'screenshot_\d{8}_\d{6}\.png')  # e.g. screenshot_20260930_123906.png
 RETENTION_DAYS = 7
+SCREENSHOT_DIR = paths.data("screenshots")
 
 
 def capture_and_save_screenshot():
     """Capture screenshot and save with timestamped filename"""
-    # Create screenshots directory if it doesn't exist
-    os.makedirs('screenshots', exist_ok=True)
+    os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 
     # Generate timestamped filename
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"screenshot_{timestamp}.png"
-    filepath = os.path.join('screenshots', filename)
+    filepath = os.path.join(SCREENSHOT_DIR, filename)
 
     # The game's window wherever it is (any monitor, windowed too); else the main monitor
     region = game_window.find_window()
@@ -38,7 +39,7 @@ def capture_and_save_screenshot():
 
 def get_screenshot_path():
     """Get the path to the latest screenshot"""
-    screenshots_dir = 'screenshots'
+    screenshots_dir = SCREENSHOT_DIR
     if not os.path.exists(screenshots_dir):
         return None
 
@@ -54,7 +55,7 @@ def get_screenshot_path():
     return os.path.join(screenshots_dir, screenshot_files[0])
 
 
-def delete_old_screenshots(screenshots_dir: str = 'screenshots', max_age_days: float = RETENTION_DAYS) -> List[str]:
+def delete_old_screenshots(screenshots_dir: str = SCREENSHOT_DIR, max_age_days: float = RETENTION_DAYS) -> List[str]:
     """Delete captures older than max_age_days and return their paths.
 
     Only files named like the app's own captures are touched. A screenshot with a matching

@@ -14,9 +14,10 @@ import urllib.error
 from typing import Any, Dict, List, Optional
 
 import deadlock_api
+import paths
 from profiles import GAME_MODES
 
-CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "matches")
+CACHE_DIR = paths.data("cache", "matches")
 MAX_SAVED_MATCHES = 50
 RETRY_AFTER_S = 600  # a match that failed isn't asked for again for 10 minutes (3 Steam fetches/hour)
 

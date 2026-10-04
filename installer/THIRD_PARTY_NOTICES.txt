@@ -1,0 +1,87 @@
+Deadlock Analyzer - third-party software
+========================================
+
+Deadlock Analyzer itself is MIT-licensed (see LICENSE.txt). The installed app also contains the
+software below, each under its own licence. Licence texts are in the "licenses" folder.
+
+Not affiliated with or endorsed by Valve. Deadlock is a trademark of Valve Corporation.
+
+
+Python and Python packages
+--------------------------
+Python 3.13             PSF License                      licenses/python.txt (also covers what the
+                                                         Python build includes: OpenSSL, libffi,
+                                                         Tcl/Tk, zlib)
+Microsoft VC++ runtime  Distributable as part of Python  (VCRUNTIME140.dll, VCRUNTIME140_1.dll)
+CustomTkinter           CC0-1.0                          licenses/customtkinter.txt
+darkdetect              BSD-3-Clause                     licenses/darkdetect.txt
+packaging               Apache-2.0 OR BSD-2-Clause       licenses/packaging*.txt
+Pillow                  MIT-CMU                          licenses/pillow.txt (also lists the image
+                                                         libraries Pillow includes)
+pytesseract             Apache-2.0                       licenses/pytesseract.txt
+keyboard                MIT                              licenses/keyboard.txt
+python-mss              MIT                              see the end of this file
+
+
+Tesseract OCR (the "_internal\tesseract" folder)
+------------------------------------------------
+Tesseract 5 and the English model, unmodified, from the Windows build by UB Mannheim
+(https://github.com/UB-Mannheim/tesseract/wiki). Only the files Tesseract needs to read English
+text are included. That build uses libraries from MSYS2; the source code of every library below is
+available from https://packages.msys2.org (search for the package name with a "mingw-w64-" prefix).
+Each library is a separate DLL that can be replaced with another build of the same library.
+
+tesseract.exe, libtesseract   Apache-2.0                          licenses/tesseract.txt
+Leptonica                     BSD-2-Clause
+libstdc++, libgcc_s           GPL-3.0 with the GCC Runtime Library Exception
+                              (licenses/gpl-3.0.txt, https://www.gnu.org/licenses/gcc-exception-3.1.html)
+libwinpthread (mingw-w64)     MIT and BSD-3-Clause
+libiconv                      LGPL-2.1-or-later                   licenses/lgpl-2.1.txt
+libintl (gettext)             LGPL-2.1-or-later                   licenses/lgpl-2.1.txt
+libunistring                  LGPL-3.0-or-later OR GPL-2.0-or-later  licenses/lgpl-3.0.txt, gpl-3.0.txt
+libidn2                       LGPL-3.0-or-later OR GPL-2.0-or-later  licenses/lgpl-3.0.txt, gpl-3.0.txt
+jbigkit (libjbig)             GPL-2.0-or-later                    licenses/gpl-2.0.txt
+libarchive                    BSD-2-Clause
+libb2 (BLAKE2)                CC0-1.0
+brotli                        MIT
+bzip2                         bzip2-1.0.6 (BSD-style)
+curl (libcurl)                curl (MIT-style)
+libdeflate                    MIT
+expat                         MIT
+giflib                        MIT
+libjpeg-turbo                 IJG, BSD-3-Clause and zlib
+LERC                          Apache-2.0
+lz4                           BSD-2-Clause
+xz (liblzma)                  0BSD
+OpenJPEG                      BSD-2-Clause
+libpng                        libpng License
+libpsl                        MIT
+libwebp, libwebpmux, libsharpyuv  BSD-3-Clause
+libssh2                       BSD-3-Clause
+libtiff                       libtiff License (BSD-style)
+zstd                          BSD-3-Clause OR GPL-2.0
+zlib                          zlib License
+
+Deadlock Analyzer runs tesseract.exe as a separate program; it doesn't link to these libraries.
+
+
+python-mss licence
+------------------
+MIT License
+
+Copyright (c) 2013-2024, Mickael 'Tiger-222' Schoentgen
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and
+associated documentation files (the "Software"), to deal in the Software without restriction,
+including without limitation the rights to use, copy, modify, merge, publish, distribute,
+sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or
+substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT
+NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES
+OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

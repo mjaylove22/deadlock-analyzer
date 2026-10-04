@@ -214,9 +214,21 @@ The ban endpoint returns how many times each hero was banned, but not how many m
 - Hero and rank lists are cached for the life of the app (`functools.lru_cache`); a failed request isn't cached, so it's retried next time.
 - The analysis reports progress through a callback, so the lookup code doesn't need to know about the window.
 
+### 4.24 Installer
+- **Why:** running from source needs Python, a pip install and a separate Tesseract install. That's fine for a developer and a dead end for most players, so this was the biggest barrier to anyone else using the app.
+- **PyInstaller, one folder** (`installer/build.py`): it bundles Python and the app's packages next to an `.exe`. The single-file option was rejected because it unpacks itself to a temp folder on every start. That's slower, and antivirus tools are more suspicious of it.
+- **Tesseract, trimmed:** the full install is 112 MB, mostly training tools and libraries for rendering text into images. The build reads each program's import table (with `pefile`, which PyInstaller already uses) and follows DLLs that load other DLLs, starting from `tesseract.exe`. It ends up with 33 DLLs plus the English model (53 MB). It found the same list `ldd` did, and it stays correct when Tesseract updates and DLL names change. The build then OCRs a test image using only the copy, with no PATH or TESSDATA_PREFIX, so a missing file fails the build instead of a user's first scan.
+- **Measured, then trimmed:** the first build was 141 MB. Listing the biggest files showed every Tesseract DLL twice: PyInstaller analyses DLLs given as data and copies their dependencies next to Python's. Tesseract is now copied in after PyInstaller runs. Pillow's AVIF plugin (8 MB, never used) is excluded. Result: **28 MB installer, 87 MB installed**. The window opens in about 1.4 s and the app uses about 80 MB of memory, the same as from source.
+- **`paths.py`:** shipped files (icon, PLAYERS-tab reference, Tesseract) come from the bundle. Files the app writes (settings, cache, screenshots, logs) go next to the `.exe`. From source, both are the project folder. Every module asks `paths`, so the app no longer depends on which folder it was started from.
+- **Inno Setup, per-user:** installs to `%LOCALAPPDATA%\Programs`, like VS Code's user installer: no admin prompt, and the app can write its files next to itself. A fixed AppId lets a newer installer upgrade an older one. `_internal` is cleared before each upgrade so stale files can't linger. Uninstalling removes what the app wrote too.
+- **Checked by installing it:** silent install and uninstall (files, both shortcuts and the *Installed apps* entry appear, then all disappear). The installed copy started from its Start-menu shortcut and read a real screenshot (12/12). Windows Defender found no threats in either the installer or the app folder.
+- **Licences:** the app now redistributes other people's software, so `LICENSE.txt`, `THIRD_PARTY_NOTICES.txt` and a `licenses/` folder (Python, each package, Tesseract and the GNU texts for its LGPL/GPL DLLs) ship next to the `.exe`. The app runs `tesseract.exe` as a separate program rather than linking to those libraries.
+- **Not code-signed:** Windows SmartScreen warns about new unsigned programs, and the README explains the "Run anyway" click. A certificate costs money, though free signing exists for open-source projects (e.g. SignPath).
+- **Found along the way:** CustomTkinter replaces the window icon with its own 200 ms after start unless `iconbitmap` is called. The `.ico` is set that way now, which fixed the icon from source too.
+
 ## 5. Testing
 
-`python -m unittest discover -s tests -v` runs 120 tests in a few seconds:
+`python -m unittest discover -s tests -v` runs 122 tests in a few seconds:
 - **Parser tests** use OCR output actually produced from real screenshots, including a noisy version, plus edge cases: headers, noise-only lines, duplicate player names, multi-word heroes, hero lines with nothing above them.
 - **Identity tests** use plain data to cover settling by unique name, friend links (including links listed by only one side and chains of settled players), ties falling back to hero history, and party grouping.
 - **Insights tests** cover each badge rule and its thresholds.
@@ -228,7 +240,7 @@ The ban endpoint returns how many times each hero was banned, but not how many m
 
 ## 6. Limitations and next steps
 
-- **Resolution:** coordinates were measured at 1920×1080 (6v6 and Street Brawl layouts). Other sizes log a warning. Scaling coordinates by resolution, or locating the panel automatically, would remove this limit.
+- **Resolution:** other screen sizes are handled by `layout.py` (4.22), but so far only tested on simulated screenshots. Real ones are needed.
 - **Sample size:** tuned on a small number of screenshots, so it needs more varied real matches (long or unusual Steam names, different heroes).
 - **App:** the GUI itself is checked with a smoke test (hidden window, real worker thread and queue), not unit tests.
 - **Accuracy:** a misread Steam name gives "not found". The report shows the closest match so a person can judge it.

@@ -20,3 +20,7 @@ settings.json
 
 # Downloaded hero and rank images (re-downloaded if missing)
 cache/
+
+# Installer build output (python installer/build.py)
+build/
+dist/
