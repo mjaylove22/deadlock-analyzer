@@ -13,6 +13,7 @@ worker thread to keep the window responsive. Both hand results back through a qu
 window checks every 100 ms.
 """
 
+import io
 import json
 import logging
 import os
@@ -20,12 +21,16 @@ import queue
 import sys
 import threading
 import tkinter as tk
+import urllib.request
 import webbrowser
+from concurrent.futures import ThreadPoolExecutor
 from tkinter import filedialog
 
 import keyboard
+from PIL import Image, ImageTk
 
-from player_lookup import analyze_screenshot
+import deadlock_api
+from player_lookup import analyze_screenshot, search_player
 from report import TEAM_TITLES, badge_labels, hero_stats_text, most_played_text, team_summary
 from screenshot_manager import capture_and_save_screenshot, delete_old_screenshots, get_screenshot_path
 from utils.logger import setup_logger
@@ -38,10 +43,11 @@ CAPTURE_DELAY_MS = 150  # time for Windows to repaint after the overlay turns in
 OVERLAY_ALPHA = 0.9
 FONT = "Segoe UI"
 SETTINGS_FILE = "settings.json"  # window position/size and overlay mode, remembered between runs
+AVATAR_SIZE = 48
 
 COLORS = {
     "bg": "#0f1115", "header": "#161a22", "card": "#1c212b", "text": "#e8eaed", "dim": "#8b93a1",
-    "friendly": "#4fc3f7", "enemy": "#ef5350", "button": "#2a303c",
+    "friendly": "#4fc3f7", "enemy": "#ef5350", "search": "#9fa8da", "button": "#2a303c", "link": "#6fa8ff",
 }
 BADGE_COLORS = {"strong": "#f5b942", "good": "#43a047", "warn": "#e8711a", "info": "#4a5a6a"}
 PARTY_COLORS = ["#ab47bc", "#26a69a", "#ffa726", "#5c6bc0"]
@@ -60,11 +66,27 @@ def pill(parent, text: str, color: str, size: int = 8) -> tk.Label:
                     font=(FONT, size, "bold"), padx=6, pady=1)
 
 
+def download_images(urls) -> dict:
+    """Fetch Steam avatars in parallel (on the worker thread). Images that fail are just skipped."""
+    def fetch(url):
+        try:
+            with urllib.request.urlopen(url, timeout=5) as response:
+                return url, response.read()
+        except OSError:
+            return url, None
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        return {url: data for url, data in pool.map(fetch, set(urls)) if data}
+
+
 class AnalyzerApp:
     def __init__(self, root: tk.Tk, open_screenshot: str = None):
         self.root = root
         self.events = queue.Queue()  # (kind, payload) messages from other threads
         self.busy = False
+        # Steam avatars by URL. tkinter only displays an image while Python still holds a reference
+        # to it, so they're kept here (an image held only by a local variable would vanish).
+        self.avatars = {}
+        self.placeholder = ImageTk.PhotoImage(Image.new("RGB", (AVATAR_SIZE, AVATAR_SIZE), "#2a303c"))
         settings = load_settings()
         self.overlay = tk.BooleanVar(value=settings.get("overlay", False))
 
@@ -102,7 +124,14 @@ class AnalyzerApp:
             tk.Button(header, text=text, command=command, bg=COLORS["button"], fg=COLORS["text"],
                       activebackground=COLORS["card"], activeforeground=COLORS["text"], relief="flat",
                       font=(FONT, 10), padx=10).pack(side="right", padx=(6, 0))
-        self.status = tk.Label(header, bg=COLORS["header"], fg=COLORS["dim"], font=(FONT, 10), anchor="w")
+        self.search_box = tk.Entry(header, width=22, bg=COLORS["button"], fg=COLORS["text"],
+                                   insertbackground=COLORS["text"], relief="flat", font=(FONT, 10))
+        self.search_box.pack(side="right", padx=(6, 6), ipady=4)
+        self.search_box.bind("<Return>", lambda event: self.search(self.search_box.get()))
+        tk.Label(header, text="Search player:", bg=COLORS["header"], fg=COLORS["dim"],
+                 font=(FONT, 10)).pack(side="right")
+        # width=1: the status takes whatever space is left instead of widening the window for long text
+        self.status = tk.Label(header, bg=COLORS["header"], fg=COLORS["dim"], font=(FONT, 10), anchor="w", width=1)
         self.status.pack(side="left", padx=20, fill="x", expand=True)
 
     def clear_body(self):
@@ -145,11 +174,36 @@ class AnalyzerApp:
             for i in members:
                 self._card(frame, results[i], COLORS[team], *party_of.get(i, (None, None)))
 
+    def render_search(self, query, results):
+        """Manual search results: one card per matching account, in two columns."""
+        self.clear_body()
+        if not results:
+            self.show_message(f"No Steam profiles found for {query!r}.")
+            return
+        exact = results[0]["note"] == "exact name"
+        count = f"{len(results)} account" + ("" if len(results) == 1 else "s")
+        summary = f"{count} with this exact name" if exact else "no exact match; closest names"
+        heading = tk.Frame(self.body, bg=COLORS["bg"])
+        heading.grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 6))
+        tk.Label(heading, text=f"SEARCH: {query}", bg=COLORS["bg"], fg=COLORS["search"],
+                 font=(FONT, 13, "bold")).pack(side="left")
+        tk.Label(heading, text=summary, bg=COLORS["bg"], fg=COLORS["dim"], font=(FONT, 10)).pack(side="left", padx=10)
+
+        self.body.columnconfigure(0, weight=1, uniform="team")
+        self.body.columnconfigure(1, weight=1, uniform="team")
+        columns = [tk.Frame(self.body, bg=COLORS["bg"]) for _ in range(2)]
+        for n, column in enumerate(columns):
+            column.grid(row=1, column=n, sticky="nsew", padx=(0, 8) if n == 0 else (8, 0))
+        for n, r in enumerate(results):
+            self._card(columns[n % 2], r, COLORS["search"], None, None)
+
     def _card(self, parent, r, accent, party_color, party_label):
         bg = COLORS["card"]
         card = tk.Frame(parent, bg=bg)
         card.pack(fill="x", pady=3)
         tk.Frame(card, bg=party_color or accent, width=5).pack(side="left", fill="y")
+        avatar = self.avatars.get(r.get("avatar_url"), self.placeholder)
+        tk.Label(card, image=avatar, bg=bg).pack(side="left", anchor="n", padx=(10, 0), pady=8)
         body = tk.Frame(card, bg=bg, padx=12, pady=5)
         body.pack(side="left", fill="both", expand=True)
         body.columnconfigure(0, weight=1)
@@ -165,8 +219,9 @@ class AnalyzerApp:
         # Row 2: the hero they're on and how they do on it
         line = tk.Frame(body, bg=bg)
         line.grid(row=1, column=0, columnspan=2, sticky="w", pady=(1, 0))
-        tk.Label(line, text=r["hero"], bg=bg, fg=accent, font=(FONT, 10, "bold")).pack(side="left")
-        tk.Label(line, text="   " + hero_stats_text(r), bg=bg, fg=COLORS["text"], font=(FONT, 10)).pack(side="left")
+        if r["hero"]:  # search results have no current hero
+            tk.Label(line, text=r["hero"] + "   ", bg=bg, fg=accent, font=(FONT, 10, "bold")).pack(side="left")
+        tk.Label(line, text=hero_stats_text(r), bg=bg, fg=COLORS["text"], font=(FONT, 10)).pack(side="left")
 
         # Row 3: badges
         badges = badge_labels(r)
@@ -184,6 +239,14 @@ class AnalyzerApp:
         if details:
             tk.Label(body, text=details, bg=bg, fg=COLORS["dim"], font=(FONT, 9), anchor="w").grid(
                 row=3, column=0, columnspan=2, sticky="w", pady=(3, 0))
+
+        # Not found: offer a search, so the right account can be picked out by avatar and rank
+        if r["status"] == "not found":
+            query = r.get("corrected_from") or r["player"]
+            link = tk.Label(body, text="Search similar names  >", bg=bg, fg=COLORS["link"], cursor="hand2",
+                            font=(FONT, 9, "underline"))
+            link.grid(row=4, column=0, columnspan=2, sticky="w", pady=(3, 0))
+            link.bind("<Button-1>", lambda event: self.search(query))
 
     def _make_link(self, label: tk.Label, url: str):
         normal, hover = (FONT, 12, "bold"), (FONT, 12, "bold underline")
@@ -213,6 +276,8 @@ class AnalyzerApp:
                     self.set_status(payload)
                 elif kind == "done":
                     self.show_report(*payload)
+                elif kind == "search_done":
+                    self.show_search(*payload)
                 elif kind == "error":
                     self.busy = False
                     self.set_status(f"Something went wrong: {payload}")
@@ -269,17 +334,58 @@ class AnalyzerApp:
     def _analyze(self, path: str):
         """Runs on a worker thread: no tkinter calls here, only queue messages."""
         try:
-            results, parties = analyze_screenshot(path, progress=lambda message: self.events.put(("progress", message)))
-            self.events.put(("done", (path, results, parties)))
+            progress = lambda message: self.events.put(("progress", message))
+            results, parties = analyze_screenshot(path, progress=progress)
+            progress("Loading avatars...")
+            images = download_images([r["avatar_url"] for r in results if r.get("avatar_url")])
+            self.events.put(("done", (path, results, parties, images)))
         except Exception as e:
             logger.exception("Analysis failed")
             self.events.put(("error", str(e)))
 
-    def show_report(self, path, results, parties):
+    def search(self, query: str):
+        query = query.strip()
+        if self.busy or not query:
+            return
+        self.busy = True
+        self.search_box.delete(0, "end")
+        self.search_box.insert(0, query)
+        threading.Thread(target=self._search, args=(query,), daemon=True).start()
+
+    def _search(self, query: str):
+        """Runs on a worker thread: no tkinter calls here, only queue messages."""
+        try:
+            progress = lambda message: self.events.put(("progress", message))
+            hero_names_by_id = {h["id"]: h["name"] for h in deadlock_api.fetch_heroes()}
+            results = search_player(query, hero_names_by_id, progress=progress)
+            images = download_images([r["avatar_url"] for r in results if r.get("avatar_url")])
+            self.events.put(("search_done", (query, results, images)))
+        except Exception as e:
+            logger.exception("Search failed")
+            self.events.put(("error", str(e)))
+
+    def store_avatars(self, images: dict):
+        """Turn downloaded avatar bytes into tkinter images (must run on the main thread)."""
+        for url, data in images.items():
+            if url in self.avatars:
+                continue
+            try:
+                image = Image.open(io.BytesIO(data)).convert("RGB").resize((AVATAR_SIZE, AVATAR_SIZE), Image.LANCZOS)
+                self.avatars[url] = ImageTk.PhotoImage(image)
+            except Exception:
+                logger.warning(f"Could not read avatar {url}")
+
+    def show_search(self, query, results, images):
         self.busy = False
+        self.store_avatars(images)
+        self.render_search(query, results)
+        self.set_status(f"{len(results)} results  ·  {HOTKEY.upper()} for the lobby")
+
+    def show_report(self, path, results, parties, images):
+        self.busy = False
+        self.store_avatars(images)
         self.render(results, parties)
-        self.set_status(f"{len(results)} players from {os.path.basename(path)}  ·  "
-                        f"{HOTKEY.upper()} for a new screenshot")
+        self.set_status(f"{len(results)} players  ·  {HOTKEY.upper()} for a new screenshot")
         self.root.bell()  # audible cue when the report is ready while you're in game
 
     def close(self):

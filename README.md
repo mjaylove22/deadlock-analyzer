@@ -12,7 +12,7 @@ For every player in the lobby, the app shows:
 - **Badges:** ONE-TRICK, ON MAIN, COMFORT PICK, NEW ON HERO, FIRST GAME ON HERO, HIGH WR / LOW WR, VETERAN
 - **Rank**, in the game's rank colours
 - **Parties:** friends queued together on the same team share a colour
-- **Their most-played heroes**, and a clickable Steam profile
+- **Their Steam avatar**, **most-played heroes** (by games played, with win rate) and a clickable profile
 - **ID UNSURE** when the account match is a close call, so you know when not to trust it
 - **NAME FIXED** when OCR misread one character of a name and the real Steam name was found
 
@@ -50,6 +50,8 @@ Profile links are clickable.
 - **Overlay mode** keeps the window semi-transparent and on top of the game. This needs the game in
   **borderless windowed** mode; the app never draws into the game itself.
 - **Analyze latest** re-runs the report on the newest screenshot; **Open screenshot...** picks any saved one.
+- **Search player:** type any Steam name to see every account with that name (avatar, rank, overall
+  stats). A player the lookup couldn't find gets a **Search similar names** link.
 - Progress shows while it works ("Looking up player 5/12..."), and each team header sums up the team
   ("party of 3 · 2 new on hero · best rank Oracle 6").
 - Screenshots older than **7 days are deleted automatically** (except ones kept as test cases).
@@ -67,6 +69,8 @@ python -m unittest discover -s tests -v
 
 - Crop coordinates were measured on a **1920×1080** screen with a 6v6 scoreboard; other resolutions log a warning and will likely misread.
 - OCR occasionally garbles a hero line; that player is skipped rather than guessed.
+- A player whose account isn't in the Deadlock API's database can't be found by name at all (only
+  identifying players by match ID, after the match, could fix that).
 - Hero stats and badges count normal matches only (the API default); Street Brawl and bot matches aren't included.
 
 ## Project layout

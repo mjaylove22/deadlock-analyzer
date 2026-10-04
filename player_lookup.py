@@ -52,17 +52,6 @@ def find_candidates(name: str) -> Tuple[List[Dict[str, Any]], str]:
     that OCR misread the name. Friend lists are kept in memory for identity resolution only.
     """
     results = deadlock_api.search_steam_profiles(name)
-
-    def same_name(a: str, b: str) -> bool:
-        return a.strip().lower() == b.strip().lower()
-
-    def as_candidate(c):
-        return {
-            "account_id": c["account_id"],
-            "profile_url": c["profileurl"],
-            "friends": {f["account_id"] for f in (c.get("friends") or [])},
-        }
-
     exact = [as_candidate(c) for c in results if same_name(c["personaname"], name)]
     if exact:
         return exact, ""
@@ -78,6 +67,20 @@ def find_candidates(name: str) -> Tuple[List[Dict[str, Any]], str]:
             c["corrected_name"] = misread.strip()
         return near, ""
     return [], f"closest name: {results[0]['personaname']!r}"
+
+
+def same_name(a: str, b: str) -> bool:
+    return a.strip().lower() == b.strip().lower()
+
+
+def as_candidate(c: Dict[str, Any]) -> Dict[str, Any]:
+    """Keep only what we need from a search result. Friend lists stay in memory, for linking only."""
+    return {
+        "account_id": c["account_id"],
+        "profile_url": c["profileurl"],
+        "avatar_url": c.get("avatarmedium") or c.get("avatar"),
+        "friends": {f["account_id"] for f in (c.get("friends") or [])},
+    }
 
 
 def looks_like_misread(ocr_name: str, real_name: str) -> bool:
@@ -109,7 +112,8 @@ def lookup_lobby(records: List[Dict[str, str]], hero_ids_by_name: Dict[str, int]
     The whole lobby is resolved together, because friend links between players are evidence.
     """
     results = [dict(r, status=None, note="", account_id=None, profile_url=None, top_heroes=[],
-                    hero_stats=None, badges=[], confident=False, rank=None, corrected_from=None) for r in records]
+                    hero_stats=None, badges=[], confident=False, rank=None, corrected_from=None,
+                    avatar_url=None) for r in records]
 
     candidates_by_player = {}
     for i, result in enumerate(results):
@@ -153,7 +157,7 @@ def lookup_lobby(records: List[Dict[str, str]], hero_ids_by_name: Dict[str, int]
         entries = stats_by_account[account["account_id"]]
         hero_id = hero_ids_by_name.get(results[i]["hero"])
         results[i].update(status="found", note=reason, account_id=account["account_id"],
-                          profile_url=account["profile_url"],
+                          profile_url=account["profile_url"], avatar_url=account["avatar_url"],
                           top_heroes=top_heroes(entries, hero_names_by_id),
                           hero_stats=hero_summary(entries, hero_id),
                           badges=compute_badges(entries, hero_id),
@@ -163,6 +167,43 @@ def lookup_lobby(records: List[Dict[str, str]], hero_ids_by_name: Dict[str, int]
     attach_ranks(results)
     parties = find_parties(resolved, {i: results[i]["team"] for i in resolved})
     return results, parties
+
+
+SEARCH_RESULTS_SHOWN = 6
+
+
+def search_player(name: str, hero_names_by_id: Dict[int, str], progress: Progress = None) -> List[Dict[str, Any]]:
+    """Manual search: one result per matching account (exact names first, else the closest names).
+    
+    Results have the same shape as lobby results, with team "search" and no current hero,
+    plus "totals" (all games, overall win rate, games in the last 30 days).
+    """
+    report_progress(progress, f"Searching for {name}...")
+    found = deadlock_api.search_steam_profiles(name)
+    exact = [c for c in found if same_name(c["personaname"], name)]
+    shown = (exact or found)[:SEARCH_RESULTS_SHOWN]
+    if not shown:
+        return []
+
+    report_progress(progress, "Loading hero stats...")
+    stats_by_account = defaultdict(list)
+    for entry in deadlock_api.get_hero_stats([c["account_id"] for c in shown]):
+        stats_by_account[entry["account_id"]].append(entry)
+
+    results = []
+    for c in shown:
+        entries = stats_by_account[c["account_id"]]
+        games = sum(e["matches_played"] for e in entries)
+        wins = sum(e["wins"] for e in entries)
+        results.append(dict(as_candidate(c), player=c["personaname"], hero="", team="search", status="found",
+                            note="exact name" if exact else "similar name", confident=True, rank=None,
+                            corrected_from=None, hero_stats=None, badges=[],
+                            top_heroes=top_heroes(entries, hero_names_by_id),
+                            totals={"games": games, "win_rate": wins / games if games else 0.0,
+                                    "recent": c.get("matches_played_last_30d")}))
+    report_progress(progress, "Loading ranks...")
+    attach_ranks(results)
+    return results
 
 
 def is_confident(candidates: List[Dict[str, Any]], reason: str) -> bool:

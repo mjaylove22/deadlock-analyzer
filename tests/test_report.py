@@ -30,7 +30,7 @@ class BuildReportTests(unittest.TestCase):
         self.assertTrue(texts[0].startswith("YOUR TEAM"))
         self.assertIn(("Party of 2: A + B", "party"), lines)
         self.assertIn(("    https://steam/1", "link"), lines)
-        self.assertIn("Most played: Viscous 120", " ".join(t for t, _ in lines))
+        self.assertIn("Most played: Viscous 120 (55%)", " ".join(t for t, _ in lines))
         # The party line belongs to the enemy section, right after its title
         enemy_title = next(n for n, t in enumerate(texts) if t.startswith("ENEMY TEAM"))
         self.assertEqual(styles[enemy_title + 1], "party")
@@ -45,6 +45,11 @@ class WordingTests(unittest.TestCase):
     def test_hero_stats_line(self):
         r = result("A", "Lash", "enemy", stats={"games": 1, "win_rate": 1.0, "kda": 2.7, "damage_per_min": 1234.4})
         self.assertEqual(hero_stats_text(r), "1 game · 100% WR · 2.7 KDA · 1,234 dmg/min")
+
+    def test_search_result_describes_all_games(self):
+        r = result("A", "", "search")
+        r["totals"] = {"games": 1234, "win_rate": 0.5, "recent": 61}
+        self.assertEqual(hero_stats_text(r), "1,234 games · 50% WR overall · 61 in the last 30 days")
 
     def test_no_games_on_hero(self):
         self.assertEqual(hero_stats_text(result("A", "Lash", "enemy")), "No recorded games on Lash")

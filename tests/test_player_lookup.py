@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 import player_lookup
-from player_lookup import looks_like_misread, lookup_lobby
+from player_lookup import looks_like_misread, lookup_lobby, search_player
 
 PARADOX = 10
 GRAVES = 76
@@ -135,6 +135,35 @@ class LookupLobbyTests(unittest.TestCase):
         self.assertEqual(results[0]["status"], "error")
         self.assertIn("timed out", results[0]["note"])
 
+
+
+class SearchPlayerTests(unittest.TestCase):
+    def setUp(self):
+        guard = patch.object(player_lookup.deadlock_api, "get_json",
+                             side_effect=AssertionError("unit test tried to call the real API"))
+        guard.start()
+        self.addCleanup(guard.stop)
+
+    def search(self, name, found, stats=()):
+        api = player_lookup.deadlock_api
+        with patch.object(api, "search_steam_profiles", return_value=found),              patch.object(api, "get_hero_stats", return_value=list(stats)),              patch.object(api, "fetch_rank_tiers", return_value=RANK_TIERS),              patch.object(api, "get_player_ranks", side_effect=lambda ids: [rank(a, 7, 2) for a in ids]):
+            return search_player(name, HERO_NAMES)
+
+    def test_exact_names_only_when_there_are_any(self):
+        found = [profile(1, "Twin"), profile(2, "Twins"), profile(3, "twin")]
+        results = self.search("Twin", found, [stat(1, PARADOX, 10, wins=6), stat(1, GRAVES, 10, wins=4)])
+        self.assertEqual([r["account_id"] for r in results], [1, 3])
+        self.assertEqual(results[0]["totals"]["games"], 20)
+        self.assertAlmostEqual(results[0]["totals"]["win_rate"], 0.5)
+        self.assertEqual(results[0]["rank"]["name"], "Emissary 2")
+
+    def test_falls_back_to_closest_names(self):
+        results = self.search("Kovas", [profile(1, "Kovmas"), profile(2, "Kovan")])
+        self.assertEqual([r["player"] for r in results], ["Kovmas", "Kovan"])
+        self.assertEqual(results[0]["note"], "similar name")
+
+    def test_nothing_found(self):
+        self.assertEqual(self.search("zzz", []), [])
 
 
 class LooksLikeMisreadTests(unittest.TestCase):

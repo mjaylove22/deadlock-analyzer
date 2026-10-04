@@ -19,6 +19,10 @@ def hero_stats_text(r: Dict[str, Any]) -> str:
         return f"No exact Steam name match ({r['note']})"
     if r["status"] == "error":
         return f"Lookup failed: {r['note']}"
+    if r.get("totals"):  # manual search result: no current hero, so describe all their games
+        t = r["totals"]
+        recent = f" · {t['recent']} in the last 30 days" if t.get("recent") is not None else ""
+        return f"{t['games']:,} games · {t['win_rate']:.0%} WR overall{recent}"
     s = r["hero_stats"]
     if not s:
         return f"No recorded games on {r['hero']}"
@@ -29,7 +33,8 @@ def hero_stats_text(r: Dict[str, Any]) -> str:
 def most_played_text(r: Dict[str, Any]) -> str:
     if not r["top_heroes"]:
         return ""
-    return "Most played: " + " · ".join(f"{h['hero']} {h['matches']}" for h in r["top_heroes"])
+    # Most played = most games (wins and losses), with the win rate on each
+    return "Most played: " + " · ".join(f"{h['hero']} {h['matches']} ({h['win_rate']:.0%})" for h in r["top_heroes"])
 
 
 def identity_text(r: Dict[str, Any]) -> str:

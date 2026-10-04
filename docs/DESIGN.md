@@ -128,14 +128,19 @@ An early hardcoded list turned out to be largely invented, and a hand-verified l
 ### 4.11 UI layout, measured
 Teams sit side by side with one card per player. Whether a full lobby fits was **measured**, not eyeballed: tkinter reports the size a layout needs, so the worst case (12 real players with badges and parties) was rendered off-screen. It needed 826px against an 820px window, so card spacing was tightened to 790px.
 
-### 4.12 Housekeeping
+### 4.12 Avatars, search, and players who can't be found
+- **Avatars** come from URLs already in the search response, downloaded in parallel on the worker thread. tkinter only shows an image while Python holds a reference to it, so the app keeps them in a dictionary.
+- **Manual search** shows every account with the exact name (or the closest names), so a person can tell them apart by avatar, rank and stats.
+- **Why some players are never found:** one real "not found" player had no exact match in search, and none of the 196 friends of their identified teammates had that name either. The account simply isn't in the API's database, so no name-based method can find it. Valve's own match data (match ID → metadata, after the match) is the only fix for that case.
+
+### 4.13 Housekeeping
 - Screenshots older than 7 days are deleted at startup and after each capture. Only files named like the app's own captures are touched, and a screenshot with an `.expected.json` (a regression test case) is never deleted.
 - Hero and rank lists are cached for the life of the app (`functools.lru_cache`); a failed request isn't cached, so it's retried next time.
 - The analysis reports progress through a callback, so the lookup code doesn't need to know about the window.
 
 ## 5. Testing
 
-`python -m unittest discover -s tests -v` runs 64 tests in about a second:
+`python -m unittest discover -s tests -v` runs 69 tests in about a second:
 - **Parser tests** use OCR output actually produced from real screenshots, including a noisy version, plus edge cases: headers, noise-only lines, duplicate player names, multi-word heroes, hero lines with nothing above them.
 - **Identity tests** use plain data to cover settling by unique name, friend links (including links listed by only one side and chains of settled players), ties falling back to hero history, and party grouping.
 - **Insights tests** cover each badge rule and its thresholds.
