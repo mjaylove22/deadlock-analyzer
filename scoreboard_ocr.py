@@ -9,6 +9,7 @@ Usage (debug view of the raw OCR lines and parsed rows):
 import logging
 import os
 import re
+import subprocess
 import sys
 import unicodedata
 from typing import Dict, List, Optional, Tuple
@@ -27,6 +28,20 @@ for candidate in (paths.resource("tesseract", "tesseract.exe"), r"C:\Program Fil
     if os.path.exists(candidate):
         pytesseract.pytesseract.tesseract_cmd = candidate
         break
+
+# Run tesseract with no console at all. pytesseract only asks for a hidden window, so from a
+# windowless app (no console of its own) Windows still creates a console for every OCR run, and on
+# Windows 11 that console can be handed to Windows Terminal, which can take keyboard focus: the
+# game tabbed out on every capture.
+if sys.platform == "win32":
+    _pytesseract_subprocess_args = pytesseract.pytesseract.subprocess_args
+
+    def _without_console(include_stdout=True):
+        kwargs = _pytesseract_subprocess_args(include_stdout)
+        kwargs["creationflags"] = kwargs.get("creationflags", 0) | subprocess.CREATE_NO_WINDOW
+        return kwargs
+
+    pytesseract.pytesseract.subprocess_args = _without_console
 
 # Scoreboard geometry, measured on 1920x1080 screenshots of the Esc menu's PLAYERS tab.
 # Other screen sizes are located with layout.py and scaled back to this size before reading.

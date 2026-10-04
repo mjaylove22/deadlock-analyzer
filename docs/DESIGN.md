@@ -264,9 +264,15 @@ Checked against a real Street Brawl lobby where 2 of 8 players weren't found:
 - **Street Brawl:** a 4v4 lobby uses Street Brawl stats for the strip and the page (before, the strip used normal-mode numbers), and hides the lane row: there's one lane.
 - Checking the page without disturbing the user's game: test windows open on the second monitor behind other windows and are captured with `PrintWindow`, which draws a window into an image even when it's covered.
 
+### 4.30 Captures never take focus
+- **The report:** "when it gets the screenshots it tabs me out".
+- **First suspect, cleared by reading Tk's source** (`win/tkWinWm.c`): after each capture the app re-applies its overlay settings, but Tk's `-topmost` uses `SWP_NOACTIVATE`, `-alpha` only changes the layered style, `deiconify` uses `SW_SHOWNOACTIVATE`, and only `-toolwindow` rebuilds the window. None of them activate it.
+- **The cause:** every capture runs OCR straight away, and pytesseract starts `tesseract.exe` (a console program) with only "hidden window". The app has no console of its own, so Windows creates one for every run. On Windows 11 with the default "let Windows decide" terminal (Windows Terminal here), a console can become a Terminal window that takes keyboard focus, which tabs a fullscreen game out. Tesseract now starts with `CREATE_NO_WINDOW`: no console at all. Running from a terminal hid this during development, because tesseract shared that terminal's console.
+- **Not tested live while the game was focused:** a failed test would have tabbed the user out of their match. A unit test checks the flag instead, and every capture now logs a warning if the focused window changed between the start and the end of the capture, so any other cause would show up in the log.
+
 ## 5. Testing
 
-`python -m unittest discover -s tests -v` runs 148 tests in a few seconds:
+`python -m unittest discover -s tests -v` runs 149 tests in a few seconds:
 - **Parser tests** use OCR output actually produced from real screenshots, including a noisy version, plus edge cases: headers, noise-only lines, duplicate player names, multi-word heroes, hero lines with nothing above them.
 - **Identity tests** use plain data to cover settling by unique name, friend links (including links listed by only one side and chains of settled players), ties falling back to hero history, and party grouping.
 - **Insights tests** cover each badge rule and its thresholds.

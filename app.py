@@ -68,6 +68,7 @@ class AnalyzerApp:
         self.root = root
         self.events = queue.Queue()  # callables from other threads, run on the main thread
         self.busy = False            # a capture/analysis is in progress
+        self.focus_at_capture = None  # title of the focused window when a capture started
         self.lobby = None            # the latest lobby: results, parties, matchup, path, time
         self.last_records = None     # OCR'd lobby shown last, to skip re-analysing the same one
         self.cache: Dict[Any, Any] = {}
@@ -366,6 +367,7 @@ class AnalyzerApp:
         if self.busy:
             return
         self.busy = True
+        self.focus_at_capture = game_window.focused_window_title()
         self.set_status("Scoreboard detected, capturing..." if auto else "Capturing screenshot...")
         if self.capture_hidden:
             self._capture_now(auto)  # already hidden (overlay mode)
@@ -451,8 +453,17 @@ class AnalyzerApp:
             error = str(e)
             self.events.put(lambda: self.analysis_failed(error))
 
+    def check_focus_kept(self):
+        """Log it if keyboard focus moved while capturing: the app must never pull you out of the game."""
+        before, self.focus_at_capture = self.focus_at_capture, None
+        if before is not None:
+            after = game_window.focused_window_title()
+            if after != before:
+                logger.warning(f"Keyboard focus moved during a capture: {before!r} -> {after!r}")
+
     def show_lobby(self, lobby):
         self.busy = False
+        self.check_focus_kept()
         self.avatars.store(lobby.pop("images"))
         self.lobby = lobby
         self.last_records = lobby["records"]
@@ -469,6 +480,7 @@ class AnalyzerApp:
     def same_lobby(self):
         logger.info("Same lobby as the last capture; nothing to look up")
         self.busy = False
+        self.check_focus_kept()
         prefs = get_preferences()
         if prefs["reshow_same_lobby"] and self.lobby:
             self.navigate(LobbyPage, push=not isinstance(self.page, LobbyPage))
@@ -493,6 +505,7 @@ class AnalyzerApp:
 
     def analysis_failed(self, error: str):
         self.busy = False
+        self.check_focus_kept()
         self.set_status(f"Something went wrong: {error}")
 
     def close(self):

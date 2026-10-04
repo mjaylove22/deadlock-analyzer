@@ -4,6 +4,7 @@ Run from the project root:
     python -m unittest discover -s tests -v
 """
 
+import sys
 import unittest
 
 from scoreboard_ocr import FALLBACK_HERO_NAMES, looks_like_misread, match_hero, parse_player_rows, team_for_row
@@ -138,6 +139,18 @@ class TeamForRowTests(unittest.TestCase):
     def test_tolerates_a_few_pixels_of_drift(self):
         self.assertEqual(team_for_row(77 + 60 * 2 + 8), "friendly")
         self.assertEqual(team_for_row(77 + 60 * 3 + 40 - 8), "enemy")
+
+
+class NoConsoleTests(unittest.TestCase):
+    @unittest.skipUnless(sys.platform == "win32", "Windows only")
+    def test_tesseract_runs_without_a_console_window(self):
+        # Regression: with only "hidden window", Windows still made a console for every OCR run,
+        # which Windows Terminal could turn into a window that took focus from the game
+        import subprocess
+        import pytesseract
+        import scoreboard_ocr  # noqa: F401  (installs the change)
+        flags = pytesseract.pytesseract.subprocess_args().get("creationflags", 0)
+        self.assertTrue(flags & subprocess.CREATE_NO_WINDOW)
 
 
 if __name__ == "__main__":

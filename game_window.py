@@ -44,6 +44,14 @@ def client_area(hwnd) -> Box:
     return corner.x, corner.y, corner.x + rect.right, corner.y + rect.bottom
 
 
+def focused_window_title() -> str:
+    """The title of the window that has keyboard focus (for the log: did a capture move focus?)."""
+    hwnd = _user32.GetForegroundWindow()
+    buffer = ctypes.create_unicode_buffer(256)
+    _user32.GetWindowTextW(hwnd, buffer, 256)
+    return buffer.value
+
+
 def find_window(exe: str = GAME_EXE) -> Optional[Box]:
     """The client area of the largest visible, non-minimised window owned by exe, or None."""
     found = []
