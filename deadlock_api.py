@@ -320,6 +320,44 @@ def fetch_weekly_hero_stats(game_mode: str = "normal", ranks: tuple = None, week
     return disk_cached(f"weekly_{game_mode}_{low}_{high}", build, max_age=6 * 3600)
 
 
+DAY_SECONDS = 86400
+
+
+def fetch_daily_item_stats(game_mode: str = "normal", ranks: tuple = None, days: int = 14) -> Dict[str, Any]:
+    """Every shop item's [wins, games] on each of the last `days` complete days (UTC), how many
+    player-games each day had (to tell how often an item is bought), and each item's average buy
+    time: {"days", "items": {item_id: [[wins, games], ...]}, "player_games": [...], "buy_time": {item_id: s}}.
+    Two requests (~640 KB; ~7 s when the server hasn't calculated them lately), kept as ~30 KB on
+    disk for 3 hours. Today is left out until it's over, like the current week for heroes."""
+    def build():
+        today = int(time.time() // DAY_SECONDS) * DAY_SECONDS
+        start = today - days * DAY_SECONDS
+        params = {"game_mode": game_mode, "bucket": "start_time_day", "min_unix_timestamp": start,
+                  "max_unix_timestamp": today - 1, **badge_range(ranks)}
+        item_rows, hero_rows = parallel(lambda: get_json("/v1/analytics/item-stats", params, max_age=0),
+                                        lambda: get_json("/v1/analytics/hero-stats", params, max_age=0))
+        starts = [start + n * DAY_SECONDS for n in range(days)]
+        index = {day: n for n, day in enumerate(starts)}
+        player_games = [0] * days
+        for row in hero_rows:
+            if row["bucket"] in index:
+                player_games[index[row["bucket"]]] += row["matches"]
+        items: Dict[str, List[List[int]]] = {}
+        buy_time: Dict[str, List[float]] = {}  # item -> [sum of buy time x games, games]
+        for row in item_rows:
+            if row["bucket"] in index:
+                key = str(row["item_id"])
+                items.setdefault(key, [[0, 0] for _ in starts])[index[row["bucket"]]] = [row["wins"], row["matches"]]
+                if row.get("avg_buy_time_s"):
+                    totals = buy_time.setdefault(key, [0.0, 0])
+                    totals[0] += row["avg_buy_time_s"] * row["matches"]
+                    totals[1] += row["matches"]
+        return {"days": starts, "items": items, "player_games": player_games,
+                "buy_time": {key: round(total / games) for key, (total, games) in buy_time.items() if games}}
+    low, high = ranks or (0, 0)
+    return disk_cached(f"items_daily_{game_mode}_{low}_{high}", build, max_age=3 * 3600)
+
+
 def get_hero_bans(ranks: tuple = None) -> List[Dict[str, Any]]:
     """How many times each hero was banned: {"hero_id", "bans"}. Only counts, not how many matches
     they came from, so a true ban rate can't be computed from this; a hero's share of all bans can."""

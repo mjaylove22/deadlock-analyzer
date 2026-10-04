@@ -70,11 +70,12 @@ def get(url: str) -> Optional[Image.Image]:
         return _images.get(url)
 
 
-def load_many(urls: Iterable[str], max_side: int = ICON_MAX_SIDE) -> None:
-    """Load several images in parallel (worker thread)."""
+def load_many(urls: Iterable[str], max_side: int = ICON_MAX_SIDE, workers: int = 8) -> None:
+    """Load several images in parallel (worker thread). Fewer workers for big batches: 8 at once for
+    ~170 images made the image server drop some connections."""
     wanted = [u for u in set(urls) if u and get(u) is None]
     if wanted:
-        with ThreadPoolExecutor(max_workers=8) as pool:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
             list(pool.map(lambda url: load(url, max_side), wanted))
 
 

@@ -14,6 +14,7 @@ from ui.widgets import hide_tooltip, show_tooltip
 
 Box = Tuple[float, float, float, float]  # x0, y0, x1, y1
 TREND_SPAN = 0.05  # small trend lines are 5 win-rate points tall (more if a hero moved more), so they compare
+ITEM_TREND_SPAN = 0.03  # item win rates move less from day to day
 
 
 def week_label(start: float) -> str:
@@ -36,18 +37,23 @@ def change_text(trend: Optional[Dict[str, Any]]) -> str:
     return f"{'▲' if trend['change'] > 0 else '▼'} {abs(trend['change']) * 100:.1f}"
 
 
-def change_tip(trend: Optional[Dict[str, Any]]) -> Optional[str]:
+# How trends describe their periods: heroes by week over 12 weeks, items by day over 14 days
+HERO_WEEKS = {"recent": "last 4 weeks", "before": "9-12 weeks ago", "point": "week of ", "pick": "pick rate"}
+ITEM_DAYS = {"recent": "last 7 days", "before": "8-14 days ago", "point": "", "pick": "of players bought it"}
+
+
+def change_tip(trend: Optional[Dict[str, Any]], period: Dict[str, str] = HERO_WEEKS) -> Optional[str]:
     if not trend or trend.get("change") is None:
-        return "Not enough games 9-12 weeks ago to compare" if trend else None
-    lines = [f"Win rate, last 4 weeks: {trend['recent']:.1%}", f"9-12 weeks ago: {trend['before']:.1%}"]
+        return f"Not enough games {period['before']} to compare" if trend else None
+    lines = [f"Win rate, {period['recent']}: {trend['recent']:.1%}", f"{period['before'].capitalize()}: {trend['before']:.1%}"]
     if trend["steady"]:
         lines.append("Steady: within what chance alone would give, or under half a point")
     return "\n".join(lines)
 
 
-def week_tip(hero: str, week: Dict[str, Any]) -> str:
-    return (f"{hero} · week of {week_label(week['start'])}\n"
-            f"{week['win_rate']:.1%} win rate · {week['pick_rate']:.0%} pick rate · {week['games']:,} games")
+def week_tip(name: str, point: Dict[str, Any], period: Dict[str, str] = HERO_WEEKS) -> str:
+    return (f"{name} · {period['point']}{week_label(point['start'])}\n"
+            f"{point['win_rate']:.1%} win rate · {point['pick_rate']:.0%} {period['pick']} · {point['games']:,} games")
 
 
 def trend_points(weeks: List[Dict[str, Any]], total_weeks: int, box: Box,
@@ -67,10 +73,10 @@ def nearest(points: List[Tuple[float, float]], x: float) -> int:
 
 
 def draw_trend(canvas: tk.Canvas, trend: Dict[str, Any], total_weeks: int, box: Box,
-               focus_x: Optional[float] = None, tags: Sequence[str] = ()) -> None:
+               focus_x: Optional[float] = None, tags: Sequence[str] = (), span: float = TREND_SPAN) -> None:
     """A hero's weekly win rate as a small line, with a dot on the latest week. focus_x: mark the
     week nearest to it (the mouse)."""
-    points = trend_points(trend["weeks"], total_weeks, box)
+    points = trend_points(trend["weeks"], total_weeks, box, span)
     color = trend_color(trend)
     canvas.create_line(*[c for p in points for c in p], fill=color, width=2, tags=tags)
     x, y = points[-1]
@@ -262,25 +268,34 @@ def trend_box(box: Box) -> Box:
     return (x0 + 12, y0 + 8, x1 - 12, y1 - 8)
 
 
-def trend_cell(total_weeks: int):
+def trend_cell(total_weeks: int, span: float = TREND_SPAN):
     def draw(canvas, row, box, focus_x, tags):
         trend = row.get("trend")
         if not trend or len(trend["weeks"]) < 2:
             canvas.create_text((box[0] + box[2]) / 2, (box[1] + box[3]) / 2, text="new" if trend else "-",
                                fill=COLORS["faint"], font=(FONT, 9), tags=tags)
             return
-        draw_trend(canvas, trend, total_weeks, trend_box(box), focus_x, tags)
+        draw_trend(canvas, trend, total_weeks, trend_box(box), focus_x, tags, span)
     return draw
 
 
-def trend_tip(total_weeks: int):
+def trend_tip(total_weeks: int, name_key: str = "hero", period: Dict[str, str] = HERO_WEEKS, span: float = TREND_SPAN):
     def tip(row, x, box):
         trend = row.get("trend")
         if not trend or len(trend["weeks"]) < 2:
             return None
-        points = trend_points(trend["weeks"], total_weeks, trend_box(box))
-        return week_tip(row["hero"], trend["weeks"][nearest(points, x)])
+        points = trend_points(trend["weeks"], total_weeks, trend_box(box), span)
+        return week_tip(row[name_key], trend["weeks"][nearest(points, x)], period)
     return tip
+
+
+def item_cell():
+    def draw(canvas, row, box, focus_x, tags):
+        x0, y0, x1, y1 = box
+        middle = (y0 + y1) / 2
+        canvas.create_image(x0 + 8, middle, image=images.item_icon(row, 24), anchor="w", tags=tags)
+        canvas.create_text(x0 + 40, middle, text=row["name"], anchor="w", fill=COLORS["text"], font=(FONT, 10), tags=tags)
+    return draw
 
 
 # --- matchups

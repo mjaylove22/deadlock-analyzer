@@ -276,9 +276,15 @@ Checked against a real Street Brawl lobby where 2 of 8 players weren't found:
 - **Light:** the hero and item lists are 2 MB and 6 MB; the guides keep ~60 KB on disk for 3 days. The raw asset lists used to stay in memory for the rest of the session after each daily refresh; they're now dropped once their slim copies are saved.
 - **Placement:** a Stats | Guide switch on the hero page, since the stats view already fills the window.
 
+### 4.32 Item trends
+- **Two requests per mode and rank band:** item stats grouped by day for the last 14 complete days, and hero stats by day for how many player-games each day had, which turns purchases into a share of players. About 640 KB and up to 7 s when the server hasn't calculated them lately; kept as ~40 KB on disk for 3 hours. Today is left out, like the current week on the heroes page.
+- **Sorted by how often items are bought**, not by win rate: "win rate when bought" favours expensive late items, because only longer games buy them. The page says so, and tiers are shown so items can be compared with their own tier.
+- **Reuses the heroes page's pieces:** the canvas table, the trend lines and the steady test (last 7 days against the 7 before). The trend popups now take their wording (weeks or days) as a parameter. Item lines use a 3-point scale (heroes: 5), since item win rates move less from day to day.
+- **Icons for all 156 items** download once, 4 at a time: 8 at once made the image server drop connections.
+
 ## 5. Testing
 
-`python -m unittest discover -s tests -v` runs 156 tests in a few seconds:
+`python -m unittest discover -s tests -v` runs 158 tests in a few seconds:
 - **Parser tests** use OCR output actually produced from real screenshots, including a noisy version, plus edge cases: headers, noise-only lines, duplicate player names, multi-word heroes, hero lines with nothing above them.
 - **Identity tests** use plain data to cover settling by unique name, friend links (including links listed by only one side and chains of settled players), ties falling back to hero history, and party grouping.
 - **Insights tests** cover each badge rule and its thresholds.

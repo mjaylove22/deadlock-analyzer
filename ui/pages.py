@@ -16,6 +16,7 @@ import assets
 import deadlock_api
 from match_review import REVIEW_STATS, MatchUnavailable, match_review
 from guides import hero_guide
+from item_trends import item_trends
 from matchups import hero_breakdown, matchup_details
 from player_lookup import search_player
 from profiles import (API_GAME_MODES, LOW_SAMPLE_GAMES, MATCH_TYPES, RANK_BANDS, hero_rank_curve, hero_tier_list, hero_trends,
@@ -26,8 +27,8 @@ from ui import images
 from ui.theme import (BADGE_COLORS, COLORS, ITEM_SLOT_COLORS, MATCHUP_COLORS, PARTY_COLORS, button, card, dropdown,
                       label, pill, segmented, switch)
 from version import __version__
-from ui.charts import (ChartTable, Column, advantage_bar, change_text, change_tip, hero_cell, trend_cell, trend_chart,
-                       trend_color, trend_tip, verdict)
+from ui.charts import (ITEM_DAYS, ITEM_TREND_SPAN, ChartTable, Column, advantage_bar, change_text, change_tip, hero_cell, item_cell,
+                       trend_cell, trend_chart, trend_color, trend_tip, verdict)
 from ui.widgets import item_tile, item_tooltip_text, tooltip
 from ui.widgets import bind_click, data_table, hero_label, matchup_strip, player_card, rank_pill
 
@@ -556,6 +557,74 @@ class HeroesPage(Page):
                                  "recorded bans (ranked games only). Click a heading to sort.",
               size=9, color="dim", justify="left", wraplength=1080).pack(anchor="w", pady=(8, 0))
         self.app.set_status(f"{len(rows)} heroes")
+
+
+def buy_time_text(seconds) -> str:
+    return f"{seconds // 60}:{seconds % 60:02d}" if seconds else "-"
+
+
+class ItemsPage(Page):
+    """Every shop item, like the heroes page: how often it's bought, win rate, and how it moved."""
+    nav = "items"
+    CATEGORIES = ["All", "Weapon", "Vitality", "Spirit"]
+
+    def build(self, mode: str = "Normal", band: str = "All ranks", category: str = "All"):
+        band = band_for(mode, band)
+        self.mode, self.band, self.category = mode, band, category
+        row = self.heading("Items", "how often they're bought, win rate, and how they've moved over two weeks")
+        segmented(row, MODES, mode, lambda m: self.app.open_items(m, band, category, push=False)).pack(side="right")
+        rank_dropdown(row, mode, band, lambda b: self.app.open_items(mode, b, category, push=False)).pack(side="right", padx=10)
+        segmented(row, self.CATEGORIES, category, lambda c: self.app.open_items(mode, band, c, push=False)).pack(side="right")
+        self.body = tk.Frame(self.frame, bg=COLORS["bg"])
+        self.body.pack(fill="both", expand=True)
+        key = ("items", mode, band)
+        if key in self.app.cache:
+            self.show(self.app.cache[key])
+            return
+        self.message("Loading item stats (the first time takes a few seconds)...", self.body)
+
+        def work():
+            data = item_trends(API_GAME_MODES[mode], BANDS[band])
+            # All icons once (then they're on disk); gently, so the image server doesn't drop any
+            assets.load_many((r["image"] for r in data["rows"]), assets.ITEM_MAX_SIDE, workers=4)
+            return data
+
+        def done(data):
+            self.app.cache[key] = data
+            self.show(data)
+
+        def failed(error):
+            self.clear(self.body)
+            self.unavailable(self.body, "item stats", bg="bg")
+        self.app.run_task(work, done, failed)
+
+    def show(self, data):
+        self.clear(self.body)
+        rows = [r for r in data["rows"] if self.category == "All" or r.get("slot") == self.category.lower()]
+        for n, r in enumerate(rows, start=1):
+            r["position"] = n  # by how often it's bought, kept when re-sorting
+        days = len(data["days"])
+        by_change = lambda r: r["trend"].get("change")  # noqa: E731
+        item_color = lambda r: images.readable_on_dark(ITEM_SLOT_COLORS.get(r.get("slot"), COLORS["text"]))  # noqa: E731
+        ChartTable(self.body, [
+            Column("position", "#", 36),
+            Column("name", "Item", 190, draw=item_cell(), align="w"),
+            Column("trend", "Last 14 days", 130, draw=trend_cell(days, ITEM_TREND_SPAN),
+                   tip=trend_tip(days, "name", ITEM_DAYS, ITEM_TREND_SPAN), sort=by_change),
+            Column("change", "Change", 80, text=lambda r: change_text(r["trend"]), color=lambda r: trend_color(r["trend"]),
+                   tip=lambda r, x, box: change_tip(r["trend"], ITEM_DAYS), sort=by_change),
+            Column("bought", "Bought", 80, text=lambda r: f"{r['bought']:.1%}"),
+            Column("win_rate", "Win rate", 80, text=lambda r: f"{r['win_rate']:.1%}", color=win_rate_color),
+            Column("tier", "Tier", 50, text=lambda r: str(r.get("tier") or "-"), color=item_color),
+            Column("cost", "Cost", 70, text=lambda r: f"{r['cost']:,}" if r.get("cost") else "-"),
+            Column("buy_time", "Bought at", 80, text=lambda r: buy_time_text(r.get("buy_time"))),
+        ], rows, height_rows=17).pack(fill="both", expand=True)
+        label(self.body, "Bought = the share of players who bought it. Win rate when bought favours expensive late items "
+                         "(only longer games get to buy them), so compare items of the same tier. Last 14 days: daily win rate, "
+                         "every line on the same scale (hover for each day). Change: the last 7 days against the 7 before; "
+                         "steady = within chance, or under half a point. Bought at = average game time of purchase.",
+              size=9, color="dim", justify="left", wraplength=1080).pack(anchor="w", pady=(8, 0))
+        self.app.set_status(f"{len(rows)} items")
 
 
 class HeroPage(Page):

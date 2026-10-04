@@ -38,8 +38,8 @@ import game_window
 import layout as layout_module
 from screenshot_manager import SCREENSHOT_DIR, capture_and_save_screenshot, delete_old_screenshots, get_screenshot_path
 from settings import get_me, get_preferences, load_settings, save_settings
-from ui.pages import (HeroesPage, HeroPage, HomePage, LobbyPage, MatchPage, PlayerPage, SearchPage, SettingsPage,
-                      SetupPage)
+from ui.pages import (HeroesPage, HeroPage, HomePage, ItemsPage, LobbyPage, MatchPage, PlayerPage, SearchPage,
+                      SettingsPage, SetupPage)
 from ui import images
 from ui.theme import COLORS, FONT, HEADING_FONT, label, setup_styles, switch
 from ui.widgets import AvatarCache, hide_tooltip
@@ -59,7 +59,7 @@ SW_SHOWNOACTIVATE = 4
 OVERLAY_ALPHA = 0.9
 WATCH_INTERVAL_S = 1.0   # how often auto-detect checks for the scoreboard (one check takes ~6 ms)
 SETTLE_S = 0.5           # after the scoreboard appears, wait for the menu animation before capturing
-NAV_TABS = [("lobby", "Lobby"), ("heroes", "Heroes"), ("mystats", "My Stats"), ("settings", "Settings")]
+NAV_TABS = [("lobby", "Lobby"), ("heroes", "Heroes"), ("items", "Items"), ("mystats", "My Stats"), ("settings", "Settings")]
 ICON_PATH = paths.resource("assets", "icon.ico")
 
 
@@ -180,7 +180,7 @@ class AnalyzerApp:
             self.navigate(page_class, push=False, **options)
 
     def open_tab(self, key: str):
-        {"lobby": self.open_lobby, "heroes": self.open_heroes, "mystats": self.open_my_stats,
+        {"lobby": self.open_lobby, "heroes": self.open_heroes, "items": self.open_items, "mystats": self.open_my_stats,
          "settings": lambda: self.navigate(SettingsPage)}[key]()
 
     def open_lobby(self):
@@ -188,6 +188,9 @@ class AnalyzerApp:
 
     def open_heroes(self, mode: str = "Normal", band: str = "All ranks", push: bool = True):
         self.navigate(HeroesPage, push=push, mode=mode, band=band)
+
+    def open_items(self, mode: str = "Normal", band: str = "All ranks", category: str = "All", push: bool = True):
+        self.navigate(ItemsPage, push=push, mode=mode, band=band, category=category)
 
     def open_hero(self, hero: str, mode: str = "Normal", band: str = "All ranks", push: bool = True, view: str = "Stats"):
         self.navigate(HeroPage, push=push, hero=hero, mode=mode, band=band, view=view)
