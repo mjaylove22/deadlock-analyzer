@@ -28,6 +28,14 @@ PLAYER_LIST_BOX = (1560, 110, 1875, 940)
 # The ENEMY TEAM header sits in the gap at y~545 on screen, which is y~435 inside the crop.
 TEAM_SPLIT_Y = 435
 
+# OCR preprocessing. The panel is semi-transparent, so its brightness shifts with whatever is
+# behind it; left to its own automatic black/white conversion, Tesseract read nothing on a
+# slightly brighter, red-tinted screenshot. Measured brightness: panel ~55-63, text ~159.
+# A fixed cutoff between them, after upscaling the small text, read 12/12 on every test
+# screenshot for any cutoff from 90 to 130.
+OCR_SCALE = 2
+TEXT_THRESHOLD = 110
+
 # Used only when the API is unreachable. Verified against the API on 2026-10-03.
 FALLBACK_HERO_NAMES = [
     "Abrams", "Apollo", "Bebop", "Billy", "Calico", "Celeste", "Drifter",
@@ -48,11 +56,17 @@ def load_hero_names() -> List[str]:
         return FALLBACK_HERO_NAMES
 
 
+def prepare_for_ocr(crop: Image.Image) -> Image.Image:
+    """Upscale, then turn light text into black-on-white with a fixed brightness cutoff."""
+    big = crop.resize((crop.width * OCR_SCALE, crop.height * OCR_SCALE), Image.LANCZOS)
+    return big.convert("L").point(lambda v: 0 if v > TEXT_THRESHOLD else 255)
+
+
 def read_team_lines(image: Image.Image) -> Dict[str, List[str]]:
     """OCR the player list once and split its text lines by team, using each line's position."""
-    crop = image.crop(PLAYER_LIST_BOX)
+    prepared = prepare_for_ocr(image.crop(PLAYER_LIST_BOX))
     # --psm 6 treats the crop as one uniform block of text
-    data = pytesseract.image_to_data(crop, config="--psm 6", output_type=pytesseract.Output.DICT)
+    data = pytesseract.image_to_data(prepared, config="--psm 6", output_type=pytesseract.Output.DICT)
 
     # Tesseract returns individual words; rebuild lines and remember how far down each one is
     lines = {}  # (block, paragraph, line) -> {"top": y, "words": [...]}
@@ -66,7 +80,8 @@ def read_team_lines(image: Image.Image) -> Dict[str, List[str]]:
 
     team_lines = {"friendly": [], "enemy": []}
     for line in lines.values():
-        team = "friendly" if line["top"] < TEAM_SPLIT_Y else "enemy"
+        # Positions come from the upscaled image, so scale back to crop coordinates
+        team = "friendly" if line["top"] / OCR_SCALE < TEAM_SPLIT_Y else "enemy"
         team_lines[team].append(" ".join(line["words"]))
     return team_lines
 

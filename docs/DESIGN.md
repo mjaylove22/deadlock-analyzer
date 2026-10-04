@@ -49,10 +49,11 @@ Each module has one job, and data flows one way: OCR knows nothing about stats, 
 
 OCR is sensitive to small changes, so every decision below was made by trying alternatives against a real screenshot, not by assumption.
 
-### 4.1 Crop tightly and skip image preprocessing
+### 4.1 Crop tightly, upscale, and binarize with a measured cutoff
 - **Crop** `(1560, 110, 1875, 940)` on a 1920×1080 screen. The left edge starts just past the hero portraits, which Tesseract otherwise reads as junk text (`sy`, `@`, `53`) glued to player names.
 - **The right edge must stay inside the panel.** A crop ending at x=1900 (including a few pixels of black background) made OCR return almost nothing. x=1875 works, and every width tested from 1700 to 1875 worked.
-- **No contrast boost.** An earlier version doubled the contrast before OCR. That erased the light-grey names on the dark-grey panel, leaving only the bright headers. Plain OCR on the crop was far better.
+- **Upscale 2x, then a fixed black/white cutoff.** The scoreboard panel is semi-transparent, so its brightness depends on the game scene behind it. Plain OCR read a first screenshot perfectly and a second one (a brighter, red-tinted scene) as **nothing**, because Tesseract's automatic black/white conversion failed on light-grey text over mid-grey. Measured brightness was panel ≈55–63 and text ≈159, so pixels brighter than 110 become black text on white. Upscaling helps because the small "Level" line is only about 10 px tall. Result: 12/12 on both screenshots, for any cutoff from 90 to 130, so the fix doesn't depend on one lucky value.
+- **No contrast stretch.** An earlier version doubled the contrast around the image's average before OCR, which pushed text and background to the same extreme and erased the names. The difference from the fix above: a cutoff placed *between measured values* keeps text and background apart.
 - **No character whitelist.** Restricting Tesseract to letters and digits stripped spaces, turning `Grey Mirage` into `GreyMirage`, which breaks multi-word Steam names.
 
 ### 4.2 Pair rows by structure, not by guessing
@@ -88,11 +89,13 @@ An early hardcoded list turned out to be largely invented, and a hand-verified l
 
 ## 5. Testing
 
-`python -m unittest discover -s tests -v` runs 17 tests in milliseconds:
+`python -m unittest discover -s tests -v` runs 18 tests in under a second:
 - **Parser tests** use OCR output actually produced from real screenshots, including a noisy version, plus edge cases: headers, noise-only lines, duplicate player names, multi-word heroes, hero lines with nothing above them.
 - **Lookup tests** mock the API to cover account selection, rejecting fuzzy matches, bot skipping, sorting favourite heroes, and network errors being reported instead of crashing the report.
 
-OCR itself (Tesseract on an image) is verified by running `python scoreboard_ocr.py`, which prints the raw OCR lines next to the parsed rows.
+- **Screenshot regression tests** run the full OCR pipeline on real screenshots and compare against hand-checked `.expected.json` answers. Screenshots contain other players' names, so they stay in the gitignored `screenshots/` folder and the test skips on machines without them. This test exists because the unit tests alone missed an OCR failure on a new screenshot; with the fix disabled, it fails.
+
+`python scoreboard_ocr.py <screenshot>` prints the raw OCR lines next to the parsed rows, for debugging a new screenshot.
 
 ## 6. Limitations and next steps
 
