@@ -1,7 +1,11 @@
 """Tests for player-page and tier-list data (pure functions, no network)."""
 
+import calendar
 import unittest
+from unittest.mock import patch
 
+import deadlock_api
+import profiles
 from profiles import RANK_BANDS, describe_match, hero_rows, match_type, mode_breakdown, tier_rows, top_mates, when
 
 NAMES = {1: "Haze", 2: "Rem", 3: "Newbie"}
@@ -80,6 +84,51 @@ class ProfilesTests(unittest.TestCase):
     def test_rank_bands_cover_every_rank_once(self):
         tiers = [t for _, band in RANK_BANDS if band for t in range(band[0], band[1] + 1)]
         self.assertEqual(tiers, list(range(1, 12)))  # Initiate (1) to Eternus (11), no gaps or overlaps
+
+
+class TrendTests(unittest.TestCase):
+    def test_a_clear_rise_is_a_change(self):
+        series = [[4800, 10000]] * 4 + [[5000, 10000]] * 4 + [[5200, 10000]] * 4
+        t = profiles.trend_change(series)
+        self.assertAlmostEqual(t["change"], 0.04)
+        self.assertFalse(t["steady"])
+
+    def test_a_small_sample_wobble_is_steady(self):
+        # +3 points on 500 games a week is within what chance gives
+        series = [[240, 500]] * 4 + [[250, 500]] * 4 + [[255, 500]] * 4
+        self.assertTrue(profiles.trend_change(series)["steady"])
+
+    def test_a_real_but_tiny_change_is_steady(self):
+        series = [[500000, 1000000]] * 8 + [[503000, 1000000]] * 4  # +0.3 points, real at this size
+        self.assertTrue(profiles.trend_change(series)["steady"])
+
+    def test_no_change_for_a_hero_without_games_back_then(self):
+        series = [[0, 0]] * 8 + [[600, 1000]] * 4  # released recently
+        self.assertIsNone(profiles.trend_change(series)["change"])
+
+    def test_weeks_with_few_games_are_left_off_but_keep_their_place(self):
+        weekly = {"weeks": list(range(12)), "heroes": {
+            "1": [[0, 0]] * 10 + [[60, 120], [70, 120]],   # new hero: only the last two weeks
+            "2": [[600, 1200]] * 12}}
+        with patch.object(deadlock_api, "fetch_weekly_hero_stats", return_value=weekly):
+            trends = profiles.hero_trends({1: "New", 2: "Old"})
+        new = trends["heroes"]["New"]["weeks"]
+        self.assertEqual([w["index"] for w in new], [10, 11])
+        # Pick rate = the hero's games / matches that week, where matches = all heroes' games / 12
+        self.assertAlmostEqual(new[1]["pick_rate"], 120 / ((120 + 1200) / 12))
+
+    def test_weeks_are_whole_api_weeks_and_the_current_one_is_left_out(self):
+        wednesday = calendar.timegm((2026, 10, 7, 15, 30, 0))
+        sunday = calendar.timegm((2026, 10, 4, 0, 0, 0))  # the API's weeks start Sunday 00:00 UTC
+        rows = [{"bucket": sunday - 7 * 86400, "hero_id": 5, "matches": 100, "losses": 40},
+                {"bucket": sunday, "hero_id": 5, "matches": 9, "losses": 1}]  # this week: not over yet
+        with patch.object(deadlock_api.time, "time", return_value=wednesday),                 patch.object(deadlock_api, "disk_cached", lambda name, build, max_age=0: build()),                 patch.object(deadlock_api, "get_json", return_value=rows) as get_json:
+            weekly = deadlock_api.fetch_weekly_hero_stats(weeks=2)
+        params = get_json.call_args.args[1]
+        self.assertEqual(params["min_unix_timestamp"], sunday - 2 * 7 * 86400)
+        self.assertEqual(params["max_unix_timestamp"], sunday - 1)
+        self.assertEqual(weekly["weeks"], [sunday - 14 * 86400, sunday - 7 * 86400])
+        self.assertEqual(weekly["heroes"]["5"], [[0, 0], [60, 100]])
 
 
 if __name__ == "__main__":

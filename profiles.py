@@ -164,6 +164,49 @@ def hero_rank_curve(hero_id: int) -> List[Dict[str, Any]]:
             for tier, (wins, games) in sorted((int(t), v) for t, v in curve.items()) if games]
 
 
+TREND_WEEKS = 12
+TREND_COMPARE_WEEKS = 4  # the change: the last 4 weeks against the first 4 (about two months earlier)
+MIN_TREND_WEEK_GAMES = 100  # a hero's weeks with fewer games (e.g. before release) are left off its line
+MIN_TREND_CHANGE = 0.005  # smaller changes count as steady even when they're real: nobody notices half a point
+
+
+def trend_change(series: List[List[int]], weeks: int = TREND_COMPARE_WEEKS) -> Dict[str, Any]:
+    """Win rate in the last `weeks` weeks against the first `weeks` of the series.
+    "steady" is True when the change is within what chance alone would give (two standard errors of
+    the difference between two win rates: a hero on 5,000 games a month can move a point by luck),
+    or too small to matter."""
+    def total(part):
+        wins, games = sum(w for w, _ in part), sum(g for _, g in part)
+        return (wins / games if games else None), games
+    before, before_games = total(series[:weeks])
+    recent, recent_games = total(series[-weeks:])
+    if before is None or recent is None or min(before_games, recent_games) < MIN_TREND_WEEK_GAMES * weeks:
+        return {"change": None, "recent": recent, "before": before, "steady": True}
+    p = (recent * recent_games + before * before_games) / (recent_games + before_games)
+    noise = 2 * (p * (1 - p) * (1 / recent_games + 1 / before_games)) ** 0.5
+    change = recent - before
+    return {"change": change, "recent": recent, "before": before,
+            "steady": abs(change) <= max(noise, MIN_TREND_CHANGE)}
+
+
+def hero_trends(hero_names_by_id: Dict[int, str], game_mode: str = "normal", ranks: tuple = None) -> Dict[str, Any]:
+    """Each hero's last 12 weeks: {"weeks": [week starts], "heroes": {name: {"weeks": [{"index", "start",
+    "games", "win_rate", "pick_rate"}], "change", "recent", "before", "steady"}}}."""
+    data = deadlock_api.fetch_weekly_hero_stats(game_mode, ranks, TREND_WEEKS)
+    per_match = PLAYERS_PER_MATCH.get(game_mode, 12)
+    matches = [sum(series[n][1] for series in data["heroes"].values()) / per_match for n in range(len(data["weeks"]))]
+    heroes = {}
+    for hero_id, series in data["heroes"].items():
+        name = hero_names_by_id.get(int(hero_id))
+        if not name:
+            continue
+        weeks = [{"index": n, "start": start, "games": games, "win_rate": wins / games,
+                  "pick_rate": games / matches[n] if matches[n] else 0.0}
+                 for n, (start, (wins, games)) in enumerate(zip(data["weeks"], series)) if games >= MIN_TREND_WEEK_GAMES]
+        heroes[name] = {"weeks": weeks, **trend_change(series)}
+    return {"weeks": data["weeks"], "heroes": heroes}
+
+
 def hero_tier_list(hero_names_by_id: Dict[int, str], game_mode: str = "normal", ranks: tuple = None) -> List[Dict[str, Any]]:
     """Tier list rows, optionally only from matches in a rank band (see RANK_BANDS).
     Bans exist in normal matches only, so Street Brawl rows have no ban share."""

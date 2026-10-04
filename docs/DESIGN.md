@@ -232,9 +232,16 @@ The ban endpoint returns how many times each hero was banned, but not how many m
 - **Hover popups** (`tooltip` in `ui/widgets.py`): one shared borderless window, so popups cost nothing until used. Hiding waits 60 ms so moving between a row's icon and its text doesn't flicker, and changing page hides it (a destroyed widget never gets a "mouse left" event).
 - The match page's final build became a row of icons with names on hover, like the in-game end screen. Reviews saved before item ids were stored find their icons by item name.
 
+### 4.26 Hero trends
+- **One request:** the API can group hero stats by week, so every hero's last 12 weeks come in one request (0.4-0.9 s, ~335 KB), condensed to wins and games per week and kept on disk for 6 hours (8 KB). The API's weeks start Sunday 00:00 UTC (checked against real responses); the current week is left out until it's over, because a few days of games (316k against 4.3M for a full week) would make every line jump at the end.
+- **"Steady" means something:** the change is the last 4 weeks against 9-12 weeks ago. It's called steady when it's within two standard errors of the difference between the two win rates (a hero on 5,000 games a month can move a point by luck), or under half a point: with millions of games even a 0.2-point move is statistically real, but nobody notices it. With all ranks, 17 of 39 heroes come out steady.
+- **Comparable lines:** every small line is drawn on the same 5-point scale, centred on that hero's own level. Each line scaled to its own range made noise look like big swings; one scale for all heroes (44-61%) made every line flat. The hero page's bigger chart uses a real scale with a 50% line.
+- **A canvas table** (`ui/charts.py`) replaced the ttk table on the Heroes page: ttk tables can only show text and one image per row, so they can't hold a chart. The canvas draws the 39 rows (469 shapes) in 6 ms, redraws one trend cell under the mouse in 0.02 ms, and keeps sorting and click-to-open. The other tables stay ttk.
+- **Found on the way:** the API refuses a rank filter for Street Brawl ("Cannot filter by average badge for street brawl game mode"), so choosing a rank band there failed. Street Brawl now always uses all ranks, with the filter greyed out and a hover note explaining why.
+
 ## 5. Testing
 
-`python -m unittest discover -s tests -v` runs 122 tests in a few seconds:
+`python -m unittest discover -s tests -v` runs 132 tests in a few seconds:
 - **Parser tests** use OCR output actually produced from real screenshots, including a noisy version, plus edge cases: headers, noise-only lines, duplicate player names, multi-word heroes, hero lines with nothing above them.
 - **Identity tests** use plain data to cover settling by unique name, friend links (including links listed by only one side and chains of settled players), ties falling back to hero history, and party grouping.
 - **Insights tests** cover each badge rule and its thresholds.

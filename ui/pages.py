@@ -16,7 +16,7 @@ import deadlock_api
 from match_review import REVIEW_STATS, MatchUnavailable, match_review
 from matchups import hero_breakdown
 from player_lookup import search_player
-from profiles import (API_GAME_MODES, LOW_SAMPLE_GAMES, MATCH_TYPES, RANK_BANDS, hero_rank_curve, hero_tier_list,
+from profiles import (API_GAME_MODES, LOW_SAMPLE_GAMES, MATCH_TYPES, RANK_BANDS, hero_rank_curve, hero_tier_list, hero_trends,
                       player_profile, teammates, when)
 from report import TEAM_TITLES, team_summary
 from settings import get_me, save_settings
@@ -24,6 +24,8 @@ from ui import images
 from ui.theme import (BADGE_COLORS, COLORS, ITEM_SLOT_COLORS, MATCHUP_COLORS, PARTY_COLORS, button, card, dropdown,
                       label, pill, segmented)
 from version import __version__
+from ui.charts import (ChartTable, Column, change_text, change_tip, hero_cell, trend_cell, trend_chart, trend_color,
+                       trend_tip)
 from ui.widgets import item_tile, item_tooltip_text, tooltip
 from ui.widgets import bind_click, data_table, hero_label, matchup_strip, player_card, rank_pill
 
@@ -279,29 +281,55 @@ class SearchPage(Page):
         self.app.set_status(f"{count} found")
 
 
+def band_for(mode: str, band: str) -> str:
+    """Street Brawl isn't ranked (the API refuses a rank filter for it), so it's always all ranks."""
+    return band if mode == "Normal" else "All ranks"
+
+
+def rank_dropdown(parent, mode: str, band: str, command):
+    menu = dropdown(parent, list(BANDS), band, command)
+    if mode != "Normal":
+        menu.configure(state="disabled")
+        tooltip(menu, "Street Brawl isn't ranked, so it can't be split by rank")
+    return menu
+
+
+def win_rate_color(row) -> str:
+    """Green or red only when clearly above or below even, so the colour means something."""
+    return COLORS["win"] if row["win_rate"] >= 0.515 else COLORS["loss"] if row["win_rate"] <= 0.485 else COLORS["text"]
+
+
 class HeroesPage(Page):
     nav = "heroes"
 
     def build(self, mode: str = "Normal", band: str = "All ranks"):
+        band = band_for(mode, band)
         self.mode, self.band = mode, band
-        row = self.heading("Heroes", "win rate and pick rate · click a hero for matchups and items")
+        row = self.heading("Heroes", "win rate, pick rate and how they've moved · click a hero for matchups and items")
         segmented(row, MODES, mode, lambda m: self.app.open_heroes(m, band, push=False)).pack(side="right")
-        dropdown(row, list(BANDS), band, lambda b: self.app.open_heroes(mode, b, push=False)).pack(side="right", padx=10)
+        rank_dropdown(row, mode, band, lambda b: self.app.open_heroes(mode, b, push=False)).pack(side="right", padx=10)
         self.body = tk.Frame(self.frame, bg=COLORS["bg"])
         self.body.pack(fill="both", expand=True)
-        key = ("tiers", mode, band)
-        cached = self.app.cache.get(key)
-        if cached:
-            self.show(cached)
+        key, trends_key = ("tiers", mode, band), ("trends", mode, band)
+        if key in self.app.cache and trends_key in self.app.cache:
+            self.show(self.app.cache[key], self.app.cache[trends_key])
             return
         self.message("Loading hero stats...", self.body)
 
         def work():
-            return hero_tier_list(self.app.hero_names_by_id(), API_GAME_MODES[mode], BANDS[band])
+            names = self.app.hero_names_by_id()
+            rows, trends = deadlock_api.parallel(
+                lambda: hero_tier_list(names, API_GAME_MODES[mode], BANDS[band]),
+                lambda: hero_trends(names, API_GAME_MODES[mode], BANDS[band]), allow_failures=True)
+            if rows is None:
+                raise OSError("the stats server didn't answer")
+            return rows, trends
 
-        def done(rows):
-            self.app.cache[key] = rows
-            self.show(rows)
+        def done(result):
+            rows, trends = result
+            if trends:  # cached only when complete, so a missing trend is retried next visit
+                self.app.cache[key], self.app.cache[trends_key] = rows, trends
+            self.show(rows, trends)
 
         def failed(error):
             self.clear(self.body)
@@ -309,22 +337,33 @@ class HeroesPage(Page):
             self.app.set_status(f"Hero stats didn't load ({error})")
         self.app.run_task(work, done, failed)
 
-    def show(self, rows):
+    def show(self, rows, trends=None):
         self.clear(self.body)
+        weeks = len(trends["weeks"]) if trends else 0
         for n, r in enumerate(rows, start=1):
             r["position"] = n  # position by win rate, kept when re-sorting by another column
-        data_table(self.body, [
-            ("position", "#", 50, str, "center"),
-            ("win_rate", "Win rate", 100, lambda v: f"{v:.1%}", "center"),
-            ("pick_rate", "Pick rate", 100, pct, "center"),
-            ("games", "Games", 110, lambda v: f"{v:,}", "center"),
-            ("kda", "KDA", 80, lambda v: f"{v:.2f}", "center"),
-            ("ban_share", "Ban share", 90, lambda v: f"{v:.1%}" if v is not None else "-", "center"),
-        ], list(rows), height=17, hero_key="hero",
-            on_click=lambda r: self.app.open_hero(r["hero"], self.mode, self.band))
-        label(self.body, "Click a column heading to sort, or a hero for details. Heroes with under 500 games are left out. "
-                         "Ban share = the hero's part of all recorded bans (ranked games only).",
-              size=9, color="dim").pack(anchor="w", pady=(8, 0))
+            r["trend"] = trends["heroes"].get(r["hero"]) if trends else None
+        by_change = lambda r: (r["trend"] or {}).get("change")  # noqa: E731
+        columns = [Column("position", "#", 40), Column("hero", "Hero", 150, draw=hero_cell(), align="w")]
+        if trends:
+            columns += [Column("trend", "Last 12 weeks", 130, draw=trend_cell(weeks), tip=trend_tip(weeks), sort=by_change),
+                        Column("change", "Change", 80, text=lambda r: change_text(r["trend"]), sort=by_change,
+                               color=lambda r: trend_color(r["trend"]), tip=lambda r, x, box: change_tip(r["trend"]))]
+        columns += [
+            Column("win_rate", "Win rate", 90, text=lambda r: f"{r['win_rate']:.1%}", color=win_rate_color),
+            Column("pick_rate", "Pick rate", 90, text=lambda r: pct(r["pick_rate"])),
+            Column("games", "Games", 100, text=lambda r: f"{r['games']:,}"),
+            Column("kda", "KDA", 70, text=lambda r: f"{r['kda']:.2f}"),
+            Column("ban_share", "Ban share", 90, text=lambda r: f"{r['ban_share']:.1%}" if r["ban_share"] is not None else "-"),
+        ]
+        ChartTable(self.body, columns, list(rows), height_rows=17,
+                   on_click=lambda r: self.app.open_hero(r["hero"], self.mode, self.band)).pack(fill="both", expand=True)
+        notes = ("Last 12 weeks: each hero's weekly win rate, every line on the same scale around its own average "
+                 "(hover for each week). Change: the last 4 weeks against 9-12 weeks ago; steady = within chance, "
+                 "or under half a point. " if trends else "Trends didn't load this time. ")
+        label(self.body, notes + "Heroes with under 500 games are left out. Ban share = the hero's part of all "
+                                 "recorded bans (ranked games only). Click a heading to sort.",
+              size=9, color="dim", justify="left", wraplength=1080).pack(anchor="w", pady=(8, 0))
         self.app.set_status(f"{len(rows)} heroes")
 
 
@@ -332,6 +371,7 @@ class HeroPage(Page):
     nav = "heroes"
 
     def build(self, hero: str, mode: str = "Normal", band: str = "All ranks"):
+        band = band_for(mode, band)
         self.hero, self.mode, self.band = hero, mode, band
         self.message(f"Loading {hero}...")
 
@@ -339,22 +379,26 @@ class HeroPage(Page):
             names = self.app.hero_names_by_id()
             hero_id = next(i for i, n in names.items() if n == hero)
             cached_tiers = self.app.cache.get(("tiers", mode, band))
-            tiers, breakdown, by_rank, _ = deadlock_api.parallel(
+            cached_trends = self.app.cache.get(("trends", mode, band))
+            tiers, breakdown, by_rank, trends, _ = deadlock_api.parallel(
                 lambda: cached_tiers or hero_tier_list(names, API_GAME_MODES[mode], BANDS[band]),
                 lambda: hero_breakdown(hero_id, names, API_GAME_MODES[mode], BANDS[band]),
                 # Win rate at each rank: normal matches only (Street Brawl isn't ranked)
                 lambda: hero_rank_curve(hero_id) if mode == "Normal" else [],
+                lambda: cached_trends or hero_trends(names, API_GAME_MODES[mode], BANDS[band]),
                 lambda: assets.load(images.hero_card_url(hero), assets.PORTRAIT_MAX_SIDE),
                 allow_failures=True)
             breakdown = breakdown or {"toughest": None, "best": None, "items": None}
             breakdown["by_rank"] = by_rank
             assets.load_many((item.get("image") for item in breakdown["items"] or []), assets.ITEM_MAX_SIDE)
-            return tiers, breakdown
+            return tiers, breakdown, trends
         self.app.run_task(work, lambda result: self.show(*result))
 
-    def show(self, tiers, b):
+    def show(self, tiers, b, trends):
         if tiers:
             self.app.cache[("tiers", self.mode, self.band)] = tiers
+        if trends:
+            self.app.cache[("trends", self.mode, self.band)] = trends
         self.clear(self.frame)
         stats = next((r for r in tiers or [] if r["hero"] == self.hero), None)
 
@@ -364,7 +408,7 @@ class HeroPage(Page):
         if portrait:
             tk.Label(header, image=portrait, bg=COLORS["card"]).pack(side="left", padx=(0, 18))
         info = tk.Frame(header, bg=COLORS["card"])
-        info.pack(side="left", fill="both", expand=True)
+        info.pack(side="left", fill="y")
         label(info, self.hero, size=24, heading=True, bg="card", color=images.readable_on_dark(images.hero_color(self.hero))).pack(anchor="w")
         label(info, f"{self.mode} · {self.band}", color="dim", bg="card").pack(anchor="w", pady=(0, 10))
         chips = tk.Frame(info, bg=COLORS["card"])
@@ -378,7 +422,19 @@ class HeroPage(Page):
         controls = tk.Frame(header, bg=COLORS["card"])
         controls.pack(side="right", anchor="n")
         segmented(controls, MODES, self.mode, lambda m: self.app.open_hero(self.hero, m, self.band, push=False)).pack(anchor="e")
-        dropdown(controls, list(BANDS), self.band, lambda band: self.app.open_hero(self.hero, self.mode, band, push=False)).pack(anchor="e", pady=(8, 0))
+        rank_dropdown(controls, self.mode, self.band, lambda band: self.app.open_hero(self.hero, self.mode, band, push=False)).pack(anchor="e", pady=(8, 0))
+        trend = trends["heroes"].get(self.hero) if trends else None
+        if trend and len(trend["weeks"]) >= 2:
+            chart = tk.Frame(header, bg=COLORS["card"])
+            chart.pack(side="left", fill="both", expand=True, padx=(28, 20))
+            label(chart, "WIN RATE · LAST 12 WEEKS", size=9, color="dim", bold=True, bg="card").pack(anchor="w")
+            change = change_text(trend)
+            change_label = label(chart, change + (" pts vs 2 months ago" if change[0] in "▲▼" else ""), size=9,
+                                 bold=True, color=trend_color(trend), bg="card")
+            change_label.pack(anchor="w")
+            if change_tip(trend):
+                tooltip(change_label, change_tip(trend))
+            trend_chart(chart, self.hero, trend, len(trends["weeks"]), height=84).pack(fill="both", expand=True, pady=(2, 0))
 
         columns = tk.Frame(self.frame, bg=COLORS["bg"])
         columns.pack(fill="x", pady=(14, 0))  # not expand: the rank chart sits right below, not at the bottom

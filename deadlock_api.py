@@ -222,6 +222,34 @@ def fetch_rank_curves(game_mode: str = "normal") -> Dict[str, Dict[str, List[int
     return disk_cached(f"rank_curves_{game_mode}", build, max_age=6 * 3600)
 
 
+WEEK_SECONDS = 7 * 86400
+
+
+def fetch_weekly_hero_stats(game_mode: str = "normal", ranks: tuple = None, weeks: int = 12) -> Dict[str, Any]:
+    """Every hero's [wins, games] in each of the last `weeks` complete weeks:
+    {"weeks": [start of each week, unix time], "heroes": {hero_id: [[wins, games], ...]}} (string keys,
+    as stored in JSON). The API's weeks start on Sunday, 00:00 UTC. The current week is left out until
+    it's over: its first days would make the line jump. The answer is ~335 KB with 24 fields per row;
+    only these numbers are kept, on disk for 6 hours."""
+    def build():
+        today = int(time.time() // 86400) * 86400
+        this_week = today - (time.gmtime(today).tm_wday + 1) % 7 * 86400  # tm_wday: Monday = 0
+        start = this_week - weeks * WEEK_SECONDS
+        rows = get_json("/v1/analytics/hero-stats", {
+            "game_mode": game_mode, "bucket": "start_time_week", "min_unix_timestamp": start,
+            "max_unix_timestamp": this_week - 1, **badge_range(ranks)}, max_age=0)
+        starts = [start + n * WEEK_SECONDS for n in range(weeks)]
+        index = {week: n for n, week in enumerate(starts)}
+        heroes: Dict[str, List[List[int]]] = {}
+        for row in rows:
+            if row["bucket"] in index:
+                series = heroes.setdefault(str(row["hero_id"]), [[0, 0] for _ in starts])
+                series[index[row["bucket"]]] = [row["matches"] - row["losses"], row["matches"]]
+        return {"weeks": starts, "heroes": heroes}
+    low, high = ranks or (0, 0)
+    return disk_cached(f"weekly_{game_mode}_{low}_{high}", build, max_age=6 * 3600)
+
+
 def get_hero_bans(ranks: tuple = None) -> List[Dict[str, Any]]:
     """How many times each hero was banned: {"hero_id", "bans"}. Only counts, not how many matches
     they came from, so a true ban rate can't be computed from this; a hero's share of all bans can."""
