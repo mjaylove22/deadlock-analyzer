@@ -64,15 +64,28 @@ class BuildMatchupTests(unittest.TestCase):
 
 
 class HeroBreakdownTests(unittest.TestCase):
+    NAMES = {ME: "Me", A: "A", B: "B", C: "C"}
+    COUNTERS = [pair(ME, A, 400, 1000), pair(ME, B, 600, 1000), pair(ME, C, 500, 1000)]
+
+    def breakdown(self, counters):
+        with patch.object(matchups.deadlock_api, "fetch_counter_stats", side_effect=counters), \
+                patch.object(matchups.deadlock_api, "get_item_stats", return_value=[{"item_id": 7, "wins": 6, "matches": 10}]), \
+                patch.object(matchups.deadlock_api, "fetch_items", return_value={7: {"name": "Seven", "slot": "spirit"}}):
+            return hero_breakdown(ME, self.NAMES, shown=1)
+
     def test_best_and_toughest_against_the_heros_average(self):
-        counters = [pair(ME, A, 400, 1000), pair(ME, B, 600, 1000), pair(ME, C, 500, 1000)]
-        names = {ME: "Me", A: "A", B: "B", C: "C"}
-        with patch.object(matchups.deadlock_api, "fetch_counter_stats", return_value=counters),              patch.object(matchups.deadlock_api, "get_item_stats", return_value=[{"item_id": 7, "wins": 6, "matches": 10}]),              patch.object(matchups.deadlock_api, "fetch_items", return_value={7: {"name": "Seven", "slot": "spirit"}}):
-            b = hero_breakdown(ME, names, shown=1)
+        b = self.breakdown(lambda *args: self.COUNTERS)
         self.assertEqual(b["toughest"][0]["enemy_hero"], "A")
         self.assertEqual(b["best"][0]["enemy_hero"], "B")
         self.assertAlmostEqual(b["average_win_rate"], 0.5)
         self.assertEqual(b["items"][0]["slot"], "spirit")
+
+    def test_items_still_come_back_when_matchups_time_out(self):
+        # Regression: a slow matchup request at one rank range made the whole hero page fail
+        b = self.breakdown(TimeoutError("The read operation timed out"))
+        self.assertIsNone(b["toughest"])
+        self.assertIsNone(b["best"])
+        self.assertEqual(b["items"][0]["name"], "Seven")
 
 
 if __name__ == "__main__":

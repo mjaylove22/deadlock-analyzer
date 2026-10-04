@@ -51,18 +51,21 @@ def popular_items(item_stats: List[Dict], items_by_id: Dict[int, Dict], count: i
 def hero_breakdown(hero_id: int, hero_names_by_id: Dict[int, str], game_mode: str = "normal",
                    ranks: tuple = None, shown: int = 6) -> Dict[str, Any]:
     """For the hero page: the hero's best and toughest matchups (against its own average) and its
-    most-bought items. Two requests, made at the same time."""
+    most-bought items. Two requests, made at the same time. If one fails, its part is None and the
+    other still comes back."""
     counters, item_stats = deadlock_api.parallel(
         lambda: deadlock_api.fetch_counter_stats(game_mode, ranks),
-        lambda: deadlock_api.get_item_stats(hero_id, (), game_mode, ranks))
-    others = [h for h in hero_names_by_id if h != hero_id]
-    named = [dict(m, enemy_hero=hero_names_by_id[m["enemy_hero_id"]]) for m in hero_matchups(counters, hero_id, others)]
-    return {
-        "average_win_rate": average_win_rate(counters, hero_id),
-        "toughest": named[:shown],                     # hero_matchups sorts toughest first
-        "best": list(reversed(named[-shown:])) if len(named) > shown else [],
-        "items": popular_items(item_stats, deadlock_api.fetch_items(), count=10),
-    }
+        lambda: deadlock_api.get_item_stats(hero_id, (), game_mode, ranks), allow_failures=True)
+    breakdown = {"average_win_rate": None, "toughest": None, "best": None, "items": None}
+    if counters is not None:
+        others = [h for h in hero_names_by_id if h != hero_id]
+        named = [dict(m, enemy_hero=hero_names_by_id[m["enemy_hero_id"]]) for m in hero_matchups(counters, hero_id, others)]
+        breakdown.update(average_win_rate=average_win_rate(counters, hero_id),
+                         toughest=named[:shown],  # hero_matchups sorts toughest first
+                         best=list(reversed(named[-shown:])) if len(named) > shown else [])
+    if item_stats is not None:
+        breakdown["items"] = popular_items(item_stats, deadlock_api.fetch_items(), count=10)
+    return breakdown
 
 
 def build_matchup(results: List[Dict[str, Any]], hero_ids_by_name: Dict[str, int],

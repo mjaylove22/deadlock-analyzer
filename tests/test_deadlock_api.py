@@ -81,6 +81,24 @@ class ResponseCacheTests(unittest.TestCase):
     def test_parallel_keeps_order(self):
         self.assertEqual(deadlock_api.parallel(lambda: 1, lambda: 2, lambda: 3), [1, 2, 3])
 
+    def test_parallel_can_return_none_for_failed_calls(self):
+        def slow():
+            raise TimeoutError("timed out")
+        with self.assertLogs("deadlock_api", "WARNING"):
+            self.assertEqual(deadlock_api.parallel(lambda: 1, slow, allow_failures=True), [1, None])
+        with self.assertRaises(TimeoutError):
+            deadlock_api.parallel(lambda: 1, slow)
+
+    def test_analytics_get_more_time_than_other_requests(self):
+        # The server calculates analytics on request, which can be slow when it's busy
+        deadlock_api._memory.clear()
+        self.addCleanup(deadlock_api._memory.clear)
+        with patch.object(deadlock_api, "_download", return_value=[]) as download:
+            deadlock_api.get_json("/v1/analytics/hero-counter-stats", {"game_mode": "normal"})
+            deadlock_api.get_json("/v1/players/steam-search", {"search_query": "x"})
+        self.assertEqual([c.args[1] for c in download.call_args_list],
+                         [deadlock_api.ANALYTICS_TIMEOUT_SECONDS, deadlock_api.TIMEOUT_SECONDS])
+
 
 if __name__ == "__main__":
     unittest.main()

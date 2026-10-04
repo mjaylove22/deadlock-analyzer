@@ -6,6 +6,7 @@ the API's OpenAPI spec (https://api.deadlock-api.com/openapi.json) and real resp
 
 import functools
 import json
+import logging
 import os
 import threading
 import time
@@ -17,8 +18,13 @@ from typing import Any, Callable, Dict, List
 
 import paths
 
+logger = logging.getLogger(__name__)
+
 BASE_URL = "https://api.deadlock-api.com"
 TIMEOUT_SECONDS = 10
+# Analytics (/v1/analytics/...) are calculated by the server when asked, e.g. every hero pair at one
+# rank range. That usually takes 1-2 s but much longer when the server is busy, so they get more time.
+ANALYTICS_TIMEOUT_SECONDS = 30
 
 # Responses are remembered so going Back or revisiting a page doesn't wait on the network again.
 # Callers must treat returned data as read-only: the same object is handed out until it expires.
@@ -31,9 +37,9 @@ _memory: "OrderedDict[str, tuple]" = OrderedDict()  # url -> (time fetched, data
 _lock = threading.Lock()
 
 
-def _download(url: str) -> Any:
+def _download(url: str, timeout: float = TIMEOUT_SECONDS) -> Any:
     request = urllib.request.Request(url, headers={"User-Agent": "deadlock-analyzer (learning project)"})
-    with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
+    with urllib.request.urlopen(request, timeout=timeout) as response:
         return json.loads(response.read().decode("utf-8"))
 
 
@@ -70,7 +76,7 @@ def get_json(path: str, params: Dict[str, Any] = None, max_age: float = CACHE_SE
         if hit and now - hit[0] < max_age:
             _memory.move_to_end(url)
             return hit[1]
-    data = _download(url)
+    data = _download(url, ANALYTICS_TIMEOUT_SECONDS if path.startswith("/v1/analytics/") else TIMEOUT_SECONDS)
     if max_age <= 0:
         return data  # asked not to reuse it, so don't hold on to it either (e.g. 1.5 MB match data)
     with _lock:
@@ -81,11 +87,22 @@ def get_json(path: str, params: Dict[str, Any] = None, max_age: float = CACHE_SE
     return data
 
 
-def parallel(*calls: Callable[[], Any]) -> List[Any]:
+def parallel(*calls: Callable[[], Any], allow_failures: bool = False) -> List[Any]:
     """Run independent API calls at the same time; results come back in the same order.
-    Waiting for the slowest call beats waiting for all of them one after another."""
+    Waiting for the slowest call beats waiting for all of them one after another.
+
+    allow_failures: a call that fails on the network or server gives None (logged) instead of
+    raising, so a page can show what did load."""
+    def run(call):
+        if not allow_failures:
+            return call()
+        try:
+            return call()
+        except (OSError, ValueError) as e:  # timeouts, HTTP errors and bad JSON
+            logger.warning(f"A request failed, showing the rest without it: {e}")
+            return None
     with ThreadPoolExecutor(max_workers=min(len(calls), 8)) as pool:
-        return list(pool.map(lambda call: call(), calls))
+        return list(pool.map(run, calls))
 
 
 @functools.lru_cache(maxsize=None)

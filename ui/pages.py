@@ -50,8 +50,18 @@ class Page:
 
     def __init__(self, app, parent, **options):
         self.app = app
+        self.options = options
         self.frame = tk.Frame(parent, bg=COLORS["bg"])
         self.build(**options)
+
+    def reload(self):
+        self.app.navigate(type(self), push=False, **self.options)
+
+    def unavailable(self, parent, what: str, bg: str = "card"):
+        """In place of a part of the page that didn't load: says so, with a button to try again."""
+        label(parent, f"Couldn't load {what}: the stats server is slow or busy right now.",
+              color="dim", bg=bg, justify="left", wraplength=280).pack(anchor="w", pady=(4, 10))
+        button(parent, "Try again", self.reload).pack(anchor="w")
 
     def build(self, **options):
         raise NotImplementedError
@@ -291,7 +301,12 @@ class HeroesPage(Page):
         def done(rows):
             self.app.cache[key] = rows
             self.show(rows)
-        self.app.run_task(work, done)
+
+        def failed(error):
+            self.clear(self.body)
+            self.unavailable(self.body, "hero stats", bg="bg")
+            self.app.set_status(f"Hero stats didn't load ({error})")
+        self.app.run_task(work, done, failed)
 
     def show(self, rows):
         self.clear(self.body)
@@ -322,18 +337,24 @@ class HeroPage(Page):
         def work():
             names = self.app.hero_names_by_id()
             hero_id = next(i for i, n in names.items() if n == hero)
-            tiers = self.app.cache.get(("tiers", mode, band)) or hero_tier_list(names, API_GAME_MODES[mode], BANDS[band])
-            breakdown = hero_breakdown(hero_id, names, API_GAME_MODES[mode], BANDS[band])
-            # Win rate at each rank: normal matches only (Street Brawl isn't ranked)
-            breakdown["by_rank"] = hero_rank_curve(hero_id) if mode == "Normal" else []
-            assets.load(images.hero_card_url(hero), assets.PORTRAIT_MAX_SIDE)
+            cached_tiers = self.app.cache.get(("tiers", mode, band))
+            tiers, breakdown, by_rank, _ = deadlock_api.parallel(
+                lambda: cached_tiers or hero_tier_list(names, API_GAME_MODES[mode], BANDS[band]),
+                lambda: hero_breakdown(hero_id, names, API_GAME_MODES[mode], BANDS[band]),
+                # Win rate at each rank: normal matches only (Street Brawl isn't ranked)
+                lambda: hero_rank_curve(hero_id) if mode == "Normal" else [],
+                lambda: assets.load(images.hero_card_url(hero), assets.PORTRAIT_MAX_SIDE),
+                allow_failures=True)
+            breakdown = breakdown or {"toughest": None, "best": None, "items": None}
+            breakdown["by_rank"] = by_rank
             return tiers, breakdown
         self.app.run_task(work, lambda result: self.show(*result))
 
     def show(self, tiers, b):
-        self.app.cache[("tiers", self.mode, self.band)] = tiers
+        if tiers:
+            self.app.cache[("tiers", self.mode, self.band)] = tiers
         self.clear(self.frame)
-        stats = next((r for r in tiers if r["hero"] == self.hero), None)
+        stats = next((r for r in tiers or [] if r["hero"] == self.hero), None)
 
         outer, header = card(self.frame, padding=16)
         outer.pack(fill="x")
@@ -361,12 +382,14 @@ class HeroPage(Page):
         columns.pack(fill="x", pady=(14, 0))  # not expand: the rank chart sits right below, not at the bottom
         for c in range(3):
             columns.columnconfigure(c, weight=1, uniform="hero")
-        average = f"vs its {b['average_win_rate']:.1%} average"
         for c, (title, matchups) in enumerate((("Best matchups", b["best"]), ("Toughest matchups", b["toughest"]))):
             box_outer, box = card(columns, padding=14)
             box_outer.grid(row=0, column=c, sticky="nsew", padx=(0, 8) if c == 0 else 8)
             label(box, title.upper(), size=9, color="dim", bold=True, bg="card").pack(anchor="w")
-            label(box, average, size=9, color="faint", bg="card").pack(anchor="w", pady=(0, 8))
+            if matchups is None:
+                self.unavailable(box, "matchups")
+                continue
+            label(box, f"vs its {b['average_win_rate']:.1%} average", size=9, color="faint", bg="card").pack(anchor="w", pady=(0, 8))
             for m in matchups:
                 row = tk.Frame(box, bg=COLORS["card"])
                 row.pack(fill="x", pady=3)
@@ -379,8 +402,11 @@ class HeroPage(Page):
         items_outer, items = card(columns, padding=14)
         items_outer.grid(row=0, column=2, sticky="nsew", padx=(8, 0))
         label(items, "MOST-BOUGHT ITEMS", size=9, color="dim", bold=True, bg="card").pack(anchor="w")
-        label(items, "win rates run high for expensive late items", size=9, color="faint", bg="card").pack(anchor="w", pady=(0, 8))
-        for item in b["items"]:
+        if b["items"] is None:
+            self.unavailable(items, "items")
+        else:
+            label(items, "win rates run high for expensive late items", size=9, color="faint", bg="card").pack(anchor="w", pady=(0, 8))
+        for item in b["items"] or []:
             row = tk.Frame(items, bg=COLORS["card"])
             row.pack(fill="x", pady=3)
             swatch = pill(row, "", ITEM_SLOT_COLORS.get(item["slot"], COLORS["button"]))  # shop category colour
@@ -388,11 +414,17 @@ class HeroPage(Page):
             swatch.pack(side="left", padx=(0, 8))
             label(row, item["name"], bg="card").pack(side="left")
             label(row, f"{item['win_rate']:.0%}", bg="card", color="dim").pack(side="right")
-        legend = tk.Frame(items, bg=COLORS["card"])
-        legend.pack(anchor="w", pady=(10, 0))
-        for slot, color in ITEM_SLOT_COLORS.items():
-            pill(legend, slot.title(), color, size=8).pack(side="left", padx=(0, 4))
+        if b["items"]:
+            legend = tk.Frame(items, bg=COLORS["card"])
+            legend.pack(anchor="w", pady=(10, 0))
+            for slot, color in ITEM_SLOT_COLORS.items():
+                pill(legend, slot.title(), color, size=8).pack(side="left", padx=(0, 4))
 
+        if b["by_rank"] is None and self.mode == "Normal":
+            ranks_outer, ranks = card(self.frame, padding=12)
+            ranks_outer.pack(fill="x", pady=(12, 0))
+            label(ranks, "WIN RATE BY RANK", size=9, color="dim", bold=True, bg="card").pack(anchor="w")
+            self.unavailable(ranks, "win rate by rank")
         if b.get("by_rank"):
             ranks_outer, ranks = card(self.frame, padding=12)
             ranks_outer.pack(fill="x", pady=(12, 0))
