@@ -47,6 +47,8 @@ logger = logging.getLogger(__name__)
 HOTKEY = "ctrl+shift+d"
 POLL_MS = 100
 CAPTURE_DELAY_MS = 150   # time for Windows to repaint after the window turns invisible (older Windows only)
+CAPTURE_HIDE_MS = 50     # time for Windows to apply "hide from capture" before the app's own screenshot
+WDA_NONE, WDA_EXCLUDEFROMCAPTURE = 0x0, 0x11  # SetWindowDisplayAffinity modes
 OVERLAY_ALPHA = 0.9
 WATCH_INTERVAL_S = 1.0   # how often auto-detect checks for the scoreboard (one check takes ~6 ms)
 SETTLE_S = 0.5           # after the scoreboard appears, wait for the menu animation before capturing
@@ -97,7 +99,6 @@ class AnalyzerApp:
         root.bind("<Alt-Left>", lambda event: self.back())
         root.after(POLL_MS, self.poll)
         self.apply_overlay()
-        self.hidden_from_capture = self.exclude_from_capture()
         delete_old_screenshots()
         threading.Thread(target=self._watch, daemon=True).start()
         threading.Thread(target=self._preload_images, daemon=True).start()
@@ -136,7 +137,7 @@ class AnalyzerApp:
             tab.bind("<Button-1>", lambda event, k=key: self.open_tab(k))
             self.tabs[key] = (tab, underline)
 
-        for text, variable, command in (("Overlay", self.overlay, self.apply_overlay),
+        for text, variable, command in (("Overlay", self.overlay, self.toggle_overlay),
                                         ("Auto-detect", self.auto_detect, self.apply_auto_detect)):
             switch(bar, text, variable, command).pack(side="right", padx=(10, 0))
         self.search_box = ctk.CTkEntry(bar, width=240, height=32, corner_radius=8, border_width=1,
@@ -275,13 +276,17 @@ class AnalyzerApp:
 
     # ---- capture, auto-detect and lobby analysis -------------------------------------------
 
-    def exclude_from_capture(self) -> bool:
-        """Ask Windows to leave this window out of screenshots, so in overlay mode it can't cover the
-        scoreboard in its own captures or confuse auto-detect. Needs Windows 10 (2004) or later."""
+    def set_capture_hidden(self, hidden: bool) -> bool:
+        """Ask Windows to leave this window out of screen captures, or to show it again.
+
+        Hiding applies to EVERY capture tool, Discord and OBS included (a stream shows what's behind
+        the app), so it's only used while needed: in overlay mode, where the window floats over the
+        game and would otherwise cover the scoreboard in its own screenshots, and for the instant of
+        the app's own screenshot. Needs Windows 10 (2004) or later; returns whether it worked."""
         try:
             self.root.update_idletasks()
             hwnd = ctypes.windll.user32.GetParent(self.root.winfo_id())
-            return bool(ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, 0x11))  # WDA_EXCLUDEFROMCAPTURE
+            return bool(ctypes.windll.user32.SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE if hidden else WDA_NONE))
         except Exception:
             return False
 
@@ -289,6 +294,13 @@ class AnalyzerApp:
         on = self.overlay.get()
         self.root.attributes("-topmost", on)
         self.root.attributes("-alpha", OVERLAY_ALPHA if on else 1.0)
+        # Visible to Discord/OBS normally; hidden only while floating over the game
+        self.capture_hidden = self.set_capture_hidden(on) and on
+
+    def toggle_overlay(self):
+        self.apply_overlay()
+        self.set_status("Overlay on: the window floats over the game and is hidden from screen sharing (Discord, OBS)."
+                        if self.overlay.get() else "Overlay off: the window shows up normally in screen sharing.")
 
     def apply_auto_detect(self):
         self.watching = self.auto_detect.get()
@@ -345,13 +357,16 @@ class AnalyzerApp:
             return
         self.busy = True
         self.set_status("Scoreboard detected, capturing..." if auto else "Capturing screenshot...")
-        if self.hidden_from_capture:
-            self._capture_now(auto)
-            return
-        # Older Windows: the window would cover the scoreboard in its own screenshot. Making it fully
-        # transparent (instead of hiding it) avoids stealing keyboard focus from the game.
-        self.root.attributes("-alpha", 0.0)
-        self.root.after(CAPTURE_DELAY_MS, lambda: self._capture_now(auto))
+        if self.capture_hidden:
+            self._capture_now(auto)  # already hidden (overlay mode)
+        elif self.set_capture_hidden(True):
+            # Hide for just this screenshot, so the window can't cover the scoreboard; nothing changes on screen
+            self.root.after(CAPTURE_HIDE_MS, lambda: self._capture_now(auto))
+        else:
+            # Older Windows: making the window fully transparent (instead of hiding it) avoids
+            # stealing keyboard focus from the game
+            self.root.attributes("-alpha", 0.0)
+            self.root.after(CAPTURE_DELAY_MS, lambda: self._capture_now(auto))
 
     def _capture_now(self, auto: bool = False):
         try:
@@ -362,7 +377,7 @@ class AnalyzerApp:
             self.set_status(f"Screenshot failed: {e}")
             return
         finally:
-            self.apply_overlay()  # restore normal opacity
+            self.apply_overlay()  # back to normal: opacity, and visible to screen sharing unless overlay is on
         delete_old_screenshots()
         self.start_analysis(path, auto)
 

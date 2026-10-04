@@ -71,7 +71,9 @@ The app has pages, with a **Back** button (or Alt+Left) and the title as a link 
 - **Set your account:** search your Steam name, open your account and click **Set as my account**. You're
   then identified exactly in every lobby (even if others share your name) and your matchup appears.
 - **Overlay** keeps the window semi-transparent and on top of the game (needs **borderless windowed**
-  mode). The window asks Windows to leave it out of screen captures, so it never hides the scoreboard.
+  mode). While overlay is on, the window is hidden from screen capture so it never covers the
+  scoreboard in its own screenshots; that also hides it from Discord/OBS streams. With overlay off, it
+  shows up in screen sharing normally.
 - Screenshots older than **7 days are deleted automatically** (except ones kept as test cases).
 - **Light:** ~3,400 lines of Python, about 70 MB of memory, the window opens in ~0.4 s, and the local
   cache stays around 2 MB. API answers are reused for a few minutes, so going Back or revisiting a
