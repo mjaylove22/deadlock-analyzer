@@ -50,14 +50,14 @@ class LookupLobbyTests(unittest.TestCase):
         guard.start()
         self.addCleanup(guard.stop)
 
-    def run_lookup(self, records, profiles_by_name, stats=(), live=(), me=None, live_profiles=()):
+    def run_lookup(self, records, profiles_by_name, stats=(), live=(), me=None, live_profiles=(), mates=()):
         api = player_lookup.deadlock_api
         with patch.object(api, "search_steam_profiles", side_effect=fake_search(profiles_by_name)), \
              patch.object(api, "get_hero_stats", return_value=list(stats)) as get_stats, \
              patch.object(api, "fetch_rank_tiers", return_value=RANK_TIERS), \
              patch.object(api, "get_player_ranks", side_effect=lambda ids: [rank(a, 7, 2) for a in ids]), \
              patch.object(api, "get_active_matches", return_value=list(live)), \
-             patch.object(api, "get_profiles", return_value=list(live_profiles)):
+             patch.object(api, "get_profiles", return_value=list(live_profiles)),              patch.object(player_lookup, "frequent_mates", return_value=list(mates)):
             results, parties = lookup_lobby(records, HERO_IDS, HERO_NAMES, me=me)
         return results, parties, get_stats
 
@@ -129,7 +129,7 @@ class LookupLobbyTests(unittest.TestCase):
         api = player_lookup.deadlock_api
         profiles = {"Twin": [profile(1, "Twin"), profile(2, "Twin")]}   # strangers with the user's name
         stats = [stat(1, PARADOX, 50)]                                   # a stranger plays the hero more
-        with patch.object(api, "get_profiles", return_value=[profile(2, "Twin")]) as get_profiles,              patch.object(api, "search_steam_profiles", side_effect=fake_search(profiles)),              patch.object(api, "get_hero_stats", return_value=stats),              patch.object(api, "fetch_rank_tiers", return_value=RANK_TIERS),              patch.object(api, "get_player_ranks", side_effect=lambda ids: [rank(a, 7, 2) for a in ids]):
+        with patch.object(player_lookup, "frequent_mates", return_value=[]),                 patch.object(api, "get_profiles", return_value=[profile(2, "Twin")]) as get_profiles,              patch.object(api, "search_steam_profiles", side_effect=fake_search(profiles)),              patch.object(api, "get_hero_stats", return_value=stats),              patch.object(api, "fetch_rank_tiers", return_value=RANK_TIERS),              patch.object(api, "get_player_ranks", side_effect=lambda ids: [rank(a, 7, 2) for a in ids]):
             results, _ = lookup_lobby([record("Twin", "Paradox")], HERO_IDS, HERO_NAMES,
                                       me={"name": "Twin", "account_id": 2})
         get_profiles.assert_called_once_with([2])
@@ -173,6 +173,34 @@ class LookupLobbyTests(unittest.TestCase):
                                         stats=[stat(1, PARADOX, 30)], live=live, live_profiles=[profile(2, "Twin")])
         self.assertEqual(results[0]["account_id"], 1)  # decided by hero history as before
         self.assertNotIn("live match", results[0]["note"])
+
+    ME = {"name": "Me", "account_id": 100}
+
+    @staticmethod
+    def mate(account_id, name, games):
+        return {"account_id": account_id, "name": name, "profile_url": f"https://steam/{account_id}",
+                "avatar_url": None, "games": games, "friends": [100]}
+
+    def test_a_friend_with_a_full_width_name_is_found_among_the_people_you_play_with(self):
+        # Real case (made-up name): the name search can't find full-width letters at all, even typed
+        # exactly, but this friend has 133 matches with the user
+        results, parties, _ = self.run_lookup([record("Me", "Haze"), record("m o o n d o g", "Paradox")], {},
+                                              me=self.ME, mates=[self.mate(7, "ｍｏｏｎｄｏｇ", 133)])
+        r = results[1]
+        self.assertEqual((r["status"], r["account_id"], r["confident"]), ("found", 7, True))
+        self.assertEqual(r["note"], "you've played 133 matches together")
+
+    def test_your_friend_wins_over_strangers_with_the_same_name(self):
+        profiles = {"Twin": [profile(1, "Twin"), profile(2, "Twin")]}
+        results, _, _ = self.run_lookup([record("Twin", "Paradox")], profiles, stats=[stat(1, PARADOX, 50)],
+                                        me=self.ME, mates=[self.mate(2, "Twin", 40)])
+        self.assertEqual(results[0]["account_id"], 2)
+
+    def test_a_misread_name_of_someone_you_play_with(self):
+        results, _, _ = self.run_lookup([record("Or. Night Owl", "Paradox")], {}, me=self.ME,
+                                        mates=[self.mate(3, "Dr. Night Owl", 12)])
+        r = results[0]
+        self.assertEqual((r["account_id"], r["player"], r["confident"]), (3, "Dr. Night Owl", False))
 
     def test_network_error_is_reported_not_raised(self):
         with patch.object(player_lookup.deadlock_api, "search_steam_profiles", side_effect=OSError("timed out")):

@@ -89,6 +89,33 @@ def find_lookalike(name: str) -> List[Dict[str, Any]]:
     return []
 
 
+MATE_MIN_GAMES = 3  # "people you play with": at least 3 matches together (about 20 people for a regular player)
+
+
+def frequent_mates(me: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """The people the user has played at least MATE_MIN_GAMES matches with: {"account_id", "name",
+    "profile_url", "avatar_url", "games", "friends"}, kept on disk for a day.
+
+    Some Steam names can't be found by the name search at all: full-width letters ("ｍｏｏｎｄｏｇ")
+    aren't searchable, even typed exactly. But friends you queue with are in this list, and their
+    names compare fine once Unicode is normalised."""
+    def build():
+        games = {m["mate_id"]: m["matches_played"] for m in deadlock_api.get_mate_stats(me["account_id"], MATE_MIN_GAMES)}
+        profiles = deadlock_api.get_profiles(list(games)) if games else []
+        return [{"account_id": p["account_id"], "name": p["personaname"], "profile_url": p["profileurl"],
+                 "avatar_url": p.get("avatarmedium") or p.get("avatar"), "games": games.get(p["account_id"], 0),
+                 "friends": [f["account_id"] for f in p.get("friends") or []]} for p in profiles]
+    return deadlock_api.disk_cached(f"mates_{me['account_id']}", build, max_age=86400)
+
+
+def mate_candidate(mate: Dict[str, Any], corrected_from_ocr: bool = False) -> Dict[str, Any]:
+    candidate = {"account_id": mate["account_id"], "profile_url": mate["profile_url"], "avatar_url": mate["avatar_url"],
+                 "friends": set(mate["friends"]), "mate_games": mate["games"]}
+    if corrected_from_ocr:
+        candidate["corrected_name"] = mate["name"].strip()
+    return candidate
+
+
 def find_candidates(name: str) -> Tuple[List[Dict[str, Any]], str]:
     """Accounts whose Steam name exactly matches, plus a note explaining an empty result.
 
@@ -158,12 +185,29 @@ def lookup_lobby(records: List[Dict[str, str]], hero_ids_by_name: Dict[str, int]
             result.update(status="skipped", note="name matches hero, likely a bot")
     to_search = [(i, r) for i, r in enumerate(results) if r["status"] != "skipped"]
 
+    mates: Dict[str, Dict[str, Any]] = {}
+    if me and to_search:
+        try:
+            mates = {squash(m["name"]): m for m in frequent_mates(me)}
+        except Exception as e:
+            logger.info(f"Couldn't load the people you play with ({e})")
+
     def candidates_for(result):
         """(candidates, note, is_me); candidates is None if the lookup failed."""
+        name = result["player"]
         try:
-            if me and same_name(result["player"], me["name"]):
+            if me and same_name(name, me["name"]):
                 return my_candidate(me), "", True
-            return (*find_candidates(result["player"]), False)
+            # Someone you play with, by name: no search needed, and a stranger with the same name is
+            # far less likely to be in your lobby than your friend
+            if squash(name) in mates:
+                return [mate_candidate(mates[squash(name)])], "", False
+            candidates, note = find_candidates(name)
+            if not candidates:
+                near = next((m for m in mates.values() if looks_like_misread(name, m["name"])), None)
+                if near:
+                    return [mate_candidate(near, corrected_from_ocr=True)], "", False
+            return candidates, note, False
         except Exception as e:
             return None, str(e), False
 
@@ -225,6 +269,8 @@ def lookup_lobby(records: List[Dict[str, str]], hero_ids_by_name: Dict[str, int]
             resolved[i] = (resolved[i][0], "you (from settings)")
         elif results[i].get("live"):
             resolved[i] = (resolved[i][0], "exact: this match is in the live match list")
+        elif "mate_games" in resolved[i][0]:
+            resolved[i] = (resolved[i][0], f"you've played {resolved[i][0]['mate_games']} matches together")
     for i, (account, reason) in resolved.items():
         entries = stats_by_account[account["account_id"]]
         hero_id = hero_ids_by_name.get(results[i]["hero"])

@@ -245,6 +245,7 @@ Checked against a real Street Brawl lobby where 2 of 8 players weren't found:
 - **No results came back as an error:** the API answers a search with no matches with a 404 ("No Steam profiles found."), which showed the player as an error instead of "not found".
 - **Stylised names:** names are compared after Unicode NFKC normalisation, without invisible characters, so full-width letters ("ｍｏｏｎｄｏｇ", which OCR reads as "m o o n d o g") match plain ones. The search itself can't find such names, so this only helps when they're among the results.
 - **The live match list:** the API knows every account in the top ~200 matches being played. When a lobby has unsure or missing players, one small request with the accounts that are certain (the user, unique names) looks for the match; if its heroes are this lobby's, every hero's account is exact. Usually there's no such match.
+- **People you play with:** the last missing player was a friend whose name is full-width letters. The API has the profile, but its name search can't find full-width names at all, even typed exactly. The user's friend list is private, but the API's teammate stats for the user list him with 133 matches together. So when the user's account is set, the ~20 people with 3+ matches together are fetched once a day (one request plus one batch of profiles, 11 KB on disk) and lobby names are compared with theirs after Unicode normalisation. A match is exact and skips the name search; it also beat hero history for a same-named friend (738 matches together). That lobby went from 6 of 8 found to 8 of 8, with the party of 3 detected.
 - **Tried and dropped:** looking for a missing player in found teammates' Steam friend lists. Those lists came back empty for that lobby, so it would have added a large request for nothing.
 - Each lookup now logs how many players were found and why the others weren't, and each capture is logged, so a report like "it kept waiting" can be checked.
 
@@ -256,7 +257,7 @@ Checked against a real Street Brawl lobby where 2 of 8 players weren't found:
 
 ## 5. Testing
 
-`python -m unittest discover -s tests -v` runs 140 tests in a few seconds:
+`python -m unittest discover -s tests -v` runs 143 tests in a few seconds:
 - **Parser tests** use OCR output actually produced from real screenshots, including a noisy version, plus edge cases: headers, noise-only lines, duplicate player names, multi-word heroes, hero lines with nothing above them.
 - **Identity tests** use plain data to cover settling by unique name, friend links (including links listed by only one side and chains of settled players), ties falling back to hero history, and party grouping.
 - **Insights tests** cover each badge rule and its thresholds.
