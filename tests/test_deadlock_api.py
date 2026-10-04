@@ -58,6 +58,10 @@ class ResponseCacheTests(unittest.TestCase):
                 deadlock_api.get_json("/v1/x", {"n": n})
         self.assertEqual(len(deadlock_api._memory), 3)
 
+    def test_badge_range_covers_whole_tiers(self):
+        self.assertEqual(deadlock_api.badge_range((7, 9)), {"min_average_badge": 70, "max_average_badge": 99})
+        self.assertEqual(deadlock_api.badge_range(None), {})
+
     def test_parallel_keeps_order(self):
         self.assertEqual(deadlock_api.parallel(lambda: 1, lambda: 2, lambda: 3), [1, 2, 3])
 

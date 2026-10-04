@@ -48,7 +48,9 @@ modify game files, automate input, or interact with anti-cheat in any way.
 
 ## Usage
 
-**App (no terminal needed):** double-click `Deadlock Analyzer.pyw` and leave it running. In game, just open
+**Desktop shortcut:** run `python make_shortcut.py` once to put a **Deadlock Analyzer** icon on your desktop.
+
+**App (no terminal needed):** double-click the desktop icon (or `Deadlock Analyzer.pyw`) and leave it running. In game, just open
 the Esc menu on the **PLAYERS** tab: **auto-detect** notices the scoreboard, captures it and shows the lobby
 (a sound plays when it's ready). Reopening the menu in the same lobby doesn't redo the work.
 `Ctrl+Shift+D` still captures on demand.
@@ -59,9 +61,10 @@ The app has pages, with a **Back** button (or Alt+Left) and the title as a link 
 |---|---|
 | **Home** | Your account, the last lobby, the strongest heroes right now and your recent matches |
 | **Lobby** | Both teams side by side, with your matchup at the bottom. Click any player to open their page |
-| **Heroes** | Every hero's win rate, pick rate, games and KDA, for Normal or Street Brawl. Click a heading to sort |
+| **Heroes** | Every hero's win rate, pick rate, games and KDA, for Normal or Street Brawl and any rank band. Click a heading to sort, or a hero to open it |
+| **Hero** | A hero's best and toughest matchups (against its own average) and its most-bought items, by mode and rank band |
 | **My Stats** | Your own player page |
-| **Player** | Avatar, rank, games and win rate per game mode, a sortable per-hero table (Normal or Street Brawl) and recent matches |
+| **Player** | Avatar, rank, games and win rate per game mode, who they play with most, a sortable per-hero table (Normal or Street Brawl) and recent matches |
 | **Search** | Type any Steam name in the top bar to see every account with that name, then click one |
 
 - **Set your account:** search your Steam name, open your account and click **Set as my account**. You're
@@ -69,6 +72,8 @@ The app has pages, with a **Back** button (or Alt+Left) and the title as a link 
 - **Overlay** keeps the window semi-transparent and on top of the game (needs **borderless windowed**
   mode). The window asks Windows to leave it out of screen captures, so it never hides the scoreboard.
 - Screenshots older than **7 days are deleted automatically** (except ones kept as test cases).
+- **Light:** about 65 MB of memory and a ~1.6 MB image/data cache. API answers are reused for a few
+  minutes, so going Back or revisiting a page is instant.
 
 **Terminal:**
 
@@ -102,6 +107,7 @@ player_lookup.py     whole-lobby lookup and command-line report
 matchups.py          your hero vs the enemy heroes, and popular items against them
 profiles.py          player pages (per-hero stats, recent matches, modes) and the hero tier list
 settings.py          settings.json: window layout and which account is you (stays on your PC)
+make_shortcut.py     creates the desktop shortcut
 insights.py          stats on the current hero and badge rules
 report.py            wording shared by the terminal and the app
 tests/               unit tests (API calls are mocked)

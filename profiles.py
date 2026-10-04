@@ -17,6 +17,17 @@ GAME_MODES = {1: "Normal", 4: "Street Brawl"}
 API_GAME_MODES = {"Normal": "normal", "Street Brawl": "street_brawl"}  # names the stats endpoints expect
 PLAYERS_PER_MATCH = {"normal": 12, "street_brawl": 8}
 RECENT_MATCHES_SHOWN = 20
+TEAMMATES_SHOWN = 4  # what fits on one row of the player page
+
+# Rank bands for the Heroes filter: (label, (lowest tier, highest tier)). Bands rather than single
+# ranks keep enough games behind every win rate. Names checked against the API's rank list.
+RANK_BANDS = [
+    ("All ranks", None),
+    ("Initiate - Acolyte", (1, 3)),
+    ("Sentinel - Ritualist", (4, 6)),
+    ("Emissary - Phantom", (7, 9)),
+    ("Ascendant - Eternus", (10, 11)),
+]
 MIN_TIER_LIST_GAMES = 500  # heroes with fewer games (e.g. just released) are left out of the tier list
 
 
@@ -118,8 +129,29 @@ def player_profile(account_id: int, hero_names_by_id: Dict[int, str], game_mode:
     }
 
 
-def hero_tier_list(hero_names_by_id: Dict[int, str], game_mode: str = "normal") -> List[Dict[str, Any]]:
-    return tier_rows(deadlock_api.get_global_hero_stats(game_mode), hero_names_by_id, game_mode)
+def hero_tier_list(hero_names_by_id: Dict[int, str], game_mode: str = "normal", ranks: tuple = None) -> List[Dict[str, Any]]:
+    """Tier list rows, optionally only from matches in a rank band (see RANK_BANDS)."""
+    return tier_rows(deadlock_api.get_global_hero_stats(game_mode, ranks), hero_names_by_id, game_mode)
+
+
+def top_mates(mates: List[Dict[str, Any]], count: int = TEAMMATES_SHOWN) -> List[Dict[str, Any]]:
+    """The teammates a player has the most games with: {"account_id", "games", "win_rate"}."""
+    best = sorted(mates, key=lambda m: m["matches_played"], reverse=True)[:count]
+    return [{"account_id": m["mate_id"], "games": m["matches_played"],
+             "win_rate": m["wins"] / m["matches_played"] if m["matches_played"] else 0.0} for m in best]
+
+
+def teammates(account_id: int) -> List[Dict[str, Any]]:
+    """Frequent teammates with names and avatars (two requests; the second needs the first's ids)."""
+    mates = top_mates(deadlock_api.get_mate_stats(account_id))
+    if not mates:
+        return []
+    profiles = {p["account_id"]: p for p in deadlock_api.get_profiles([m["account_id"] for m in mates])}
+    for m in mates:
+        profile = profiles.get(m["account_id"], {})
+        m["name"] = profile.get("personaname", f"Account {m['account_id']}")
+        m["avatar_url"] = profile.get("avatarmedium") or profile.get("avatar")
+    return mates
 
 
 def when(unix_time: Optional[int], now: Optional[float] = None) -> str:

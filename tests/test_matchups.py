@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import patch
 
 import matchups
-from matchups import average_win_rate, build_matchup, hero_matchups, popular_items
+from matchups import average_win_rate, build_matchup, hero_breakdown, hero_matchups, popular_items
 
 ME, A, B, C = 1, 2, 3, 4
 
@@ -61,6 +61,18 @@ class BuildMatchupTests(unittest.TestCase):
     def test_none_when_the_user_is_not_in_the_lobby(self):
         matchup, _ = self.build([{"hero": "A", "team": "enemy"}])
         self.assertIsNone(matchup)
+
+
+class HeroBreakdownTests(unittest.TestCase):
+    def test_best_and_toughest_against_the_heros_average(self):
+        counters = [pair(ME, A, 400, 1000), pair(ME, B, 600, 1000), pair(ME, C, 500, 1000)]
+        names = {ME: "Me", A: "A", B: "B", C: "C"}
+        with patch.object(matchups.deadlock_api, "fetch_counter_stats", return_value=counters),              patch.object(matchups.deadlock_api, "get_item_stats", return_value=[{"item_id": 7, "wins": 6, "matches": 10}]),              patch.object(matchups.deadlock_api, "fetch_items", return_value={7: {"name": "Seven", "slot": "spirit"}}):
+            b = hero_breakdown(ME, names, shown=1)
+        self.assertEqual(b["toughest"][0]["enemy_hero"], "A")
+        self.assertEqual(b["best"][0]["enemy_hero"], "B")
+        self.assertAlmostEqual(b["average_win_rate"], 0.5)
+        self.assertEqual(b["items"][0]["slot"], "spirit")
 
 
 if __name__ == "__main__":

@@ -43,8 +43,26 @@ def popular_items(item_stats: List[Dict], items_by_id: Dict[int, Dict], count: i
     """The most-bought shop items, with their win rate."""
     bought = [s for s in item_stats if s["item_id"] in items_by_id and s["matches"] > 0]
     bought.sort(key=lambda s: s["matches"], reverse=True)
-    return [{"name": items_by_id[s["item_id"]]["name"], "win_rate": s["wins"] / s["matches"], "matches": s["matches"]}
+    return [{"name": items_by_id[s["item_id"]]["name"], "slot": items_by_id[s["item_id"]].get("slot"),
+             "win_rate": s["wins"] / s["matches"], "matches": s["matches"]}
             for s in bought[:count]]
+
+
+def hero_breakdown(hero_id: int, hero_names_by_id: Dict[int, str], game_mode: str = "normal",
+                   ranks: tuple = None, shown: int = 6) -> Dict[str, Any]:
+    """For the hero page: the hero's best and toughest matchups (against its own average) and its
+    most-bought items. Two requests, made at the same time."""
+    counters, item_stats = deadlock_api.parallel(
+        lambda: deadlock_api.fetch_counter_stats(game_mode, ranks),
+        lambda: deadlock_api.get_item_stats(hero_id, (), game_mode, ranks))
+    others = [h for h in hero_names_by_id if h != hero_id]
+    named = [dict(m, enemy_hero=hero_names_by_id[m["enemy_hero_id"]]) for m in hero_matchups(counters, hero_id, others)]
+    return {
+        "average_win_rate": average_win_rate(counters, hero_id),
+        "toughest": named[:shown],                     # hero_matchups sorts toughest first
+        "best": list(reversed(named[-shown:])) if len(named) > shown else [],
+        "items": popular_items(item_stats, deadlock_api.fetch_items(), count=10),
+    }
 
 
 def build_matchup(results: List[Dict[str, Any]], hero_ids_by_name: Dict[str, int],

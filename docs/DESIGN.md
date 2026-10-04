@@ -33,6 +33,7 @@ screenshot ──► crop ──► Tesseract OCR ──► lines + positions �
 | `profiles.py` | Player pages (per-hero stats by mode, recent matches, mode summary) and the hero tier list | `deadlock_api` |
 | `ui/` | Theme, reusable widgets (cards, sortable tables, avatars) and the pages | `tkinter`, `Pillow` |
 | `assets.py` | Hero portraits, hero colours and rank emblems from the API, cached on disk | `deadlock_api`, `Pillow` |
+| `make_shortcut.py` | Creates the desktop shortcut (with an .ico icon) | `Pillow`, PowerShell |
 | `report.py` | Report lines shared by the terminal and the app, so the two can't drift apart | standard library only |
 | `tests/` | Unit tests for parsing and lookup logic; the API is mocked | `unittest` (standard library) |
 | `utils/logger.py` | One place to configure logging to `logs/app.log` and the console | standard library |
@@ -170,14 +171,26 @@ Teams sit side by side with one card per player. Whether a full lobby fits was *
 - **Hover:** clickable cards light up their border. Recolouring the whole card would mean recolouring every widget inside it; the border is one change.
 - **Measured, not eyeballed:** a full 6v6 lobby needed 1,061 px at first (Windows then maximised the window). Measuring each part showed the height was spread evenly across 12 cards of ~112 px, so the cards were tightened and the default window raised to 960 px (fits a 1080p screen). The window also never grows past the screen any more.
 
-### 4.17 Housekeeping
+### 4.17 Speed: measure first, then fix the real bottleneck
+- **Measured before changing anything.** Building a page's widgets took 17-35 ms (182 ms for a 12-card lobby) and startup ~240 ms. The waits were the network: the player page made 5 requests one after another (~450 ms), and nothing was reused, so even Back re-fetched everything.
+- **Response cache:** `get_json` reuses answers for 5 minutes (an hour for analytics the server itself recomputes hourly), capped at 300 entries. Player page revisit / Back: 441 ms → 1 ms. Cached answers are shared objects, so callers treat them as read-only.
+- **Parallel requests** (`parallel()`): the player page's four requests run at once (~200 ms); a lobby searches all names concurrently and fetches ranks in the same round as hero stats, one batch request each (12-player lobby 1.85 s → 1.2 s, of which ~0.6 s is OCR). Data that needs another request's answer first ("plays most with", 2 requests) loads **after** the page is shown, so it never delays it.
+- **Keeping it small:** the first disk cache stored raw API responses (items 6 MB, heroes 2 MB) and full-size images (rank emblems are 512 px, 220 KB each, shown at 18 px): 16 MB. Now only the processed fields are stored and images are capped at 96 px (portraits 240 px): **1.6 MB**, and later launches load every list and image in ~70 ms. Mate stats are requested with `min_matches_played` (275 KB → 10 KB). The running app uses about 65 MB of memory.
+
+### 4.18 Hero pages, rank bands and teammates
+- **Rank filter:** five bands rather than eleven single ranks, so every win rate still rests on 1,000+ games per hero (checked at the highest band). The bands are tested to cover every rank exactly once.
+- **Hero page:** best and toughest matchups judged against the hero's own average (the same idea as the matchup strip), and its most-bought items coloured by shop category. Two requests in parallel, cached for an hour.
+- **Plays most with:** the API's "same party" filter returned nothing, so this is "most games together", which in practice means friends.
+- **Desktop shortcut:** `make_shortcut.py` asks Windows where the Desktop is (it can be inside OneDrive), starts the app with `pythonw` so there's no console, and the app sets its own taskbar ID so Windows shows its icon instead of Python's.
+
+### 4.19 Housekeeping
 - Screenshots older than 7 days are deleted at startup and after each capture. Only files named like the app's own captures are touched, and a screenshot with an `.expected.json` (a regression test case) is never deleted.
 - Hero and rank lists are cached for the life of the app (`functools.lru_cache`); a failed request isn't cached, so it's retried next time.
 - The analysis reports progress through a callback, so the lookup code doesn't need to know about the window.
 
 ## 5. Testing
 
-`python -m unittest discover -s tests -v` runs 86 tests in about a second:
+`python -m unittest discover -s tests -v` runs 94 tests in about a second:
 - **Parser tests** use OCR output actually produced from real screenshots, including a noisy version, plus edge cases: headers, noise-only lines, duplicate player names, multi-word heroes, hero lines with nothing above them.
 - **Identity tests** use plain data to cover settling by unique name, friend links (including links listed by only one side and chains of settled players), ties falling back to hero history, and party grouping.
 - **Insights tests** cover each badge rule and its thresholds.

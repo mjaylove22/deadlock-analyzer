@@ -34,7 +34,7 @@ from player_lookup import analyze_records, read_lobby
 from scoreboard_detector import grab_tab, is_scoreboard_open
 from screenshot_manager import capture_and_save_screenshot, delete_old_screenshots, get_screenshot_path
 from settings import get_me, load_settings, save_settings
-from ui.pages import HeroesPage, HomePage, LobbyPage, PlayerPage, SearchPage, SetupPage
+from ui.pages import HeroesPage, HeroPage, HomePage, LobbyPage, PlayerPage, SearchPage, SetupPage
 from ui import images
 from ui.theme import COLORS, FONT, HEADING_FONT, label, setup_styles, switch
 from ui.widgets import AvatarCache
@@ -172,8 +172,11 @@ class AnalyzerApp:
     def open_lobby(self):
         self.navigate(LobbyPage)
 
-    def open_heroes(self, mode: str = "Normal", push: bool = True):
-        self.navigate(HeroesPage, push=push, mode=mode)
+    def open_heroes(self, mode: str = "Normal", band: str = "All ranks", push: bool = True):
+        self.navigate(HeroesPage, push=push, mode=mode, band=band)
+
+    def open_hero(self, hero: str, mode: str = "Normal", band: str = "All ranks", push: bool = True):
+        self.navigate(HeroPage, push=push, hero=hero, mode=mode, band=band)
 
     def open_player(self, account_id: int, mode: str = "Normal", nav: str = None, push: bool = True):
         self.navigate(PlayerPage, push=push, account_id=account_id, mode=mode, nav=nav)

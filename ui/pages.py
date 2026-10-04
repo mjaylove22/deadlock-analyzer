@@ -13,14 +13,17 @@ from typing import Any, Dict
 
 import assets
 from player_lookup import search_player
-from profiles import API_GAME_MODES, hero_tier_list, player_profile, when
+from matchups import hero_breakdown
+from profiles import API_GAME_MODES, RANK_BANDS, hero_tier_list, player_profile, teammates, when
 from report import TEAM_TITLES, team_summary
 from settings import get_me, save_settings
 from ui import images
-from ui.theme import BADGE_COLORS, COLORS, PARTY_COLORS, button, card, label, pill, segmented
-from ui.widgets import data_table, hero_label, matchup_strip, player_card, rank_pill
+from ui.theme import (BADGE_COLORS, COLORS, ITEM_SLOT_COLORS, MATCHUP_COLORS, PARTY_COLORS, button, card, dropdown,
+                      label, pill, segmented)
+from ui.widgets import bind_click, data_table, hero_label, matchup_strip, player_card, rank_pill
 
 MODES = list(API_GAME_MODES)  # ["Normal", "Street Brawl"]
+BANDS = dict(RANK_BANDS)      # label -> (lowest tier, highest tier) or None
 
 
 def pct(value) -> str:
@@ -141,13 +144,13 @@ class HomePage(Page):
 
         def work():
             names = self.app.hero_names_by_id()
-            tiers = self.app.cache.get(("tiers", "Normal")) or hero_tier_list(names, "normal")
+            tiers = self.app.cache.get(("tiers", "Normal", "All ranks")) or hero_tier_list(names, "normal")
             recent = player_profile(me["account_id"], names)["recent"][:8] if me else None
             return tiers, recent
 
         def done(result):
             tiers, recent = result
-            self.app.cache[("tiers", "Normal")] = tiers
+            self.app.cache[("tiers", "Normal", "All ranks")] = tiers
             for box in (self.heroes_box, self.recent_box):
                 for widget in box.winfo_children()[1:]:  # keep each section's title
                     widget.destroy()
@@ -158,6 +161,7 @@ class HomePage(Page):
                 hero_label(row, r["hero"], "card", size=24, color=COLORS["text"]).pack(side="left")
                 label(row, f"{r['pick_rate']:.0%} picked", bg="card", color="dim").pack(side="right")
                 label(row, f"{r['win_rate']:.1%}", bg="card", color="win", bold=True).pack(side="right", padx=14)
+                bind_click(row, lambda hero=r["hero"]: self.app.open_hero(hero))
             button(self.heroes_box, "Full tier list", self.app.open_heroes).pack(anchor="w", pady=(10, 0))
             if recent is None:
                 label(self.recent_box, "Set your account to see your recent matches here.", color="dim", bg="card").pack(anchor="w")
@@ -259,22 +263,25 @@ class SearchPage(Page):
 class HeroesPage(Page):
     nav = "heroes"
 
-    def build(self, mode: str = "Normal"):
-        row = self.heading("Heroes", "win rate and pick rate across all recorded matches")
-        segmented(row, MODES, mode, lambda m: self.app.open_heroes(m, push=False)).pack(side="right")
+    def build(self, mode: str = "Normal", band: str = "All ranks"):
+        self.mode, self.band = mode, band
+        row = self.heading("Heroes", "win rate and pick rate · click a hero for matchups and items")
+        segmented(row, MODES, mode, lambda m: self.app.open_heroes(m, band, push=False)).pack(side="right")
+        dropdown(row, list(BANDS), band, lambda b: self.app.open_heroes(mode, b, push=False)).pack(side="right", padx=10)
         self.body = tk.Frame(self.frame, bg=COLORS["bg"])
         self.body.pack(fill="both", expand=True)
-        cached = self.app.cache.get(("tiers", mode))
+        key = ("tiers", mode, band)
+        cached = self.app.cache.get(key)
         if cached:
             self.show(cached)
             return
         self.message("Loading hero stats...", self.body)
 
         def work():
-            return hero_tier_list(self.app.hero_names_by_id(), API_GAME_MODES[mode])
+            return hero_tier_list(self.app.hero_names_by_id(), API_GAME_MODES[mode], BANDS[band])
 
         def done(rows):
-            self.app.cache[("tiers", mode)] = rows
+            self.app.cache[key] = rows
             self.show(rows)
         self.app.run_task(work, done)
 
@@ -288,10 +295,91 @@ class HeroesPage(Page):
             ("pick_rate", "Pick rate", 100, pct, "center"),
             ("games", "Games", 110, lambda v: f"{v:,}", "center"),
             ("kda", "KDA", 80, lambda v: f"{v:.2f}", "center"),
-        ], list(rows), height=17, hero_key="hero")
-        label(self.body, "Click a column heading to sort. Heroes with under 500 games are left out.",
+        ], list(rows), height=17, hero_key="hero",
+            on_click=lambda r: self.app.open_hero(r["hero"], self.mode, self.band))
+        label(self.body, "Click a column heading to sort, or a hero for details. Heroes with under 500 games are left out.",
               size=9, color="dim").pack(anchor="w", pady=(8, 0))
         self.app.set_status(f"{len(rows)} heroes")
+
+
+class HeroPage(Page):
+    nav = "heroes"
+
+    def build(self, hero: str, mode: str = "Normal", band: str = "All ranks"):
+        self.hero, self.mode, self.band = hero, mode, band
+        self.message(f"Loading {hero}...")
+
+        def work():
+            names = self.app.hero_names_by_id()
+            hero_id = next(i for i, n in names.items() if n == hero)
+            tiers = self.app.cache.get(("tiers", mode, band)) or hero_tier_list(names, API_GAME_MODES[mode], BANDS[band])
+            breakdown = hero_breakdown(hero_id, names, API_GAME_MODES[mode], BANDS[band])
+            assets.load(images.hero_card_url(hero), assets.PORTRAIT_MAX_SIDE)
+            return tiers, breakdown
+        self.app.run_task(work, lambda result: self.show(*result))
+
+    def show(self, tiers, b):
+        self.app.cache[("tiers", self.mode, self.band)] = tiers
+        self.clear(self.frame)
+        stats = next((r for r in tiers if r["hero"] == self.hero), None)
+
+        outer, header = card(self.frame, padding=16)
+        outer.pack(fill="x")
+        portrait = images.hero_card(self.hero, 120)
+        if portrait:
+            tk.Label(header, image=portrait, bg=COLORS["card"]).pack(side="left", padx=(0, 18))
+        info = tk.Frame(header, bg=COLORS["card"])
+        info.pack(side="left", fill="both", expand=True)
+        label(info, self.hero, size=24, heading=True, bg="card", color=images.readable_on_dark(images.hero_color(self.hero))).pack(anchor="w")
+        label(info, f"{self.mode} · {self.band}", color="dim", bg="card").pack(anchor="w", pady=(0, 10))
+        chips = tk.Frame(info, bg=COLORS["card"])
+        chips.pack(anchor="w")
+        if stats:
+            for text in (f"#{tiers.index(stats) + 1} by win rate",  # tiers are sorted by win rate
+                         f"{stats['win_rate']:.1%} win rate", f"{stats['pick_rate']:.0%} pick rate",
+                         f"{stats['games']:,} games", f"{stats['kda']:.2f} KDA"):
+                pill(chips, text, COLORS["button"], size=10, text_color=COLORS["text"]).pack(side="left", padx=(0, 6))
+        controls = tk.Frame(header, bg=COLORS["card"])
+        controls.pack(side="right", anchor="n")
+        segmented(controls, MODES, self.mode, lambda m: self.app.open_hero(self.hero, m, self.band, push=False)).pack(anchor="e")
+        dropdown(controls, list(BANDS), self.band, lambda band: self.app.open_hero(self.hero, self.mode, band, push=False)).pack(anchor="e", pady=(8, 0))
+
+        columns = tk.Frame(self.frame, bg=COLORS["bg"])
+        columns.pack(fill="both", expand=True, pady=(14, 0))
+        for c in range(3):
+            columns.columnconfigure(c, weight=1, uniform="hero")
+        average = f"vs its {b['average_win_rate']:.1%} average"
+        for c, (title, matchups) in enumerate((("Best matchups", b["best"]), ("Toughest matchups", b["toughest"]))):
+            box_outer, box = card(columns, padding=14)
+            box_outer.grid(row=0, column=c, sticky="nsew", padx=(0, 8) if c == 0 else 8)
+            label(box, title.upper(), size=9, color="dim", bold=True, bg="card").pack(anchor="w")
+            label(box, average, size=9, color="faint", bg="card").pack(anchor="w", pady=(0, 8))
+            for m in matchups:
+                row = tk.Frame(box, bg=COLORS["card"])
+                row.pack(fill="x", pady=3)
+                hero_label(row, m["enemy_hero"], "card", size=26, color=COLORS["text"]).pack(side="left")
+                kind = "good" if m["vs_average"] > 0 else "bad"
+                pill(row, f"{m['vs_average'] * 100:+.1f}", MATCHUP_COLORS[kind], size=9).pack(side="right")
+                label(row, f"{m['win_rate']:.1%}", bg="card").pack(side="right", padx=10)
+                bind_click(row, lambda h=m["enemy_hero"]: self.app.open_hero(h, self.mode, self.band))
+
+        items_outer, items = card(columns, padding=14)
+        items_outer.grid(row=0, column=2, sticky="nsew", padx=(8, 0))
+        label(items, "MOST-BOUGHT ITEMS", size=9, color="dim", bold=True, bg="card").pack(anchor="w")
+        label(items, "win rates run high for expensive late items", size=9, color="faint", bg="card").pack(anchor="w", pady=(0, 8))
+        for item in b["items"]:
+            row = tk.Frame(items, bg=COLORS["card"])
+            row.pack(fill="x", pady=3)
+            swatch = pill(row, "", ITEM_SLOT_COLORS.get(item["slot"], COLORS["button"]))  # shop category colour
+            swatch.configure(width=8)
+            swatch.pack(side="left", padx=(0, 8))
+            label(row, item["name"], bg="card").pack(side="left")
+            label(row, f"{item['win_rate']:.0%}", bg="card", color="dim").pack(side="right")
+        legend = tk.Frame(items, bg=COLORS["card"])
+        legend.pack(anchor="w", pady=(10, 0))
+        for slot, color in ITEM_SLOT_COLORS.items():
+            pill(legend, slot.title(), color, size=8).pack(side="left", padx=(0, 4))
+        self.app.set_status(f"{self.hero} · click a matchup to open that hero")
 
 
 class PlayerPage(Page):
@@ -354,9 +442,21 @@ class PlayerPage(Page):
             pill(chips, f"{m['mode']}  {m['games']:,} games · {m['win_rate']:.0%} WR", COLORS["button"],
                  size=9, text_color=COLORS["text"]).pack(side="left", padx=(0, 6))
 
+        # Frequent teammates: loaded after the page is on screen, so they never delay it
+        self.mates_row = tk.Frame(self.frame, bg=COLORS["bg"])
+        self.mates_row.pack(fill="x", pady=(10, 0))
+        label(self.mates_row, "Plays most with", size=10, color="dim", bold=True).pack(side="left", padx=(2, 10))
+        self.mates_loading = label(self.mates_row, "loading...", color="faint")
+        self.mates_loading.pack(side="left")
+
+        def load_mates():
+            mates = teammates(p["account_id"])
+            return mates, self.app.avatars.download(m.get("avatar_url") for m in mates)
+        self.app.run_task(load_mates, lambda result: self.show_mates(*result))
+
         # Mode switch, then the two tables side by side
         row = tk.Frame(self.frame, bg=COLORS["bg"])
-        row.pack(fill="x", pady=(16, 8))
+        row.pack(fill="x", pady=(12, 8))
         label(row, "Hero stats", size=14, heading=True).pack(side="left")
         segmented(row, MODES, self.mode, self.switch_mode).pack(side="left", padx=14)
         label(row, "Recent matches", size=14, heading=True).pack(side="right")
@@ -393,6 +493,21 @@ class PlayerPage(Page):
         else:
             self.message("No recorded matches.", right)
         self.app.set_status(f"{p['name']} · click a column heading to sort")
+
+    def show_mates(self, mates, downloaded):
+        self.app.avatars.store(downloaded)
+        self.mates_loading.destroy()
+        if not mates:
+            label(self.mates_row, "no frequent teammates on record", color="faint").pack(side="left")
+            return
+        for m in mates:
+            outer, inner = card(self.mates_row, padding=5, hoverable=True)
+            outer.pack(side="left", padx=(0, 8))
+            tk.Label(inner, image=self.app.avatars.get(m.get("avatar_url"), 26), bg=COLORS["card"]).pack(side="left")
+            name = m["name"] if len(m["name"]) <= 16 else m["name"][:15] + "…"  # long names would push cards off-screen
+            label(inner, f" {name}", size=10, bold=True, bg="card").pack(side="left")
+            label(inner, f"  {m['games']} games · {m['win_rate']:.0%}", size=9, color="dim", bg="card").pack(side="left", padx=(0, 4))
+            outer.after_idle(lambda outer=outer, m=m: bind_click(outer, lambda: self.app.open_player(m["account_id"])))
 
     def switch_mode(self, mode: str):
         self.app.open_player(self.account_id, mode=mode, nav=self.nav, push=False)

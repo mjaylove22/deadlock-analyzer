@@ -2,7 +2,7 @@
 
 import unittest
 
-from profiles import describe_match, hero_rows, mode_breakdown, tier_rows, when
+from profiles import RANK_BANDS, describe_match, hero_rows, mode_breakdown, tier_rows, top_mates, when
 
 NAMES = {1: "Haze", 2: "Rem", 3: "Newbie"}
 
@@ -54,6 +54,18 @@ class ProfilesTests(unittest.TestCase):
         self.assertEqual(when(now - 3 * 3600, now), "3h ago")
         self.assertEqual(when(now - 2 * 86400, now), "2d ago")
         self.assertEqual(when(None, now), "")
+
+
+    def test_top_mates_most_games_first(self):
+        mates = [{"mate_id": 1, "matches_played": 20, "wins": 10}, {"mate_id": 2, "matches_played": 700, "wins": 350},
+                 {"mate_id": 3, "matches_played": 60, "wins": 45}]
+        top = top_mates(mates, count=2)
+        self.assertEqual([m["account_id"] for m in top], [2, 3])
+        self.assertAlmostEqual(top[1]["win_rate"], 0.75)
+
+    def test_rank_bands_cover_every_rank_once(self):
+        tiers = [t for _, band in RANK_BANDS if band for t in range(band[0], band[1] + 1)]
+        self.assertEqual(tiers, list(range(1, 12)))  # Initiate (1) to Eternus (11), no gaps or overlaps
 
 
 if __name__ == "__main__":

@@ -127,10 +127,10 @@ Column = Tuple[str, str, int, Callable[[Any], str], str]  # (key, title, width, 
 
 def data_table(parent, columns: Sequence[Column], rows: List[Dict[str, Any]], height: int = 15,
                tag: Optional[Callable[[Dict[str, Any]], str]] = None, hero_key: Optional[str] = None,
-               hero_title: str = "Hero") -> ttk.Treeview:
+               hero_title: str = "Hero", on_click: Optional[Callable[[Dict[str, Any]], None]] = None) -> ttk.Treeview:
     """A table with a scrollbar inside a rounded card. Click a column heading to sort by it; click
     again to reverse. hero_key: show that column first, as the hero's icon and name.
-    tag(row) can return "win"/"loss" to colour a row."""
+    tag(row) can return "win"/"loss" to colour a row. on_click(row) runs when a row is clicked."""
     outer, inner = card(parent, padding=6)
     outer.pack(fill="both", expand=True)
     tree = ttk.Treeview(inner, columns=[c[0] for c in columns], show="tree headings" if hero_key else "headings",
@@ -143,15 +143,17 @@ def data_table(parent, columns: Sequence[Column], rows: List[Dict[str, Any]], he
     tree.tag_configure("loss", foreground=COLORS["loss"])
     formats = {key: fmt for key, _, _, fmt, _ in columns}
     sort_state = {"key": None, "reverse": False}
+    row_of = {}  # tree item id -> row, so a click knows which row it was
 
     def fill():
         tree.delete(*tree.get_children())
+        row_of.clear()
         for r in rows:
             options = {"values": [formats[key](r.get(key)) for key in formats], "tags": (tag(r),) if tag else ()}
             if hero_key:
                 badge = images.hero_badge(r[hero_key], 24)
                 options.update(text=f"  {r[hero_key]}", image=badge or "")
-            tree.insert("", "end", **options)
+            row_of[tree.insert("", "end", **options)] = r
 
     def sort_by(key):
         # First click on a number column sorts biggest first; text columns A-Z
@@ -170,6 +172,10 @@ def data_table(parent, columns: Sequence[Column], rows: List[Dict[str, Any]], he
     for key, title, width, _, anchor in columns:
         tree.heading(key, text=title, command=lambda k=key: sort_by(k))
         tree.column(key, width=width, anchor=anchor, stretch=True)
+    if on_click:
+        tree.configure(cursor="hand2")
+        tree.bind("<ButtonRelease-1>", lambda event: on_click(row_of[tree.identify_row(event.y)])
+                  if tree.identify_row(event.y) in row_of else None)
     fill()
     return tree
 

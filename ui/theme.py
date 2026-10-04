@@ -23,6 +23,7 @@ COLORS = {
 BADGE_COLORS = {"strong": "#f5b942", "good": "#3fbf74", "warn": "#f0803c", "info": "#3d4a5c", "you": "#5ec8ff"}
 PARTY_COLORS = ["#b36bff", "#2ec4b6", "#ffb347", "#6c8cff"]
 MATCHUP_COLORS = {"good": "#2f9e5b", "bad": "#d64545", "even": "#3d4a5c"}
+ITEM_SLOT_COLORS = {"weapon": "#d98a2b", "vitality": "#4fae4f", "spirit": "#9b6ef0"}  # the shop's three categories
 
 
 def text_color_for(background: str) -> str:
@@ -97,6 +98,16 @@ def segmented(parent, values: Sequence[str], selected: str, command: Callable[[s
                                      unselected_hover_color=COLORS["button_hover"], text_color=COLORS["text"])
     control.set(selected)
     return control
+
+
+def dropdown(parent, values: Sequence[str], selected: str, command: Callable[[str], None]) -> ctk.CTkOptionMenu:
+    menu = ctk.CTkOptionMenu(parent, values=list(values), command=command, corner_radius=8, height=30, width=190,
+                             font=(FONT, 11), dropdown_font=(FONT, 11), fg_color=COLORS["button"],
+                             button_color=COLORS["button_hover"], button_hover_color=COLORS["selected"],
+                             dropdown_fg_color=COLORS["card"], dropdown_hover_color=COLORS["selected"],
+                             dropdown_text_color=COLORS["text"], text_color=COLORS["text"])
+    menu.set(selected)
+    return menu
 
 
 def switch(parent, text: str, variable: tk.BooleanVar, command: Callable[[], None]) -> ctk.CTkSwitch:
