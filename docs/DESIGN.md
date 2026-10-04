@@ -20,12 +20,13 @@ screenshot ──► crop ──► Tesseract OCR ──► lines + positions �
 
 | File | Responsibility | Depends on |
 |---|---|---|
-| `main.py` | Background hotkey (`Ctrl+Shift+D`) that saves a full-screen screenshot | `keyboard`, `screenshot_manager` |
+| `app.py` | Desktop app: global hotkey, capture, report window, overlay mode | `tkinter`, `keyboard`, `player_lookup`, `report` |
 | `screenshot_manager.py` | Capture and save screenshots; find the latest one | `mss` |
 | `scoreboard_ocr.py` | Screenshot → player/hero/team records. Pure parsing logic is separated from OCR so it can be unit-tested without images | `pytesseract`, `Pillow`, `deadlock_api` (hero names) |
 | `deadlock_api.py` | Thin client: every HTTP call to the Deadlock API lives here | standard library only |
 | `identity.py` | Decide which same-named account is which; detect parties. Pure logic, no network | standard library only |
-| `player_lookup.py` | Fetch candidates and stats for the whole lobby, then print the report | `scoreboard_ocr`, `deadlock_api`, `identity` |
+| `player_lookup.py` | Fetch candidates and stats for the whole lobby; `analyze_screenshot()` runs the full pipeline | `scoreboard_ocr`, `deadlock_api`, `identity` |
+| `report.py` | Report lines shared by the terminal and the app, so the two can't drift apart | standard library only |
 | `tests/` | Unit tests for parsing and lookup logic; the API is mocked | `unittest` (standard library) |
 | `utils/logger.py` | One place to configure logging to `logs/app.log` and the console | standard library |
 
@@ -39,6 +40,7 @@ Each module has one job, and data flows one way: OCR knows nothing about stats, 
 | **Tesseract** (via `pytesseract`) | Text recognition | Free, offline, mature open-source OCR engine. Running locally means no screenshots leave the machine. `pytesseract` is a thin Python wrapper around the Tesseract executable |
 | **Pillow** | Cropping images | The standard Python imaging library; cropping is all that's needed |
 | **mss** | Screenshots | Fast, dependency-free screen capture |
+| **tkinter** (standard library) | App window | Ships with Python, so nothing to install, and enough for a text report with colours and clickable links |
 | **keyboard** | Global hotkey | Lets the capture run in the background while the game has focus. It only *listens* for a key combination; it never sends input to the game |
 | **urllib** (standard library) | HTTP requests | Only three GET requests are needed. Avoiding `requests` keeps the dependency list short; `deadlock_api.py` is the only file that would change if that ever stopped being true |
 | **[Deadlock API](https://api.deadlock-api.com)** | Steam name search, hero stats, hero list | Free, public, documented with an OpenAPI spec, and no API key needed for the endpoints used (rate limit: 100 requests/s per IP). Using a documented API instead of scraping sites like Tracklock is more reliable and respects those sites |
@@ -106,9 +108,14 @@ An early hardcoded list turned out to be largely invented, and a hand-verified l
 - Only the fields needed are kept from API responses (the search endpoint also returns things like friends lists).
 - `screenshots/` and `logs/` are excluded from git because they contain other players' names.
 
+### 4.8 The app: threads, a queue, and staying out of its own screenshot
+- **tkinter may only be used from the main thread**, but the hotkey fires on the `keyboard` library's thread and analysis (OCR + API calls) takes seconds. The hotkey and a worker thread hand results back through a `queue.Queue` that the window checks every 100 ms, so the window never freezes and never gets touched from the wrong thread.
+- **Overlay mode** is an ordinary always-on-top, semi-transparent window. It works over the game in borderless windowed mode. Overlays that draw over *exclusive fullscreen* do it by injecting into the game's renderer, which this project deliberately never does.
+- **The overlay would cover the scoreboard in its own screenshot**, so it turns fully transparent for 150 ms during capture. Transparency is used instead of hiding and re-showing the window, because re-showing can steal keyboard focus from the game.
+
 ## 5. Testing
 
-`python -m unittest discover -s tests -v` runs 32 tests in under a second:
+`python -m unittest discover -s tests -v` runs 35 tests in under a second:
 - **Parser tests** use OCR output actually produced from real screenshots, including a noisy version, plus edge cases: headers, noise-only lines, duplicate player names, multi-word heroes, hero lines with nothing above them.
 - **Identity tests** use plain data to cover settling by unique name, friend links (including links listed by only one side and chains of settled players), ties falling back to hero history, and party grouping.
 - **Lookup tests** mock the API to cover rejecting fuzzy matches, bot skipping, one stats request per lobby, favourite heroes, and network errors being reported instead of crashing the report.
@@ -121,7 +128,7 @@ An early hardcoded list turned out to be largely invented, and a hand-verified l
 
 - **Resolution:** coordinates were measured at 1920×1080 (6v6 and Street Brawl layouts). Other sizes log a warning. Scaling coordinates by resolution, or locating the panel automatically, would remove this limit.
 - **Sample size:** tuned on a small number of screenshots, so it needs more varied real matches (long or unusual Steam names, different heroes).
-- **Integration:** capture and analysis are separate commands; the next step is running the analysis from the hotkey.
+- **App:** the GUI itself is checked with a smoke test (hidden window, real worker thread and queue), not unit tests.
 - **Accuracy:** a misread Steam name gives "not found". The report shows the closest match so a person can judge it.
 
 ## 7. How this was built

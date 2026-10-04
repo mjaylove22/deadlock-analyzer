@@ -1,5 +1,6 @@
 import logging
 import os
+import sys
 from datetime import datetime
 
 def setup_logger():
@@ -27,9 +28,10 @@ def setup_logger():
         file_handler.setFormatter(formatter)
         root.addHandler(file_handler)
         
-        # Console handler
-        console_handler = logging.StreamHandler()
-        console_handler.setFormatter(formatter)
-        root.addHandler(console_handler)
+        # Console handler (skipped under pythonw, which has no console)
+        if sys.stderr is not None:
+            console_handler = logging.StreamHandler()
+            console_handler.setFormatter(formatter)
+            root.addHandler(console_handler)
     
     return logger

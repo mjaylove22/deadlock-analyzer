@@ -27,7 +27,7 @@ modify game files, automate input, or interact with anti-cheat in any way.
 
 ## How it works
 
-1. **Capture**: `main.py` saves a full-screen screenshot when you press `Ctrl+Shift+D`.
+1. **Capture**: the app (`app.py`) runs in the background and takes a screenshot when you press `Ctrl+Shift+D`.
 2. **OCR**: `scoreboard_ocr.py` crops the scoreboard's player list and runs Tesseract once.
    Every scoreboard row is two lines, a Steam name and then `<Hero> Level N`, so each line containing
    a hero name and "Level" is paired with the line above it. Each line's vertical position decides the team.
@@ -45,14 +45,21 @@ modify game files, automate input, or interact with anti-cheat in any way.
 
 ## Usage
 
+**App (no terminal needed):** double-click `Deadlock Analyzer.pyw`. In game, open the Esc menu on the
+**PLAYERS** tab and press `Ctrl+Shift+D`. The report appears in the app window (a sound plays when it's ready).
+Profile links are clickable.
+
+- **Overlay mode** keeps the window semi-transparent and on top of the game. This needs the game in
+  **borderless windowed** mode; the app never draws into the game itself.
+- **Analyze latest screenshot** re-runs the report on the newest saved screenshot.
+
+**Terminal:**
+
 ```bash
-python main.py                      # run in the background; Ctrl+Shift+D captures a screenshot
-python player_lookup.py             # analyse the latest screenshot (or pass a path)
+python player_lookup.py             # report for the latest screenshot (or pass a path)
 python scoreboard_ocr.py            # debug view: raw OCR lines and parsed rows
 python -m unittest discover -s tests -v
 ```
-
-Take the screenshot with the Esc menu open on the **PLAYERS** tab.
 
 ## Limitations
 
@@ -62,12 +69,14 @@ Take the screenshot with the Esc menu open on the **PLAYERS** tab.
 ## Project layout
 
 ```
-main.py              hotkey screenshot capture
+app.py               desktop app: hotkey, capture, report window, overlay mode
+Deadlock Analyzer.pyw  double-click launcher (no console window)
 screenshot_manager.py
 scoreboard_ocr.py    screenshot -> [{"player", "hero", "team"}]
 deadlock_api.py      thin client for the public Deadlock API
 identity.py          which same-named account is which; party detection
 player_lookup.py     whole-lobby lookup and command-line report
+report.py            report lines shared by the terminal and the app
 tests/               unit tests (API calls are mocked)
 docs/DESIGN.md       design decisions and technology choices
 utils/logger.py      logging to logs/app.log and the console

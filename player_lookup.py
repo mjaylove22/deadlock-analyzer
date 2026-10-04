@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Tuple
 
 import deadlock_api
 from identity import find_parties, resolve_lobby
+from report import build_report
 from scoreboard_ocr import FALLBACK_HERO_NAMES, read_scoreboard
 from screenshot_manager import get_screenshot_path
 from utils.logger import setup_logger
@@ -114,14 +115,8 @@ def lookup_lobby(records: List[Dict[str, str]], hero_ids_by_name: Dict[str, int]
     return results, parties
 
 
-def main():
-    setup_logger()
-
-    file_path = sys.argv[1] if len(sys.argv) > 1 else get_screenshot_path()
-    if not file_path:
-        print("No screenshot found.")
-        return
-
+def analyze_screenshot(file_path: str) -> Tuple[List[Dict[str, Any]], List[List[int]]]:
+    """The whole pipeline: screenshot -> (results, parties). Used by the terminal and the app."""
     # One hero list feeds both OCR (names) and stats (ids)
     try:
         heroes = deadlock_api.fetch_heroes()
@@ -133,26 +128,21 @@ def main():
 
     records = read_scoreboard(file_path, list(hero_ids_by_name))
     if not records:
-        print("No players found in the screenshot.")
+        return [], []
+    return lookup_lobby(records, hero_ids_by_name, hero_names_by_id)
+
+
+def main():
+    setup_logger()
+
+    file_path = sys.argv[1] if len(sys.argv) > 1 else get_screenshot_path()
+    if not file_path:
+        print("No screenshot found.")
         return
 
-    results, parties = lookup_lobby(records, hero_ids_by_name, hero_names_by_id)
-
-    for team in ("friendly", "enemy"):
-        print(f"\n=== {team.upper()} TEAM ===")
-        for party in parties:
-            if results[party[0]]["team"] == team:
-                print(f"  Party of {len(party)}: {' + '.join(results[i]['player'] for i in party)}")
-        for r in results:
-            if r["team"] != team:
-                continue
-            print(f"\n{r['player']}  (playing {r['hero']})  [{r['status']}]")
-            if r["note"]:
-                print(f"    {r['note']}")
-            if r["profile_url"]:
-                print(f"    {r['profile_url']}")
-            for h in r["top_heroes"]:
-                print(f"    {h['hero']:<12} {h['matches']:>4} matches  {h['win_rate']:.0%} wins")
+    results, parties = analyze_screenshot(file_path)
+    for text, style in build_report(results, parties):
+        print(text)
 
 
 if __name__ == "__main__":
