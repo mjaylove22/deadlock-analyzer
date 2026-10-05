@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 SCREENSHOT_NAME = re.compile(r'screenshot_\d{8}_\d{6}\.png')  # e.g. screenshot_20260930_123906.png
 END_SCREEN_NAME = re.compile(r'endscreen_\d{8}_\d{6}\.png')   # end-of-match screens (not lobbies)
-RETENTION_DAYS = 7
+RETENTION_DAYS = 3  # ~1 MB each, up to ~11 captures a day: ~33 MB at most
 SCREENSHOT_DIR = paths.data("screenshots")
 
 
@@ -39,7 +39,7 @@ def capture_and_save_screenshot():
 
 
 def save_end_screen(image) -> str:
-    """Keep the end-of-match screen the app detected, like other captures (deleted after 7 days).
+    """Keep the end-of-match screen the app detected, like other captures (deleted after RETENTION_DAYS).
     Named apart from lobby screenshots, so "Analyze latest" never picks one up."""
     os.makedirs(SCREENSHOT_DIR, exist_ok=True)
     path = os.path.join(SCREENSHOT_DIR, f"endscreen_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")

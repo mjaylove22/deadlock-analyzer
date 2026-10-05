@@ -52,6 +52,12 @@ class DeleteOldScreenshotsTests(unittest.TestCase):
         with patch.object(screenshot_manager, "SCREENSHOT_DIR", self.dir):
             self.assertEqual(screenshot_manager.get_screenshot_path(), lobby)
 
+    def test_keeps_three_days_by_default(self):
+        old = self.make("screenshot_20260930_120000.png", age_days=3.5)
+        recent = self.make("screenshot_20261002_120000.png", age_days=2.5)
+        self.assertEqual(delete_old_screenshots(self.dir), [old])
+        self.assertTrue(os.path.exists(recent))
+
     def test_missing_folder_is_fine(self):
         self.assertEqual(delete_old_screenshots(os.path.join(self.dir, "nope")), [])
 

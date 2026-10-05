@@ -211,7 +211,8 @@ The ban endpoint returns how many times each hero was banned, but not how many m
 - **Simulated sizes** (resized/padded real screenshots, `tests/test_resolutions.py`): 1440p, both ultrawide arrangements, 16:10 and 900p read 12/12; simulated 4K and 720p 11/12. Small screens get sharpening plus a higher cutoff (720p went from 1/7 to 7/7 on one screenshot); at 1080p and above sharpening slightly hurt, so it's only used below. The 4K misses turned out to be ordinary OCR noise that can happen at any size, which led to two general fixes: a hero name one letter off ("Oynamo") counts as that hero (5+ letters), and names are compared ignoring spaces ("Dr.NightOwl"). **Simulated images are blurrier than real ones**, so tuning stopped there: real screenshots at those sizes are the next step.
 
 ### 4.23 Housekeeping
-- Screenshots older than 7 days are deleted at startup and after each capture. Only files named like the app's own captures are touched, and a screenshot with an `.expected.json` (a regression test case) is never deleted.
+- Screenshots older than 3 days are deleted at startup and after each capture. Only files named like the app's own captures are touched, and a screenshot with an `.expected.json` (a regression test case) is never deleted.
+- **Why 3 days, and why the files aren't made smaller:** a capture is ~1 MB (15 real ones: 14.4 MB) and a heavy day has up to 11, so 7 days could reach ~77 MB; 3 days caps it near 33 MB and still leaves time to report a misread. Smaller files were measured on those 15 screenshots: maximum PNG compression saved 9% for ~420 ms more per capture, and lossless WebP 39% for ~515 ms, but WebP changes the file type that the capture names, "Analyze latest" and the regression tests depend on. Keeping only the regions the app reads would break layout detection on other screen sizes and lose what's needed to re-check a misread later. Neither was worth it next to the shorter retention.
 - Hero and rank lists are cached for the life of the app (`functools.lru_cache`); a failed request isn't cached, so it's retried next time.
 - The analysis reports progress through a callback, so the lookup code doesn't need to know about the window.
 
@@ -305,7 +306,7 @@ Checked against a real Street Brawl lobby where 2 of 8 players weren't found:
 - **Which match:** the end screen prints its match ID top right. That text is dim (brightness ~52 on ~5), and one OCR setting read a wrong digit **at the right length**, which the length check can't catch, so two settings must agree. If it can't be read, the match ID from the lobby captured during the match is used (up to 90 minutes old). If both are read and differ, the end screen wins and the log says so.
 - **Waiting without wasting Steam fetches** (`postgame.py`): the app jumps to the match page at once, showing "Match over" and the lobby it captured, and checks the API's free stored copy every minute. Steam is asked at most three times (3, 10 and 25 minutes after the end screen), only while the stored copy still says no, and never past the app's own hourly count. When the data arrives, the page fills in on its own (straight onto the Performance view) with a sound; after an hour it stops waiting. Only this checker fetches a match that's being waited for, so opening the page can't spend a Steam fetch early.
 - **A misread ID would show a stranger's match:** once the data arrives it's checked to contain your account (or, without one set, at least half the lobby's heroes); a mismatch is logged.
-- **Tested without a game:** the real end screen fed to the detector at its true position; the app given a captured lobby plus the real end screen (its 8-digit June ID correctly refused, so the lobby's ID was used), which jumped to the waiting page after one free check; and a stored match, which filled in straight away. The end screen reference is from June 2026 and the game may have moved it since: each detection is logged and its screenshot kept for 7 days (named apart from lobby screenshots), so the first real match will confirm it or give a new reference.
+- **Tested without a game:** the real end screen fed to the detector at its true position; the app given a captured lobby plus the real end screen (its 8-digit June ID correctly refused, so the lobby's ID was used), which jumped to the waiting page after one free check; and a stored match, which filled in straight away. The end screen reference is from June 2026 and the game may have moved it since: each detection is logged and its screenshot kept for 3 days (named apart from lobby screenshots), so the first real match will confirm it or give a new reference.
 - **Setting:** "Open the match review when a match ends" (on by default).
 
 ### 4.36 Reading the end screen instead of waiting for the API
@@ -318,7 +319,7 @@ Checked against a real Street Brawl lobby where 2 of 8 players weren't found:
 
 ## 5. Testing
 
-`python -m unittest discover -s tests -v` runs 158 tests in a few seconds:
+`python -m unittest discover -s tests -v` runs 209 tests in a few seconds:
 - **Parser tests** use OCR output actually produced from real screenshots, including a noisy version, plus edge cases: headers, noise-only lines, duplicate player names, multi-word heroes, hero lines with nothing above them.
 - **Identity tests** use plain data to cover settling by unique name, friend links (including links listed by only one side and chains of settled players), ties falling back to hero history, and party grouping.
 - **Insights tests** cover each badge rule and its thresholds.
