@@ -14,7 +14,8 @@ from typing import Any, Dict
 
 import assets
 import deadlock_api
-from match_review import REVIEW_STATS, MatchUnavailable, match_review
+from match_review import REVIEW_STATS, MatchUnavailable, match_review, rate_match
+from performance import compared_text
 from guides import hero_guide
 from item_trends import item_trends
 from matchups import hero_breakdown, matchup_details
@@ -28,7 +29,7 @@ from ui.theme import (BADGE_COLORS, COLORS, ITEM_SLOT_COLORS, MATCHUP_COLORS, PA
                       label, pill, segmented, switch)
 from version import __version__
 from ui.charts import (ITEM_DAYS, ITEM_TREND_SPAN, ChartTable, Column, advantage_bar, change_text, change_tip, hero_cell, item_cell,
-                       trend_cell, trend_chart, trend_color, trend_tip, verdict)
+                       percentile_bar, score_color, trend_cell, trend_chart, trend_color, trend_tip, verdict)
 from ui.widgets import item_tile, item_tooltip_text, tooltip
 from ui.widgets import bind_click, data_table, hero_label, matchup_strip, player_card, rank_pill
 
@@ -851,10 +852,12 @@ class HeroPage(Page):
 
 
 class MatchPage(Page):
+    """A finished match. Overview: result, your game, the lead chart and both scoreboards.
+    Performance: how each player's stats compare with others on the same hero, with the stand-outs."""
     nav = None
 
-    def build(self, match_id: int):
-        self.match_id = match_id
+    def build(self, match_id: int, view: str = "Overview"):
+        self.match_id, self.view = match_id, view
         self.message(f"Loading match {match_id}...")
 
         def work():
@@ -877,11 +880,15 @@ class MatchPage(Page):
             self.app.set_status(f"Match {match_id} couldn't be loaded")
         self.app.run_task(work, lambda result: self.show(*result), failed)
 
+    def switch_view(self, view: str):
+        self.app.navigate(MatchPage, push=False, match_id=self.match_id, view=view)
+
     def show(self, r: Dict[str, Any], downloaded):
         self.app.avatars.store(downloaded)
         self.clear(self.frame)
+        self.review = r
         me = r.get("me")
-        my_team = me["team"] if me else 0
+        self.my_team = me["team"] if me else 0
 
         # Header: result, hero, match facts
         outer, header = card(self.frame, padding=14)
@@ -896,11 +903,31 @@ class MatchPage(Page):
         label(header, facts, color="dim", bg="card").pack(side="left", padx=(6, 0))
         label(header, f"match {r['match_id']}", size=9, color="faint", bg="card").pack(side="right")
 
+        tabs = tk.Frame(self.frame, bg=COLORS["bg"])
+        tabs.pack(fill="x", pady=(10, 0))
+        segmented(tabs, ["Overview", "Performance"], self.view, self.switch_view).pack(side="left")
+        self.body = tk.Frame(self.frame, bg=COLORS["bg"])
+        self.body.pack(fill="both", expand=True)
+        if self.view == "Performance":
+            self.message("Comparing everyone's stats with other players on the same heroes...", self.body)
+        else:
+            self.show_overview(r)
+        self.load_ratings()
+        self.app.set_status(f"Match {r['match_id']} · click a player to open their page")
+
+    def show_overview(self, r: Dict[str, Any]):
+        me, my_team = r.get("me"), self.my_team
+        self.score_slot = None
+
         # Your game: lobby place and comparison with your usual on this hero
         if me:
-            yours_outer, yours = card(self.frame, padding=12)
+            yours_outer, yours = card(self.body, padding=12)
             yours_outer.pack(fill="x", pady=(10, 0))
-            label(yours, "YOUR GAME", size=9, color="dim", bold=True, bg="card").pack(anchor="w", pady=(0, 6))
+            title = tk.Frame(yours, bg=COLORS["card"])
+            title.pack(fill="x", pady=(0, 6))
+            label(title, "YOUR GAME", size=9, color="dim", bold=True, bg="card").pack(side="left")
+            self.score_slot = tk.Frame(title, bg=COLORS["card"])  # the performance score, once it's loaded
+            self.score_slot.pack(side="right")
             tiles = tk.Frame(yours, bg=COLORS["card"])
             tiles.pack(fill="x")
             stats = [("K / D / A", f"{me['kills']} / {me['deaths']} / {me['assists']}", "kda", None)]
@@ -909,7 +936,7 @@ class MatchPage(Page):
             for c, (name, value, key, vs) in enumerate(stats):
                 tiles.columnconfigure(c, weight=1, uniform="tiles")
                 tile = tk.Frame(tiles, bg=COLORS["card"])
-                tile.grid(row=0, column=c, sticky="w")
+                tile.grid(row=0, column=c, sticky="nw")  # top-aligned: K/D/A has one line less
                 label(tile, name.upper(), size=8, color="faint", bold=True, bg="card").pack(anchor="w")
                 label(tile, value, size=16, heading=True, bg="card").pack(anchor="w")
                 place = r["places"][key]
@@ -927,7 +954,7 @@ class MatchPage(Page):
 
         # Net worth lead over the match, from your team's side
         if r["networth_lead"]:
-            chart_outer, chart = card(self.frame, padding=10)
+            chart_outer, chart = card(self.body, padding=10)
             chart_outer.pack(fill="x", pady=(10, 0))
             sign = 1 if my_team == 0 else -1
             lead = [(minute, sign * diff) for minute, diff in r["networth_lead"]]
@@ -937,7 +964,7 @@ class MatchPage(Page):
             lead_chart(chart, lead).pack(fill="x", pady=(4, 0))
 
         # Both scoreboards
-        columns = tk.Frame(self.frame, bg=COLORS["bg"])
+        columns = tk.Frame(self.body, bg=COLORS["bg"])
         columns.pack(fill="both", expand=True, pady=(10, 0))
         for c, team in enumerate((my_team, 1 - my_team)):
             columns.columnconfigure(c, weight=1, uniform="teams")
@@ -962,7 +989,128 @@ class MatchPage(Page):
             ], team_players, height=6, hero_key="hero",
                 tag=lambda p: "me" if me and p["account_id"] == me["account_id"] else "",
                 on_click=lambda p: self.app.open_player(p["account_id"]))
-        self.app.set_status(f"Match {r['match_id']} · click a player to open their page")
+
+    # --- performance
+    def load_ratings(self):
+        """Rate everyone after the page is shown: one request per hero (~3 s the first time)."""
+        cached = self.app.cache.get(("ratings", self.match_id))
+        if cached:
+            self.ratings_ready(cached)
+            return
+        names = self.app.hero_names_by_id()
+        self.app.run_task(lambda: rate_match(self.review, names), self.ratings_ready, self.ratings_failed)
+
+    def ratings_failed(self, error):
+        if self.view == "Performance":
+            self.clear(self.body)
+            self.unavailable(self.body, "the performance ratings", bg="bg")
+
+    def ratings_ready(self, rated: Dict[str, Any]):
+        self.app.cache[("ratings", self.match_id)] = rated
+        self.rated = rated
+        players = self.review["players"]
+        me = self.review.get("me")
+        mine = next((i for i, p in enumerate(players) if me and p["account_id"] == me["account_id"]), None)
+        if self.view == "Performance":
+            self.show_performance(mine)
+        elif self.score_slot is not None and mine is not None and rated["ratings"][mine]:
+            rating = rated["ratings"][mine]
+            text = f"{rating['verdict'].upper()} · {rating['score']}"
+            badge = pill(self.score_slot, text, score_color(rating["score"]), size=9)
+            badge.pack(side="right")
+            bind_click(badge, lambda: self.switch_view("Performance"))
+            tooltip(badge, f"How your stats compare with other {players[mine]['hero']} players "
+                           f"(50 = a typical game). Click for the details.")
+
+    def show_performance(self, selected: int = None):
+        players, ratings = self.review["players"], self.rated["ratings"]
+        if selected is None or not ratings[selected]:  # not your match: start with the best-rated player
+            rated = [i for i, rating in enumerate(ratings) if rating]
+            if not rated:
+                self.clear(self.body)
+                self.unavailable(self.body, "the performance ratings", bg="bg")
+                return
+            selected = max(rated, key=lambda i: ratings[i]["score"] or 0)
+        self.clear(self.body)
+        grid = tk.Frame(self.body, bg=COLORS["bg"])
+        grid.pack(fill="both", expand=True, pady=(10, 0))
+        grid.columnconfigure(0, weight=3, uniform="perf")
+        grid.columnconfigure(1, weight=2, uniform="perf")
+        detail_outer, self.detail = card(grid, padding=16)
+        detail_outer.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        everyone_outer, everyone = card(grid, padding=14)
+        everyone_outer.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
+
+        label(everyone, "EVERYONE'S GAME", size=9, color="dim", bold=True, bg="card").pack(anchor="w")
+        label(everyone, "Each player's stats against others on the same hero: 50 is a typical game. "
+                        "Click a player for their details.", size=9, color="faint", bg="card", justify="left",
+              wraplength=380).pack(anchor="w", pady=(0, 6))
+        me = self.review.get("me")
+        for team in (self.my_team, 1 - self.my_team):
+            won = team == self.review["winning_team"]
+            title = ("Your team" if me and team == self.my_team else "Enemy team" if me else f"Team {team + 1}")
+            head = tk.Frame(everyone, bg=COLORS["card"])
+            head.pack(fill="x", pady=(8, 2))
+            label(head, title, size=11, heading=True, bg="card",
+                  color="friendly" if team == self.my_team else "enemy").pack(side="left")
+            label(head, "won" if won else "lost", bg="card", color="win" if won else "loss").pack(side="left", padx=8)
+            members = sorted((i for i, p in enumerate(players) if p["team"] == team),
+                             key=lambda i: -((ratings[i] or {}).get("score") or -1))
+            for i in members:
+                row = tk.Frame(everyone, bg=COLORS["selected"] if i == selected else COLORS["card"])
+                row.pack(fill="x", pady=1)
+                rating = ratings[i]
+                score = rating["score"] if rating else None
+                pill(row, f"{score}" if score is not None else "-", score_color(score), size=9).pack(side="right", padx=6, pady=3)
+                hero_label(row, players[i]["hero"], row["bg"], size=22).pack(side="left", padx=(4, 8), pady=2)
+                label(row, players[i]["name"][:20], color="dim", bg=row["bg"]).pack(side="left")
+                bind_click(row, lambda i=i: self.show_performance(i))
+        self.show_rating(selected)
+
+    def show_rating(self, i: int):
+        p, rating = self.review["players"][i], self.rated["ratings"][i]
+        me = self.review.get("me")
+        box = self.detail
+        hero = p["hero"]
+        title = tk.Frame(box, bg=COLORS["card"])
+        title.pack(fill="x")
+        hero_label(title, hero, "card", size=40, font_size=15).pack(side="left")
+        who = "Your game" if me and p["account_id"] == me["account_id"] else p["name"][:24]
+        label(title, who, color="dim", bg="card").pack(side="left", padx=12, pady=(8, 0))
+        score = tk.Frame(title, bg=COLORS["card"])
+        score.pack(side="right")
+        label(score, f"{rating['score']}", size=28, heading=True, bg="card",
+              color=score_color(rating["score"])).pack(side="right")
+        label(score, rating["verdict"], size=13, bold=True, bg="card",
+              color=score_color(rating["score"])).pack(side="right", padx=10, pady=(10, 0))
+        low, high = self.rated["window"]
+        band = "all ranks" if self.rated["band"] == "All ranks" else self.rated["band"]
+        label(box, f"Compared with {hero} players at {band}, in {low}-{high} minute matches, "
+                   f"over the last 30 days. The score averages souls, damage, KDA, deaths and objective damage.",
+              size=9, color="faint", bg="card", justify="left", wraplength=620).pack(anchor="w", pady=(6, 10))
+
+        stand_outs = [("▲", r, "win") for r in rating["strengths"]] + [("▼", r, "loss") for r in rating["weaknesses"]]
+        for arrow, r, color in stand_outs:
+            label(box, f"{arrow}  {r['label']}: {r['text']}, {compared_text(r)} of {hero} players", size=11,
+                  bold=True, color=color, bg="card").pack(anchor="w", pady=1)
+        if not stand_outs:
+            label(box, f"Nothing stood out: a typical game on {hero}.", size=11, color="dim", bg="card").pack(anchor="w")
+
+        table = tk.Frame(box, bg=COLORS["card"])
+        table.pack(fill="x", pady=(14, 0))
+        for c, (text, weight) in enumerate((("STAT", 3), ("THIS GAME", 1), ("AGAINST OTHER " + hero.upper() + " PLAYERS", 3),
+                                            ("TYPICAL", 1))):
+            table.columnconfigure(c, weight=weight)
+            label(table, text, size=8, color="faint", bold=True, bg="card").grid(row=0, column=c, sticky="w", pady=(0, 4))
+        for n, r in enumerate(rating["rows"], start=1):
+            label(table, r["label"], bg="card").grid(row=n, column=0, sticky="w", pady=3)
+            label(table, r["text"], bold=True, bg="card").grid(row=n, column=1, sticky="w", padx=(0, 10))
+            cell = tk.Frame(table, bg=COLORS["card"])
+            cell.grid(row=n, column=2, sticky="w")
+            percentile_bar(cell, r["good"], r["percentile"], width=150).pack(side="left")
+            label(cell, compared_text(r), size=9, bg="card",
+                  color=score_color(r["good"]) if r["good"] is not None else "dim").pack(side="left", padx=8)
+            label(table, r["median_text"], color="dim", bg="card").grid(row=n, column=3, sticky="w")
 
 
 def rank_bars(parent, by_rank, height: int = 120) -> tk.Canvas:

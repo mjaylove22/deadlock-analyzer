@@ -358,6 +358,19 @@ def fetch_daily_item_stats(game_mode: str = "normal", ranks: tuple = None, days:
     return disk_cached(f"items_daily_{game_mode}_{low}_{high}", build, max_age=3 * 3600)
 
 
+def get_player_metrics(hero_id: int, game_mode: str = "normal", ranks: tuple = None,
+                       min_minutes: int = None, max_minutes: int = None) -> Dict[str, Dict[str, float]]:
+    """Percentiles (1st-99th), average and spread of each scoreboard stat for players of one hero over
+    the last 30 days, optionally at a rank band and in matches of a given length. ~10 KB; the server
+    recomputes each answer every 6 hours. The API refuses a rank filter for Street Brawl."""
+    params = {"hero_ids": hero_id, "game_mode": game_mode, **badge_range(ranks)}
+    if min_minutes is not None:
+        params["min_duration_s"] = min_minutes * 60
+    if max_minutes is not None:
+        params["max_duration_s"] = min(7000, max_minutes * 60)  # the API's maximum
+    return get_json("/v1/analytics/player-stats/metrics", params, max_age=3600)
+
+
 def get_hero_bans(ranks: tuple = None) -> List[Dict[str, Any]]:
     """How many times each hero was banned: {"hero_id", "bans"}. Only counts, not how many matches
     they came from, so a true ban rate can't be computed from this; a hero's share of all bans can."""

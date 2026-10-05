@@ -325,6 +325,25 @@ def advantage_bar(parent, shift: float, bg: str = "card", width: int = 150, heig
     return canvas
 
 
+def score_color(good: Optional[float]) -> str:
+    """Green for a strong stat or game (70+ of 100), red for a weak one (30 or less), else plain."""
+    if good is None:
+        return COLORS["dim"]
+    return COLORS["win"] if good >= 70 else COLORS["loss"] if good <= 30 else COLORS["accent"]
+
+
+def percentile_bar(parent, good: Optional[float], percentile: float, bg: str = "card", width: int = 200,
+                   height: int = 12) -> tk.Canvas:
+    """How many players on this hero did worse: right = better than more of them, with a mark at the
+    middle (a typical game). A stat that isn't good or bad (good=None) shows its plain percentile, grey."""
+    canvas = tk.Canvas(parent, width=width, height=height, bg=COLORS[bg], highlightthickness=0)
+    position = percentile if good is None else good
+    canvas.create_rectangle(0, 2, width, height - 2, fill=COLORS["button"], outline="")
+    canvas.create_rectangle(0, 2, max(2, position / 100 * width), height - 2, fill=score_color(good), outline="")
+    canvas.create_line(width / 2, 0, width / 2, height, fill=COLORS["text"])
+    return canvas
+
+
 # --- the hero page's chart
 def trend_chart(parent, hero: str, trend: Dict[str, Any], total_weeks: int, bg: str = "card",
                 height: int = 92) -> tk.Canvas:

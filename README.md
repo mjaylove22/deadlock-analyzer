@@ -82,7 +82,7 @@ The app has pages, with a **Back** button (or Alt+Left) and the title as a link 
 | **Hero** | **Stats**: a hero's win rate over the last 12 weeks (hover for each week), its best and toughest matchups (against its own average), its most-bought items with icons, and its win rate at every rank, by mode and rank band. **Guide**: what kind of hero it is (type, complexity, gun, health and speed against other heroes), what its abilities do, what players build, and the four abilities with cooldowns |
 | **My Stats** | Your own player page |
 | **Player** | Avatar, rank, games and win rate for ranked, unranked and Street Brawl, who they play with most, a sortable per-hero table (All / Ranked / Unranked / Street Brawl) and recent matches with their type (click one for its review) |
-| **Match review** | A finished match: victory or defeat, your K/D/A, net worth, damage, healing and last hits with your place in the lobby and how they compare with your usual on that hero, your final build, the net-worth lead over time and both scoreboards |
+| **Match review** | A finished match. **Overview**: victory or defeat, your K/D/A, net worth, damage, healing and last hits with your place in the lobby and how they compare with your usual on that hero, your final build, the net-worth lead over time and both scoreboards. **Performance**: every stat against other players on the same hero, at the same rank, in matches of a similar length ("better than 82% of Kelvin players"), your strengths and weak spots, a score from Rough game to Great game, and every player's score |
 | **Search** | Type any Steam name in the top bar to see every account with that name, or a **match ID** to open its review |
 
 - **Set your account:** search your Steam name, open your account and click **Set as my account**. You're
@@ -141,6 +141,7 @@ paths.py             where shipped files and the app's own files live, from sour
 version.py           the version number, shown on the Home page and used by the installer
 installer/           build.py (Tesseract trim + PyInstaller + Inno Setup), setup.iss, licence notices
 make_shortcut.py     creates the desktop shortcut
+performance.py       how well someone played their hero: stats as percentiles among players on that hero
 insights.py          stats on the current hero and badge rules
 report.py            wording shared by the terminal and the app
 tests/               unit tests (API calls are mocked)

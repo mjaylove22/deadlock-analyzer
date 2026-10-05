@@ -290,6 +290,15 @@ Checked against a real Street Brawl lobby where 2 of 8 players weren't found:
 - **So the stored copy comes first:** `disable_steam=true` asks only the API's store (100 requests per 10 s), and Steam is asked only when that says 404. The app counts its own Steam fetches and never makes a fourth in an hour; the page says why instead.
 - **Lobby page:** the match ID shows next to the capture time, with a **Review this match** button.
 
+### 4.34 Performance on your hero
+- **The ask:** "highlight performance on their character depending on their stats". A raw number (644 damage per minute) means nothing without knowing what's normal on that hero, and comparing with the lobby mixes supports with carries.
+- **Percentiles among players on the same hero:** `/v1/analytics/player-stats/metrics` gives the 1st-99th percentiles of ~30 stats for one hero (~10 KB, 0.6 s). A match's stat is placed between them by straight lines (ties, like most players healing 0, count as the middle of the tied range). "Better than 82% of Kelvin players" reads plainly, and a bar per stat shows it.
+- **A fair comparison:** the same hero, at the match's rank band (or the players' current ranks: the match's own average rank was 0 in the matches checked), in matches within 6 minutes of this one's length (totals like deaths and last hits grow with length), over 30 days. The answer doesn't say how many games it rests on, so this was measured: with the narrowest real filters (top rank band, one hero, a 12-minute window) the percentiles stayed within a few percent of the broad ones, while a deliberately tiny sample (50 matches) visibly squashed them.
+- **Formulas checked in the API's source** before use, which caught one wrong assumption: crit rate is crits / (crits + other hero hits), because the game counts crits separately from other hits. Accuracy is hits / (hits + misses); healing is self plus allies.
+- **What's judged:** deaths count as better when lower. Damage taken is shown but never called good or bad (tanks are meant to soak it). A stat nobody on the hero has (all percentiles 0) is left out. The **score** is the average of five core stats (souls, damage, KDA, deaths, objective damage per minute), with plain verdicts from "Rough game" to "Great game". Last hits are left out of it because they mostly repeat souls.
+- **Everyone, not just you:** one request per hero, all at once (~3 s for a full match the first time, cached for an hour), so the Performance view lists every player's score by team; click one for their breakdown. The score shows who carried in a way K/D/A alone doesn't: in one real match the winners scored 54-76 and the losers 7-64.
+- **Placement:** the match page was already full, so it gets an Overview | Performance switch (like the hero page's Stats | Guide), and the Overview shows your score as a badge that opens it. Ratings load after the page is shown, so it appears as fast as before.
+
 ## 5. Testing
 
 `python -m unittest discover -s tests -v` runs 158 tests in a few seconds:

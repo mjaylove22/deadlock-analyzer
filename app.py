@@ -217,8 +217,8 @@ class AnalyzerApp:
         else:
             self.navigate(SearchPage, query=query)
 
-    def open_match(self, match_id: int):
-        self.navigate(MatchPage, match_id=match_id)
+    def open_match(self, match_id: int, view: str = "Overview"):
+        self.navigate(MatchPage, match_id=match_id, view=view)
 
     def focus_search(self):
         self.search_box.focus_set()

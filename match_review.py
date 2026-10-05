@@ -15,7 +15,9 @@ from typing import Any, Dict, List, Optional
 
 import deadlock_api
 import paths
-from profiles import GAME_MODES
+from performance import band_for_badge, length_window, rate_player
+from player_lookup import fetch_ranks
+from profiles import GAME_MODES, RANK_BANDS
 
 CACHE_DIR = paths.data("cache", "matches")
 MAX_SAVED_MATCHES = 50
@@ -61,8 +63,12 @@ def summarize(metadata: Dict[str, Any], hero_names_by_id: Dict[int, str],
             "kills": p["kills"], "deaths": p["deaths"], "assists": p["assists"],
             "net_worth": p["net_worth"], "last_hits": p.get("last_hits", 0), "denies": p.get("denies", 0),
             "level": p.get("level", 0),
-            "damage": final.get("player_damage", 0), "healing": final.get("player_healing", 0),
+            "damage": final.get("player_damage", 0), "healing": final.get("player_healing", 0),  # self + allies
             "damage_taken": final.get("player_damage_taken", 0),
+            # For the performance ratings: objective damage, accuracy and crit rate
+            "boss_damage": final.get("boss_damage", 0),
+            "shots_hit": final.get("shots_hit", 0), "shots_missed": final.get("shots_missed", 0),
+            "crits": final.get("hero_bullets_hit_crit", 0), "hero_hits": final.get("hero_bullets_hit", 0),
             # The final build: shop items still owned at the end, in the order they were bought
             "items": [{"id": i["item_id"], "name": items_by_id[i["item_id"]]["name"], "slot": items_by_id[i["item_id"]].get("slot")}
                       for i in sorted(p.get("items", []), key=lambda i: i["game_time_s"])
@@ -202,3 +208,32 @@ def match_review(match_id: int, hero_names_by_id: Dict[int, str], me: Optional[D
         review["places"] = {key: lobby_place(summary["players"], my_player, key)
                             for key in ("kda", "net_worth", "damage", "healing", "last_hits")}
     return review
+
+
+def match_badge(review: Dict[str, Any]) -> Optional[float]:
+    """The match's average rank (badge = tier * 10 + subrank). Matches often come without it, so then
+    the players' current ranks are averaged instead (one batch request; unranked players skipped)."""
+    badges = [b for b in review["team_badges"] if b]
+    if not badges:
+        ranks = fetch_ranks([p["account_id"] for p in review["players"] if p["account_id"]])
+        badges = [r["badge"] for r in ranks.values() if r["badge"] >= 10]  # tier 0: no recent ranked games
+    return sum(badges) / len(badges) if badges else None
+
+
+def rate_match(review: Dict[str, Any], hero_names_by_id: Dict[int, str]) -> Dict[str, Any]:
+    """Every player's performance on their hero (worker thread): {"ratings": one per player, in
+    review["players"] order (None when their hero's numbers didn't load), "band", "window"}.
+    One ~10 KB request per hero, all at once; the same hero, rank and length reuse the answer."""
+    street_brawl = review["mode"] == "Street Brawl"
+    band = band_for_badge(None if street_brawl else match_badge(review), RANK_BANDS)  # no rank filter in Street Brawl
+    low, high = length_window(review["minutes"])
+    ids_by_name = {name: hero_id for hero_id, name in hero_names_by_id.items()}
+    heroes = sorted({p["hero"] for p in review["players"] if p["hero"] in ids_by_name})
+    game_mode = "street_brawl" if street_brawl else "normal"
+    answers = deadlock_api.parallel(
+        *[lambda hero=hero: deadlock_api.get_player_metrics(ids_by_name[hero], game_mode, band[1], low, high)
+          for hero in heroes], allow_failures=True)
+    metrics = dict(zip(heroes, answers))
+    ratings = [rate_player(p, review["minutes"], metrics[p["hero"]]) if metrics.get(p["hero"]) else None
+               for p in review["players"]]
+    return {"ratings": ratings, "band": band[0], "window": (low, high)}
