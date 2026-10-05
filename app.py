@@ -388,7 +388,7 @@ class AnalyzerApp:
         if self.busy:
             return
         self.busy = True
-        self.focus_at_capture = game_window.focused_window_title()
+        self.focus_at_capture = (game_window.focused_window_title(), game_window.find_window() is not None)
         self.set_status("Scoreboard detected, capturing..." if auto else "Capturing screenshot...")
         if self.capture_hidden:
             self._capture_now(auto)  # already hidden (overlay mode)
@@ -493,17 +493,29 @@ class AnalyzerApp:
             logger.exception("Couldn't read the match ID")
             return None
 
-    def check_focus_kept(self):
-        """Log it if keyboard focus moved while capturing: the app must never pull you out of the game."""
-        before, self.focus_at_capture = self.focus_at_capture, None
-        if before is not None:
-            after = game_window.focused_window_title()
-            if after != before:
-                logger.warning(f"Keyboard focus moved during a capture: {before!r} -> {after!r}")
+    def check_focus_kept(self, stage: str, last: bool = True):
+        """Log it if keyboard focus moved, or the game was minimised, since the capture started: the app
+        must never pull you out of the game. Checked when the reading is done and again a second after
+        the result is shown, so the log says which step did it. Warns once per capture."""
+        if self.focus_at_capture is None:
+            return
+        before, game_was_up = self.focus_at_capture
+        after = game_window.focused_window_title()
+        minimised = game_was_up and game_window.find_window() is None
+        if after != before or minimised:
+            logger.warning(f"Keyboard focus moved {stage}: {before!r} -> {after!r}"
+                           + (" (the game window is minimised)" if minimised else ""))
+            last = True
+        if last:
+            self.focus_at_capture = None
+
+    def check_focus_after_showing(self):
+        self.check_focus_kept("while reading the screenshot", last=False)
+        self.root.after(1000, lambda: self.check_focus_kept("while showing the result"))
 
     def show_lobby(self, lobby):
         self.busy = False
-        self.check_focus_kept()
+        self.check_focus_after_showing()
         self.avatars.store(lobby.pop("images"))
         self.lobby = lobby
         self.last_records = lobby["records"]
@@ -520,7 +532,7 @@ class AnalyzerApp:
     def same_lobby(self):
         logger.info("Same lobby as the last capture; nothing to look up")
         self.busy = False
-        self.check_focus_kept()
+        self.check_focus_after_showing()
         prefs = get_preferences()
         if prefs["reshow_same_lobby"] and self.lobby:
             self.navigate(LobbyPage, push=not isinstance(self.page, LobbyPage))
@@ -654,7 +666,7 @@ class AnalyzerApp:
 
     def analysis_failed(self, error: str):
         self.busy = False
-        self.check_focus_kept()
+        self.check_focus_after_showing()
         self.set_status(f"Something went wrong: {error}")
 
     def close(self):
