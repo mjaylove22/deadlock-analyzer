@@ -32,7 +32,7 @@ from PIL import Image
 import assets
 import deadlock_api
 import paths
-from version import __version__
+from version import LATEST_RELEASE_API, __version__, is_newer
 from matchups import build_matchup
 from player_lookup import analyze_records, read_lobby
 from scoreboard_ocr import TESSERACT_INSTALL, find_tesseract, read_match_id_file
@@ -86,6 +86,7 @@ class AnalyzerApp:
         self.current = None
         self.page = None
         self.page_token = 0          # bumped on every navigation; stale task results are dropped
+        self.update_tag = None       # a newer release's tag ("v0.2.1"), shown on the Home page
 
         settings = load_settings()
         self.overlay = tk.BooleanVar(value=settings.get("overlay", False))
@@ -120,6 +121,8 @@ class AnalyzerApp:
         delete_old_screenshots()
         threading.Thread(target=self._watch, daemon=True).start()
         threading.Thread(target=self._preload_images, daemon=True).start()
+        if paths.INSTALLED:  # from source, updating is a git pull, not an installer
+            threading.Thread(target=self._check_for_update, daemon=True).start()
 
         self.navigate(HomePage)
         self.set_status("Watching for the scoreboard..." if self.watching else f"Press {HOTKEY.upper()} in game to capture")
@@ -290,6 +293,24 @@ class AnalyzerApp:
                 page_class, options = self.current
                 self.navigate(page_class, push=False, **options)
         self.events.put(ready)
+
+    def _check_for_update(self):
+        """Background: is there a newer release on GitHub? Its answer is kept on disk for 6 hours, so
+        this is one small request now and then (GitHub allows 60 an hour without an account)."""
+        try:
+            tag = deadlock_api.disk_cached("latest_release", lambda: deadlock_api._download(LATEST_RELEASE_API)["tag_name"],
+                                           max_age=6 * 3600)
+        except Exception as e:  # offline, or no release yet (404): nothing to say
+            logger.info(f"Couldn't check for updates ({e})")
+            return
+        if is_newer(tag):
+            logger.info(f"Update available: {tag}")
+            self.events.put(lambda: self.show_update(tag))
+
+    def show_update(self, tag: str):
+        self.update_tag = tag
+        if isinstance(self.page, HomePage):
+            self.navigate(HomePage, push=False)
 
     def hero_names_by_id(self) -> Dict[int, str]:
         return {h["id"]: h["name"] for h in deadlock_api.fetch_heroes()}

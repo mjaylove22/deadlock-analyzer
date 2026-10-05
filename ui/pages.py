@@ -27,11 +27,12 @@ from profiles import (API_GAME_MODES, LOW_SAMPLE_GAMES, MATCH_TYPES, RANK_BANDS,
 import history
 from report import TEAM_TITLES, history_text, team_summary
 from scoreboard_ocr import find_tesseract
+from screenshot_manager import get_screenshot_path
 from settings import get_me, get_preferences, save_settings, set_preference
 from ui import images
 from ui.theme import (BADGE_COLORS, COLORS, FONT, ITEM_SLOT_COLORS, MATCHUP_COLORS, PARTY_COLORS, button, card, dropdown,
                       label, pill, segmented, switch)
-from version import __version__
+from version import DOWNLOAD_URL, __version__
 from ui.charts import (ITEM_DAYS, ITEM_TREND_SPAN, ChartTable, Column, advantage_bar, change_text, change_tip, hero_cell, item_cell,
                        percentile_bar, score_color, trend_cell, trend_chart, trend_color, trend_tip, verdict)
 from ui.widgets import item_tile, item_tooltip_text, tooltip
@@ -56,6 +57,18 @@ def section(parent, title: str) -> tuple:
     outer, inner = card(parent, padding=16)
     label(inner, title.upper(), size=9, color="dim", bold=True, bg="card").pack(anchor="w", pady=(0, 8))
     return outer, inner
+
+
+def account_finder(parent, app):
+    """A Steam-name box with a Find button, for setting your account where the page says to."""
+    row = tk.Frame(parent, bg=COLORS["card"])
+    entry = ctk.CTkEntry(row, width=200, height=32, corner_radius=8, border_width=1, font=(FONT, 11),
+                         placeholder_text="Your Steam name", fg_color=COLORS["button"], border_color=COLORS["card_border"],
+                         text_color=COLORS["text"], placeholder_text_color=COLORS["faint"])
+    entry.pack(side="left")
+    entry.bind("<Return>", lambda event: app.search(entry.get()))
+    button(row, "Find me", lambda: app.search(entry.get()), primary=True).pack(side="left", padx=(8, 0))
+    return row
 
 
 class Page:
@@ -114,6 +127,14 @@ class HomePage(Page):
                          "Click below to install it with Windows' own installer (winget); allow it if Windows asks.",
                   color="dim", bg="card", justify="left", wraplength=900).pack(anchor="w", pady=(4, 10))
             button(inner, "Install Tesseract", self.app.install_tesseract, primary=True).pack(anchor="w")
+        if self.app.update_tag:
+            outer, inner = card(self.frame, padding=14)
+            outer.pack(fill="x", pady=(0, 16))
+            label(inner, f"Version {self.app.update_tag.lstrip('v')} is out (you have {__version__})", size=14, heading=True,
+                  bg="card").pack(anchor="w")
+            label(inner, "Download it and run it: it updates this app and keeps your settings and notes.",
+                  color="dim", bg="card").pack(anchor="w", pady=(4, 10))
+            button(inner, "Download update", lambda: webbrowser.open(DOWNLOAD_URL), primary=True).pack(anchor="w")
 
         grid = tk.Frame(self.frame, bg=COLORS["bg"])
         grid.pack(fill="x")
@@ -137,9 +158,9 @@ class HomePage(Page):
         outer, inner = section(parent, "Your account")
         me = get_me()
         if not me:
-            label(inner, "Tell the app which Steam account is yours,\nso it can always find you and show your matchup.",
+            label(inner, "Start here: find your Steam account, so the app\nknows you in every lobby and shows your matchup.",
                   color="dim", bg="card", justify="left").pack(anchor="w")
-            button(inner, "Find my account", self.app.focus_search, primary=True).pack(anchor="w", pady=(12, 0))
+            account_finder(inner, self.app).pack(anchor="w", pady=(12, 0))
             return outer, inner
         label(inner, me["name"], size=16, heading=True, bg="card").pack(anchor="w")
         row = tk.Frame(inner, bg=COLORS["card"])
@@ -152,8 +173,10 @@ class HomePage(Page):
         outer, inner = section(parent, "Last lobby")
         lobby = self.app.lobby
         if not lobby:
-            label(inner, "No lobby captured yet.", color="dim", bg="card").pack(anchor="w")
-            button(inner, "Analyze latest screenshot", self.app.analyze_latest).pack(anchor="w", pady=(12, 0))
+            label(inner, "In a match, press Esc and open the PLAYERS tab.\nYour lobby appears here a few seconds later.\n"
+                         "Keep Deadlock in English: the app reads its text.", color="dim", bg="card", justify="left").pack(anchor="w")
+            if get_screenshot_path():  # only once there's something to analyse
+                button(inner, "Analyze latest screenshot", self.app.analyze_latest).pack(anchor="w", pady=(12, 0))
             return outer, inner
         label(inner, f"{len(lobby['results'])} players · {clock(lobby['time'])}", size=16, heading=True, bg="card").pack(anchor="w")
         for team, title in TEAM_TITLES.items():
@@ -481,8 +504,9 @@ class SearchPage(Page):
             r["is_me"] = bool(me and r["account_id"] == me["account_id"])
         exact = results[0]["note"] == "exact name"
         count = f"{len(results)} account" + ("" if len(results) == 1 else "s")
-        label(self.body, f"{count} with this exact name. Click one to see their stats." if exact
-              else "No exact match. Closest names:", color="dim").pack(anchor="w", pady=(0, 8))
+        hint = "" if me else "  Is one of them you? Open it and click \"Set as my account\"."
+        label(self.body, (f"{count} with this exact name. Click one to see their stats." if exact
+                          else "No exact match, so these are the closest names.") + hint, color="dim").pack(anchor="w", pady=(0, 8))
         columns = tk.Frame(self.body, bg=COLORS["bg"])
         columns.pack(fill="both", expand=True)
         frames = []
@@ -1519,8 +1543,7 @@ class SetupPage(Page):
         outer, inner = card(self.frame, padding=20)
         outer.pack(fill="x")
         label(inner, "The app doesn't know which Steam account is yours yet.", size=13, heading=True, bg="card").pack(anchor="w")
-        label(inner, "Search your Steam name in the box at the top, open your account, and click "
-                     "\"Set as my account\".\nYou'll then be identified exactly in every lobby, "
-                     "your matchup will show, and this tab will open your stats.",
+        label(inner, "Type your Steam name, open your account, and click \"Set as my account\".\nYou'll then be "
+                     "identified exactly in every lobby, your matchup will show, and this tab will open your stats.",
               color="dim", bg="card", justify="left").pack(anchor="w", pady=(6, 14))
-        button(inner, "Find my account", self.app.focus_search, primary=True).pack(anchor="w")
+        account_finder(inner, self.app).pack(anchor="w")

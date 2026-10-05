@@ -42,7 +42,9 @@ def create_shortcut(path: str) -> None:
 
 def main():
     make_ico()
-    shortcut = os.path.join(desktop_folder(), "Deadlock Analyzer.lnk")
+    # Not "Deadlock Analyzer.lnk": that's the installed app's shortcut, which installing would overwrite
+    # and uninstalling would delete.
+    shortcut = os.path.join(desktop_folder(), "Deadlock Analyzer (source).lnk")
     create_shortcut(shortcut)
     print(f"Created {shortcut}")
 
