@@ -144,6 +144,7 @@ make_shortcut.py     creates the desktop shortcut
 insights.py          stats on the current hero and badge rules
 report.py            wording shared by the terminal and the app
 tests/               unit tests (API calls are mocked)
+tools/privacy_scan.py  pre-commit hook: blocks commits containing real player names or IDs (--install)
 docs/DESIGN.md       design decisions and technology choices
 utils/logger.py      logging to logs/app.log and the console
 ```

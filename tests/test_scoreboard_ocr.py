@@ -69,7 +69,7 @@ class ParsePlayerRowsTests(unittest.TestCase):
         ])
 
     def test_steam_name_that_is_not_a_hero(self):
-        # The original bug: "Grey Mirage" contains no hero name (or a different one), but is still the player
+        # The original bug: "Grey Mirage" contains a different hero's name (Mirage), but is still the player
         rows = parse(["Grey Mirage", "Paradox Level -1"], HEROES)
         self.assertEqual(rows, [("Grey Mirage", "Paradox")])
 
