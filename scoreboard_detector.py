@@ -40,12 +40,28 @@ def reference_tab() -> Image.Image:
     return _reference
 
 
+def pixel_sums(pixels: bytes) -> tuple:
+    """(pixels, sum, n * variance) of a greyscale image's bytes: a reference's are computed once."""
+    total = sum(pixels)
+    return pixels, total, sum(map(operator.mul, pixels, pixels)) - total * total / len(pixels)
+
+
+def correlation(pixels: bytes, reference: tuple) -> float:
+    """Normalised cross-correlation of greyscale bytes with a reference's pixel_sums(): 1.0 = same
+    pattern, ~0 = unrelated or flat. Exact integer sums; sum(map(operator.mul, ...)) keeps the
+    per-pixel work inside Python's C built-ins."""
+    ref, sum_ref, var_ref = reference
+    n = len(pixels)
+    total = sum(pixels)
+    variance = sum(map(operator.mul, pixels, pixels)) - total * total / n
+    covariance = sum(map(operator.mul, pixels, ref)) - total * sum_ref / n
+    return covariance / math.sqrt(variance * var_ref) if variance > 0 and var_ref > 0 else 0.0
+
+
 def _reference_stats() -> tuple:
     global _reference_sums
     if _reference_sums is None:
-        pixels = reference_tab().tobytes()
-        total = sum(pixels)
-        _reference_sums = (pixels, total, sum(map(operator.mul, pixels, pixels)) - total * total / len(pixels))
+        _reference_sums = pixel_sums(reference_tab().tobytes())
     return _reference_sums
 
 
@@ -57,16 +73,10 @@ def tab_difference(tab: Image.Image) -> float:
 def tab_correlation(tab: Image.Image) -> float:
     """Normalised cross-correlation with the reference: 1.0 = same pattern, ~0 = unrelated or flat.
 
-    Exact integer sums; sum(map(operator.mul, ...)) keeps the per-pixel work inside Python's C
-    built-ins, and the reference's sums are computed once: 0.14 ms per check instead of 0.7 ms."""
-    ref, sum_ref, var_ref = _reference_stats()
+    The reference's sums are computed once: 0.14 ms per check instead of 0.7 ms."""
     pixels = tab.convert("L").resize(reference_tab().size).tobytes() if tab.size != reference_tab().size \
         else tab.convert("L").tobytes()
-    n = len(pixels)
-    total = sum(pixels)
-    variance = sum(map(operator.mul, pixels, pixels)) - total * total / n
-    covariance = sum(map(operator.mul, pixels, ref)) - total * sum_ref / n
-    return covariance / math.sqrt(variance * var_ref) if variance > 0 and var_ref > 0 else 0.0
+    return correlation(pixels, _reference_stats())
 
 
 def is_scoreboard_open(tab: Image.Image) -> bool:

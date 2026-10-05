@@ -43,6 +43,7 @@ PREFERENCES = {
     "pop_up": False,             # bring the window to the front when a lobby is captured in game
     "sound": True,               # a sound when the lobby is ready
     "reshow_same_lobby": True,   # reopening the scoreboard in the same lobby shows the lobby again
+    "post_game_review": True,    # the end-of-match screen opens that match's review
     "show_rank": True,
     "show_hero_stats": True,
     "show_badges": True,

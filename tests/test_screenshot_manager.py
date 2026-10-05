@@ -42,6 +42,16 @@ class DeleteOldScreenshotsTests(unittest.TestCase):
         self.assertEqual(delete_old_screenshots(self.dir, max_age_days=7), [])
         self.assertTrue(all(os.path.exists(p) for p in other))
 
+    def test_end_screens_are_cleaned_up_but_never_taken_for_a_lobby(self):
+        from unittest.mock import patch
+        import screenshot_manager
+        old = self.make("endscreen_20260901_120000.png", age_days=10)
+        lobby = self.make("screenshot_20261003_120000.png", age_days=2)
+        self.make("endscreen_20261004_120000.png", age_days=1)  # newer than the lobby screenshot
+        self.assertEqual(delete_old_screenshots(self.dir, max_age_days=7), [old])
+        with patch.object(screenshot_manager, "SCREENSHOT_DIR", self.dir):
+            self.assertEqual(screenshot_manager.get_screenshot_path(), lobby)
+
     def test_missing_folder_is_fine(self):
         self.assertEqual(delete_old_screenshots(os.path.join(self.dir, "nope")), [])
 

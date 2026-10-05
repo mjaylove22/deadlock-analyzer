@@ -14,6 +14,7 @@ import paths
 logger = logging.getLogger(__name__)
 
 SCREENSHOT_NAME = re.compile(r'screenshot_\d{8}_\d{6}\.png')  # e.g. screenshot_20260930_123906.png
+END_SCREEN_NAME = re.compile(r'endscreen_\d{8}_\d{6}\.png')   # end-of-match screens (not lobbies)
 RETENTION_DAYS = 7
 SCREENSHOT_DIR = paths.data("screenshots")
 
@@ -35,6 +36,15 @@ def capture_and_save_screenshot():
         mss.tools.to_png(sct.grab(area).rgb, (area["width"], area["height"]), output=filepath)
 
     return filepath
+
+
+def save_end_screen(image) -> str:
+    """Keep the end-of-match screen the app detected, like other captures (deleted after 7 days).
+    Named apart from lobby screenshots, so "Analyze latest" never picks one up."""
+    os.makedirs(SCREENSHOT_DIR, exist_ok=True)
+    path = os.path.join(SCREENSHOT_DIR, f"endscreen_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
+    image.save(path)
+    return path
 
 
 def get_screenshot_path():
@@ -67,7 +77,7 @@ def delete_old_screenshots(screenshots_dir: str = SCREENSHOT_DIR, max_age_days: 
     deleted = []
     for name in os.listdir(screenshots_dir):
         path = os.path.join(screenshots_dir, name)
-        if not SCREENSHOT_NAME.fullmatch(name):
+        if not (SCREENSHOT_NAME.fullmatch(name) or END_SCREEN_NAME.fullmatch(name)):
             continue
         if os.path.exists(path.replace('.png', '.expected.json')):
             continue

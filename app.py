@@ -35,9 +35,13 @@ from version import __version__
 from matchups import build_matchup
 from player_lookup import analyze_records, read_lobby
 from scoreboard_ocr import read_match_id_file
+import end_screen
+from match_review import get_summary
+from postgame import CHECK_EVERY_S, PostGame, is_our_match
 import game_window
 import layout as layout_module
-from screenshot_manager import SCREENSHOT_DIR, capture_and_save_screenshot, delete_old_screenshots, get_screenshot_path
+from screenshot_manager import (SCREENSHOT_DIR, capture_and_save_screenshot, delete_old_screenshots, get_screenshot_path,
+                                save_end_screen)
 from settings import get_me, get_preferences, load_settings, save_settings
 from ui.pages import (HeroesPage, HeroPage, HomePage, ItemsPage, LobbyPage, MatchPage, PlayerPage, SearchPage,
                       SettingsPage, SetupPage)
@@ -60,6 +64,8 @@ SW_SHOWNOACTIVATE = 4
 OVERLAY_ALPHA = 0.9
 WATCH_INTERVAL_S = 1.0   # how often auto-detect checks for the scoreboard (one check takes ~6 ms)
 SETTLE_S = 0.5           # after the scoreboard appears, wait for the menu animation before capturing
+END_CHECK_INTERVAL_S = 2.0  # how often the end-of-match screen is looked for (one check ~8 ms)
+LOBBY_MATCH_ID_MAX_AGE_S = 90 * 60  # a lobby's match ID stands in for an unreadable end screen this long
 NAV_TABS = [("lobby", "Lobby"), ("heroes", "Heroes"), ("items", "Items"), ("mystats", "My Stats"), ("settings", "Settings")]
 ICON_PATH = paths.resource("assets", "icon.ico")
 
@@ -72,6 +78,7 @@ class AnalyzerApp:
         self.focus_at_capture = None  # title of the focused window when a capture started
         self.lobby = None            # the latest lobby: results, parties, matchup, path, time
         self.last_records = None     # OCR'd lobby shown last, to skip re-analysing the same one
+        self.post_game = None        # PostGame: the finished match whose data the app is waiting for
         self.cache: Dict[Any, Any] = {}
         self.avatars = AvatarCache()
         self.history = []            # pages to go Back to: (page class, options)
@@ -329,8 +336,8 @@ class AnalyzerApp:
         It follows the Deadlock window (any monitor, windowed or not) and does nothing at all while
         the game isn't running. The layout that matches a window size is remembered, so after the
         first time only that one spot is checked (a few ms per second)."""
-        was_open = False
-        last_full_search = 0.0
+        was_open = was_end = False
+        last_full_search = last_end_check = 0.0
         with mss.mss() as sct:  # mss objects can't be shared between threads, so this thread has its own
             while True:
                 time.sleep(WATCH_INTERVAL_S)
@@ -339,7 +346,7 @@ class AnalyzerApp:
                 try:
                     window = game_window.find_window()
                     if window is None:
-                        was_open = False
+                        was_open = was_end = False
                         continue  # game not running: nothing to check
                     left, top, right, bottom = window
                     width, height = right - left, bottom - top
@@ -364,6 +371,15 @@ class AnalyzerApp:
                         if layout_module.check(grab, found):  # still open after the animation
                             self.events.put(lambda: self.capture(auto=True))
                     was_open = is_open
+                    if time.time() - last_end_check >= END_CHECK_INTERVAL_S:
+                        last_end_check = time.time()
+                        end_layout = known or layout_module.candidates(width, height)[0]
+                        is_end = not is_open and end_screen.is_end_screen(grab, end_layout)
+                        if is_end and not was_end:
+                            shot = sct.grab({"left": left, "top": top, "width": width, "height": height})
+                            image = Image.frombytes("RGB", shot.size, shot.rgb)
+                            self.events.put(lambda image=image, end_layout=end_layout: self.match_over(image, end_layout))
+                        was_end = is_end
                 except Exception:
                     logger.exception("Auto-detect check failed")
 
@@ -520,6 +536,85 @@ class AnalyzerApp:
                 user32.SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, flags)
         except Exception:
             logger.exception("Could not bring the window to the front")
+
+    # ---- after a match --------------------------------------------------------------------
+
+    def match_over(self, image, end_layout):
+        """The end-of-match screen appeared: find out which match it was (worker thread: OCR)."""
+        logger.info("End-of-match screen detected")
+        if not get_preferences()["post_game_review"]:
+            return
+        lobby = self.lobby
+        lobby_id = (lobby.get("match_id") if lobby and lobby.get("from_game")
+                    and time.time() - lobby["time"] < LOBBY_MATCH_ID_MAX_AGE_S else None)
+
+        def work():
+            try:
+                save_end_screen(image)
+                read = end_screen.read_end_match_id(image, end_layout)
+            except Exception:
+                logger.exception("Couldn't read the end-of-match screen")
+                read = None
+            if read and lobby_id and read != lobby_id:
+                logger.warning(f"End screen says match {read}, the lobby said match {lobby_id}; using the end screen")
+            match_id = read or lobby_id
+            logger.info(f"Match over: match {match_id} (from {'the end screen' if read else 'the lobby' if match_id else 'nowhere'})")
+            self.events.put(lambda: self.start_post_game(match_id))
+        threading.Thread(target=work, daemon=True).start()
+
+    def start_post_game(self, match_id):
+        if not match_id:
+            self.set_status("Match over, but its match ID couldn't be read. Open the scoreboard during your next match.")
+            return
+        if self.post_game and self.post_game.match_id == match_id:
+            return  # the same match's end screen again (e.g. after looking at another tab)
+        self.post_game = PostGame(match_id)
+        self.set_status(f"Match over · getting match {match_id}...")
+        self.open_match(match_id, "Performance")
+        if get_preferences()["pop_up"]:
+            self.pop_up()
+        self.check_post_game()
+
+    def check_post_game(self):
+        """One check for the finished match's data; repeats every minute until it's ready."""
+        game = self.post_game
+        if not game or game.done:
+            return
+        if game.expired(time.time()):
+            game.done = True
+            logger.info(f"Gave up waiting for match {game.match_id}")
+            self.set_status(f"Match {game.match_id} still isn't available. Try again later from the Lobby or Home page.")
+            self.refresh_post_game_page(game)
+            return
+        names = self.hero_names_by_id()
+
+        def work():
+            summary = game.attempt(lambda match_id, steam: get_summary(match_id, names, steam))
+            self.events.put(lambda: self.post_game_checked(game, summary))
+        threading.Thread(target=work, daemon=True).start()
+
+    def post_game_checked(self, game, summary):
+        if game is not self.post_game:
+            return  # a newer match has ended since
+        if summary is None:
+            logger.info(f"Match {game.match_id} not ready (check {game.checks}): {game.last_error}")
+            self.refresh_post_game_page(game)
+            self.root.after(CHECK_EVERY_S * 1000, self.check_post_game)
+            return
+        lobby = self.lobby
+        lobby_heroes = [r["hero"] for r in lobby["records"]] if lobby and lobby.get("match_id") == game.match_id else []
+        if not is_our_match(summary, get_me(), lobby_heroes):
+            logger.warning(f"Match {game.match_id} doesn't have your account or the lobby's heroes: a misread ID?")
+        logger.info(f"Match {game.match_id} ready after {game.checks} check(s), {game.steam_tries} from Steam")
+        self.set_status(f"Your match review is ready · match {game.match_id}")
+        if get_preferences()["sound"]:
+            self.root.bell()
+        self.refresh_post_game_page(game)
+
+    def refresh_post_game_page(self, game):
+        """Redraw the waiting match page, if that's where the user is."""
+        if isinstance(self.page, MatchPage) and self.page.match_id == game.match_id:
+            self.page.reload()
 
     def analysis_failed(self, error: str):
         self.busy = False

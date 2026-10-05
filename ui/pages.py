@@ -858,6 +858,10 @@ class MatchPage(Page):
 
     def build(self, match_id: int, view: str = "Overview"):
         self.match_id, self.view = match_id, view
+        game = self.app.post_game
+        if game and game.match_id == match_id and not game.done:
+            self.show_waiting(game)  # the app checks for it every minute and redraws this page
+            return
         self.message(f"Loading match {match_id}...")
 
         def work():
@@ -882,6 +886,40 @@ class MatchPage(Page):
 
     def switch_view(self, view: str):
         self.app.navigate(MatchPage, push=False, match_id=self.match_id, view=view)
+
+    def show_waiting(self, game):
+        """Just after a match: its data isn't ready yet. Shows the lobby from the scoreboard meanwhile."""
+        outer, header = card(self.frame, padding=14)
+        outer.pack(fill="x")
+        label(header, "MATCH OVER", size=24, heading=True, bg="card").pack(side="left")
+        label(header, f"match {self.match_id}", size=9, color="faint", bg="card").pack(side="right")
+        minutes = int((time.time() - game.ended_at) // 60)
+        since = "just now" if minutes < 1 else f"{minutes} min ago"
+        body_outer, body = card(self.frame, padding=16)
+        body_outer.pack(fill="x", pady=(10, 0))
+        label(body, "Getting the match data...", size=14, heading=True, bg="card").pack(anchor="w")
+        label(body, "A match's full data appears a few minutes after it ends. This page fills in by itself "
+                    "when it's ready, with how you played on your hero.", color="dim", bg="card",
+              justify="left", wraplength=900).pack(anchor="w", pady=(4, 8))
+        progress = f"Match ended {since} · checked {game.checks} time{'s' if game.checks != 1 else ''}"
+        if game.last_error:
+            progress += f" · {game.last_error}"
+        label(body, progress, size=9, color="faint", bg="card", justify="left", wraplength=900).pack(anchor="w")
+
+        lobby = self.app.lobby
+        if lobby and lobby.get("match_id") == self.match_id and lobby["results"]:
+            columns = tk.Frame(self.frame, bg=COLORS["bg"])
+            columns.pack(fill="x", pady=(10, 0))
+            for c, (team, title) in enumerate(TEAM_TITLES.items()):
+                columns.columnconfigure(c, weight=1, uniform="team")
+                team_outer, box = section(columns, title)
+                team_outer.grid(row=0, column=c, sticky="nsew", padx=(0, 8) if c == 0 else (8, 0))
+                for r in (r for r in lobby["results"] if r["team"] == team):
+                    row = tk.Frame(box, bg=COLORS["card"])
+                    row.pack(fill="x", pady=1)
+                    hero_label(row, r["hero"], "card", size=22).pack(side="left")
+                    label(row, r["player"][:24], color="dim", bg="card").pack(side="left", padx=10)
+        self.app.set_status(f"Match {self.match_id} is over · waiting for its data")
 
     def show(self, r: Dict[str, Any], downloaded):
         self.app.avatars.store(downloaded)
@@ -1324,6 +1362,9 @@ class SettingsPage(Page):
         ("reshow_same_lobby", "Show the lobby again when nothing changed",
          "Reopening the scoreboard in the same lobby (mid-match, or in Street Brawl, where heroes are "
          "known from the start) jumps back to the Lobby page, without looking anyone up again."),
+        ("post_game_review", "Open the match review when a match ends",
+         "When the end-of-match scoreboard appears, jumps to that match's review and fills it in once the "
+         "match data is ready (usually a few minutes), with how you played on your hero."),
     ]
     CARD_PARTS = [
         ("show_rank", "Rank", ""),

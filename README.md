@@ -69,6 +69,8 @@ the Esc menu on the **PLAYERS** tab: **auto-detect** notices the scoreboard, cap
 (a sound plays when it's ready). Reopening the menu in the same lobby doesn't redo the work.
 `Ctrl+Shift+D` still captures on demand.
 
+**When a match ends**, the end-of-match scoreboard is recognised too: the app jumps to that match's review and fills it in once the match data is ready (usually a few minutes), opening on how you played on your hero.
+
 The app has pages, with a **Back** button (or Alt+Left) and the title as a link to **Home**:
 
 | Page | What it shows |
@@ -76,7 +78,7 @@ The app has pages, with a **Back** button (or Alt+Left) and the title as a link 
 | **Home** | Your account, the last lobby, the strongest heroes right now and your recent matches |
 | **Lobby** | Both teams side by side, with your matchup at the bottom. Click any player to open their page. The match ID is read from the screen, and **Review this match** opens the match once it's over |
 | **Matchup** | Opened from the Lobby's matchup strip: an overall read of your hero against this team, your hero with each teammate's hero, and a card per enemy (toughest first) with the player's record on their hero, your win rate against that hero overall and in lane (as bars from your usual), your K/D/A against them, and the items that help most against them. Plus items that win more than usual against the whole team |
-| **Settings** | What happens when the scoreboard opens in game (bring the app to the front without taking focus from the game, a sound, show the lobby again when nothing changed) and what the lobby cards show (rank, current-hero stats, badges, most-played heroes, your matchup) |
+| **Settings** | What happens when the scoreboard opens in game (bring the app to the front without taking focus from the game, a sound, show the lobby again when nothing changed, open the review when a match ends) and what the lobby cards show (rank, current-hero stats, badges, most-played heroes, your matchup) |
 | **Heroes** | Every hero's win rate, pick rate, ban share, games and KDA, for Normal or Street Brawl and any rank band, with a 12-week trend line per hero and whether it's rising, falling or steady. Hover a trend line for each week's numbers; click a heading to sort, or a hero to open it |
 | **Items** | Every shop item: how often it's bought, win rate, tier, cost and typical purchase time, with a 14-day trend line and whether it's rising, falling or steady. By mode, rank band and category (weapon, vitality, spirit); hover a line for each day |
 | **Hero** | **Stats**: a hero's win rate over the last 12 weeks (hover for each week), its best and toughest matchups (against its own average), its most-bought items with icons, and its win rate at every rank, by mode and rank band. **Guide**: what kind of hero it is (type, complexity, gun, health and speed against other heroes), what its abilities do, what players build, and the four abilities with cooldowns |
@@ -136,6 +138,8 @@ player_lookup.py     whole-lobby lookup and command-line report
 matchups.py          your hero vs the enemy heroes, and popular items against them
 profiles.py          player pages (per-hero stats, recent matches, modes) and the hero tier list
 match_review.py      post-game review: condenses a match's data, saved on disk
+end_screen.py        spots the end-of-match screen and reads its match ID
+postgame.py          waits for a finished match's data without wasting Steam fetches
 settings.py          settings.json: window layout and which account is you (stays on your PC)
 paths.py             where shipped files and the app's own files live, from source or installed
 version.py           the version number, shown on the Home page and used by the installer

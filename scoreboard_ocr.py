@@ -248,16 +248,21 @@ MATCH_ID_ATTEMPTS = ((3, 100), (4, 100), (4, 60))  # (upscale, brightness cutoff
 MATCH_ID_PATTERN = re.compile(r"MATCH\W*(\d{9,10})(?!\d)")
 
 
-def read_match_id(image: Image.Image, layout: layout_module.Layout = None, box=MATCH_ID_BOX) -> Optional[int]:
-    """The match ID printed on screen, or None if it can't be read with confidence."""
+def read_match_id(image: Image.Image, layout: layout_module.Layout = None, box=MATCH_ID_BOX,
+                  attempts=MATCH_ID_ATTEMPTS, agree: int = 1) -> Optional[int]:
+    """The match ID printed on screen, or None if it can't be read with confidence.
+    agree=2: two settings must read the same ID (for text where a wrong digit can keep the length)."""
     crop = layout_module.normalized_crop(image, layout or find_layout(image), box).convert("L")
-    for scale, cutoff in MATCH_ID_ATTEMPTS:
+    readings = []
+    for scale, cutoff in attempts:
         prepared = crop.resize((crop.width * scale, crop.height * scale), Image.LANCZOS)
         prepared = prepared.point(lambda v, cutoff=cutoff: 0 if v > cutoff else 255)
         text = pytesseract.image_to_string(prepared, config="--psm 7")  # one line of text
         found = MATCH_ID_PATTERN.search(text.replace(" ", ""))
         if found:
-            return int(found.group(1))
+            readings.append(int(found.group(1)))
+            if readings.count(readings[-1]) >= agree:
+                return readings[-1]
     return None
 
 
