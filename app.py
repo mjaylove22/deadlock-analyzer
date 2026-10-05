@@ -16,6 +16,7 @@ import ctypes
 import logging
 import os
 import queue
+import subprocess
 import sys
 import threading
 import time
@@ -34,7 +35,7 @@ import paths
 from version import __version__
 from matchups import build_matchup
 from player_lookup import analyze_records, read_lobby
-from scoreboard_ocr import read_match_id_file
+from scoreboard_ocr import TESSERACT_INSTALL, find_tesseract, read_match_id_file
 import end_screen
 from match_review import get_summary
 from postgame import CHECK_EVERY_S, PostGame, is_our_match
@@ -435,6 +436,11 @@ class AnalyzerApp:
 
     def start_analysis(self, path: str, auto: bool = False, from_game: bool = False):
         """from_game: captured in game (auto-detect or the hotkey), not opened from a file."""
+        if not find_tesseract():
+            self.busy = False
+            self.navigate(HomePage)  # its banner offers to install it
+            self.set_status("Can't read the screenshot: the Tesseract OCR engine isn't installed (see the Home page).")
+            return
         self.set_status(f"Reading {os.path.basename(path)}...")
         threading.Thread(target=self._analyze, args=(path, auto, from_game), daemon=True).start()
 
@@ -536,6 +542,27 @@ class AnalyzerApp:
                 user32.SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, flags)
         except Exception:
             logger.exception("Could not bring the window to the front")
+
+    def install_tesseract(self):
+        """Install the OCR engine with winget, in its own console window so the user sees it (and
+        Windows' permission prompt), then notice when it's there."""
+        try:
+            subprocess.Popen(TESSERACT_INSTALL, creationflags=subprocess.CREATE_NEW_CONSOLE)
+        except OSError as e:
+            logger.warning(f"Couldn't start winget ({e})")
+            self.set_status("Couldn't start winget. Install Tesseract from github.com/UB-Mannheim/tesseract/wiki instead.")
+            return
+        self.set_status("Installing Tesseract OCR... (allow it if Windows asks)")
+        self.root.after(3000, self.wait_for_tesseract)
+
+    def wait_for_tesseract(self, tries: int = 0):
+        if find_tesseract():
+            logger.info("Tesseract installed")
+            self.set_status("Tesseract installed: the app is ready.")
+            if isinstance(self.page, HomePage):
+                self.page.reload()
+        elif tries < 200:  # 10 minutes
+            self.root.after(3000, lambda: self.wait_for_tesseract(tries + 1))
 
     # ---- after a match --------------------------------------------------------------------
 

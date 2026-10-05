@@ -9,6 +9,7 @@ Usage (debug view of the raw OCR lines and parsed rows):
 import logging
 import os
 import re
+import shutil
 import subprocess
 import sys
 import unicodedata
@@ -24,10 +25,27 @@ import layout as layout_module  # "layout" alone would clash with the local vari
 logger = logging.getLogger(__name__)
 
 # The installed app ships its own trimmed Tesseract; from source, use the normal install if present
-for candidate in (paths.resource("tesseract", "tesseract.exe"), r"C:\Program Files\Tesseract-OCR\tesseract.exe"):
-    if os.path.exists(candidate):
-        pytesseract.pytesseract.tesseract_cmd = candidate
-        break
+TESSERACT_CANDIDATES = (
+    paths.resource("tesseract", "tesseract.exe"),
+    r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+    os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Tesseract-OCR", "tesseract.exe"),
+)
+# How the app installs it when it's missing (winget comes with Windows 10 and 11)
+TESSERACT_INSTALL = ["winget", "install", "-e", "--id", "UB-Mannheim.TesseractOCR",
+                     "--accept-source-agreements", "--accept-package-agreements"]
+
+
+def find_tesseract() -> Optional[str]:
+    """Point pytesseract at Tesseract and return its path, or None if it isn't installed. Cheap, so it
+    can be asked again after installing it, without restarting the app."""
+    for candidate in TESSERACT_CANDIDATES:
+        if os.path.exists(candidate):
+            pytesseract.pytesseract.tesseract_cmd = candidate
+            return candidate
+    return shutil.which("tesseract")
+
+
+find_tesseract()
 
 # Run tesseract with no console at all. pytesseract only asks for a hidden window, so from a
 # windowless app (no console of its own) Windows still creates a console for every OCR run, and on

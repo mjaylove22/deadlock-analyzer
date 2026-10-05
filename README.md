@@ -54,10 +54,16 @@ user only (no admin prompt) and adds Start-menu and desktop shortcuts. Uninstall
 Windows may show **"Windows protected your PC"**, because the installer isn't code-signed: click
 **More info**, then **Run anyway**.
 
-**From source:**
-1. Python 3.13+ and [Tesseract OCR](https://github.com/UB-Mannheim/tesseract/wiki) (installed to `C:\Program Files\Tesseract-OCR`).
-2. `pip install -r requirements.txt`
-3. Optional: `python make_shortcut.py` puts a **Deadlock Analyzer** icon on your desktop.
+**From source** (a git clone, or **Code → Download ZIP** on GitHub, unzipped):
+1. Double-click **`setup.bat`**. It installs whatever is missing with winget (built into Windows 10/11):
+   Python 3.13 and the [Tesseract OCR](https://github.com/UB-Mannheim/tesseract/wiki) engine (Windows asks
+   for permission once), then the Python packages, and puts a **Deadlock Analyzer** icon on your desktop.
+   If it had to install Python, it asks you to run it once more.
+2. Start the app from the desktop icon. If Tesseract is ever missing, the Home page offers to install it.
+3. **To update:** `git pull` in the folder (or download the ZIP again), then run `setup.bat` again.
+
+Doing it by hand instead: Python 3.13+, Tesseract (to `C:\Program Files\Tesseract-OCR`),
+`pip install -r requirements.txt`, and optionally `python make_shortcut.py`.
 
 **Building the installer:** `pip install -r requirements-dev.txt`, `winget install JRSoftware.InnoSetup`,
 then `python installer/build.py`. The installer appears in `dist/`.

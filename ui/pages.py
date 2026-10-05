@@ -23,6 +23,7 @@ from player_lookup import search_player
 from profiles import (API_GAME_MODES, LOW_SAMPLE_GAMES, MATCH_TYPES, RANK_BANDS, hero_rank_curve, hero_tier_list, hero_trends,
                       player_profile, teammates, when)
 from report import TEAM_TITLES, team_summary
+from scoreboard_ocr import find_tesseract
 from settings import get_me, get_preferences, save_settings, set_preference
 from ui import images
 from ui.theme import (BADGE_COLORS, COLORS, ITEM_SLOT_COLORS, MATCHUP_COLORS, PARTY_COLORS, button, card, dropdown,
@@ -102,6 +103,14 @@ class HomePage(Page):
         watching = ("Auto-detect is on: open the Esc menu on the PLAYERS tab in game and your lobby appears here."
                     if self.app.watching else "Auto-detect is off: press Ctrl+Shift+D in game to capture the lobby.")
         label(self.frame, watching, size=11, color="dim").pack(anchor="w", pady=(0, 18))
+        if not find_tesseract():
+            outer, inner = card(self.frame, padding=14)
+            outer.pack(fill="x", pady=(0, 16))
+            label(inner, "One more thing to install: the OCR engine", size=14, heading=True, bg="card").pack(anchor="w")
+            label(inner, "The app reads the scoreboard with Tesseract OCR, a free program that isn't installed yet. "
+                         "Click below to install it with Windows' own installer (winget); allow it if Windows asks.",
+                  color="dim", bg="card", justify="left", wraplength=900).pack(anchor="w", pady=(4, 10))
+            button(inner, "Install Tesseract", self.app.install_tesseract, primary=True).pack(anchor="w")
 
         grid = tk.Frame(self.frame, bg=COLORS["bg"])
         grid.pack(fill="x")
