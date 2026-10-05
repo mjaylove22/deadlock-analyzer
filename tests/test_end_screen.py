@@ -76,5 +76,51 @@ class EndMatchIdTests(unittest.TestCase):
         self.assertEqual(self.read("MATCH 111208456", "MATCH 111203456", "", "MATCH 11120345"), (None, 4))
 
 
+class ScoreboardParsingTests(unittest.TestCase):
+    def test_the_end_screens_number_format(self):
+        self.assertEqual([end_screen.parse_number(t) for t in ("409", "5.0k", "58k", "102k", "0")],
+                         [409, 5000, 58000, 102000, 0])
+        self.assertEqual([end_screen.parse_number(t) for t in (None, "", "k", "5.k", "1.2.3")], [None] * 5)
+
+    def test_most_common_reading_and_ties_go_to_the_longest(self):
+        self.assertEqual(end_screen.most_common(["61k", "6k", "61k"]), "61k")
+        self.assertEqual(end_screen.most_common(["6k", "61k", None]), "61k")  # a dropped 1 is the usual misread
+        self.assertIsNone(end_screen.most_common([None, ""]))
+
+    def test_darkest_channel_keeps_white_and_grey_text_and_drops_coloured_rows(self):
+        pixels = Image.new("RGB", (4, 1))
+        for x, color in enumerate([(240, 240, 240), (111, 105, 91), (81, 50, 45), (60, 90, 160)]):
+            pixels.putpixel((x, 0), color)  # white text, grey text, orange row, blue star
+        values = list(end_screen.darkest_channel(pixels).getdata())
+        self.assertTrue(all(v > end_screen.TEXT_CUTOFF for v in values[:2]))
+        self.assertTrue(all(v < end_screen.TEXT_CUTOFF for v in values[2:]))
+
+
+class LinkPlayersTests(unittest.TestCase):
+    def screen(self):
+        return {"players": [{"name": "Velvet Fox", "hero": "Haze", "account_id": None},
+                            {"name": "Grey Mirage", "hero": "Rem", "account_id": None},
+                            {"name": "Quiet Owl", "hero": "Lash", "account_id": None}]}
+
+    def test_accounts_from_the_lobby_by_hero_and_you_by_account(self):
+        from postgame import link_players
+        screen = self.screen()
+        lobby = [{"player": "Velvet Fox", "hero": "Haze", "account_id": 11},
+                 {"player": "Grey Mirage", "hero": "Rem", "account_id": 22},
+                 {"player": "Not Found", "hero": "Lash"}]  # this player wasn't identified
+        link_players(screen, {"name": "Grey Mirage", "account_id": 22}, lobby)
+        self.assertEqual([p["account_id"] for p in screen["players"]], [11, 22, None])
+        self.assertIs(screen["me"], screen["players"][1])
+
+    def test_without_a_lobby_you_are_found_by_name(self):
+        from postgame import link_players
+        screen = self.screen()
+        link_players(screen, {"name": "grey mirage", "account_id": 22})
+        self.assertEqual(screen["me"]["hero"], "Rem")
+        self.assertEqual(screen["me"]["account_id"], 22)
+        link_players(screen := self.screen(), None)
+        self.assertIsNone(screen["me"])
+
+
 if __name__ == "__main__":
     unittest.main()

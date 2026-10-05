@@ -113,7 +113,10 @@ def rate_player(player: Dict[str, Any], minutes: float, metrics: Dict[str, Dict[
     rows = []
     for stat in STATS:
         metric = metrics.get(stat.metric)
-        value = stat.value(player, minutes)
+        try:
+            value = stat.value(player, minutes)
+        except (KeyError, TypeError):  # not in this data (e.g. read from the end screen, or an old review)
+            value = None
         if value is None or not metric or not metric.get("percentile99"):
             continue
         percentile = percentile_of(value, metric)
@@ -134,9 +137,12 @@ def rate_player(player: Dict[str, Any], minutes: float, metrics: Dict[str, Dict[
     }
 
 
-def length_window(minutes: float) -> tuple:
+def length_window(minutes: Optional[float]) -> tuple:
     """(shortest, longest) match length in whole minutes to compare with: whole minutes, so the
-    12 players of a match (and other matches of a similar length) share the same cached answers."""
+    12 players of a match (and other matches of a similar length) share the same cached answers.
+    (None, None) when the length isn't known: any length."""
+    if not minutes:
+        return None, None
     middle = int(minutes)
     return max(0, middle - MATCH_LENGTH_WINDOW_MIN), middle + MATCH_LENGTH_WINDOW_MIN
 

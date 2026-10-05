@@ -7,9 +7,10 @@ screen), and only while the stored copy still says no. After an hour the app sto
 """
 
 import time
-from typing import Any, Callable, Dict, Iterable, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional
 
 from match_review import MatchUnavailable, steam_fetches_left
+from player_lookup import same_name
 
 CHECK_EVERY_S = 60
 STEAM_AFTER_S = (180, 600, 1500)
@@ -19,8 +20,10 @@ GIVE_UP_AFTER_S = 3600
 class PostGame:
     """One finished match the app is waiting for."""
 
-    def __init__(self, match_id: int, ended_at: Optional[float] = None):
-        self.match_id = match_id
+    def __init__(self, match_id: Optional[int], ended_at: Optional[float] = None,
+                 screen: Optional[Dict[str, Any]] = None):
+        self.match_id = match_id   # None when it couldn't be read: then only the screen's numbers exist
+        self.screen = screen       # the scoreboard read off the end screen (end_screen.read_scoreboard)
         self.ended_at = time.time() if ended_at is None else ended_at
         self.steam_tries = 0
         self.checks = 0
@@ -49,6 +52,25 @@ class PostGame:
             return None
         self.ready = self.done = True
         return summary
+
+
+def link_players(screen: Dict[str, Any], me: Optional[Dict[str, Any]], lobby_results: List[Dict[str, Any]] = ()) -> None:
+    """Give the end screen's players their accounts, from the lobby captured during the match (each
+    hero is played once, so the hero says who's who), and mark which one is you (by account, else by
+    your Steam name). Accounts let the ratings use everyone's rank, and the page link to players."""
+    by_hero = {r["hero"]: r for r in lobby_results if r.get("account_id")}
+    for p in screen["players"]:
+        known = by_hero.get(p["hero"])
+        if known:
+            p["account_id"] = known["account_id"]
+            p["name"] = known.get("player") or p["name"]
+    mine = None
+    if me:
+        mine = (next((p for p in screen["players"] if p["account_id"] == me["account_id"]), None)
+                or next((p for p in screen["players"] if p["name"] and same_name(p["name"], me["name"])), None))
+        if mine:
+            mine["account_id"] = me["account_id"]
+    screen["me"] = mine
 
 
 def is_our_match(summary: Dict[str, Any], me: Optional[Dict[str, Any]], lobby_heroes: Iterable[str] = ()) -> bool:

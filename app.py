@@ -38,7 +38,7 @@ from player_lookup import analyze_records, read_lobby
 from scoreboard_ocr import TESSERACT_INSTALL, find_tesseract, read_match_id_file
 import end_screen
 from match_review import get_summary
-from postgame import CHECK_EVERY_S, PostGame, is_our_match
+from postgame import CHECK_EVERY_S, PostGame, is_our_match, link_players
 import game_window
 import layout as layout_module
 from screenshot_manager import (SCREENSHOT_DIR, capture_and_save_screenshot, delete_old_screenshots, get_screenshot_path,
@@ -567,37 +567,46 @@ class AnalyzerApp:
     # ---- after a match --------------------------------------------------------------------
 
     def match_over(self, image, end_layout):
-        """The end-of-match screen appeared: find out which match it was (worker thread: OCR)."""
+        """The end-of-match screen appeared (after a match, or a past match opened in game): read
+        its scoreboard and match ID (worker thread: OCR, ~2 s)."""
         logger.info("End-of-match screen detected")
         if not get_preferences()["post_game_review"]:
             return
         lobby = self.lobby
-        lobby_id = (lobby.get("match_id") if lobby and lobby.get("from_game")
-                    and time.time() - lobby["time"] < LOBBY_MATCH_ID_MAX_AGE_S else None)
+        recent = lobby if lobby and lobby.get("from_game") and time.time() - lobby["time"] < LOBBY_MATCH_ID_MAX_AGE_S else None
+        lobby_id = recent.get("match_id") if recent else None
+        names = list(self.hero_names_by_id().values())
 
         def work():
+            read, screen = None, None
             try:
                 save_end_screen(image)
                 read = end_screen.read_end_match_id(image, end_layout)
+                screen = end_screen.read_scoreboard(image, end_layout, names)
             except Exception:
                 logger.exception("Couldn't read the end-of-match screen")
-                read = None
             if read and lobby_id and read != lobby_id:
                 logger.warning(f"End screen says match {read}, the lobby said match {lobby_id}; using the end screen")
             match_id = read or lobby_id
-            logger.info(f"Match over: match {match_id} (from {'the end screen' if read else 'the lobby' if match_id else 'nowhere'})")
-            self.events.put(lambda: self.start_post_game(match_id))
+            if screen:
+                # The lobby belongs to this match if its ID matches (or no ID was read at all)
+                same_match = recent and (not read or read == lobby_id)
+                link_players(screen, get_me(), recent["results"] if same_match else [])
+                screen["match_id"] = match_id
+            logger.info(f"Match over: match {match_id} (from {'the end screen' if read else 'the lobby' if match_id else 'nowhere'}); "
+                        f"scoreboard: {len(screen['players']) if screen else 0} players read")
+            self.events.put(lambda: self.start_post_game(match_id, screen))
         threading.Thread(target=work, daemon=True).start()
 
-    def start_post_game(self, match_id):
-        if not match_id:
-            self.set_status("Match over, but its match ID couldn't be read. Open the scoreboard during your next match.")
+    def start_post_game(self, match_id, screen=None):
+        if not match_id and not screen:
+            self.set_status("Match over, but the end screen couldn't be read.")
             return
-        if self.post_game and self.post_game.match_id == match_id:
+        if match_id and self.post_game and self.post_game.match_id == match_id:
             return  # the same match's end screen again (e.g. after looking at another tab)
-        self.post_game = PostGame(match_id)
-        self.set_status(f"Match over · getting match {match_id}...")
-        self.open_match(match_id, "Performance")
+        self.post_game = PostGame(match_id, screen=screen)
+        self.set_status("Match over" + (f" · getting the full data for match {match_id}..." if match_id else ""))
+        self.open_match(match_id or 0, "Performance")  # 0: the screen's numbers only
         if get_preferences()["pop_up"]:
             self.pop_up()
         self.check_post_game()
@@ -605,7 +614,7 @@ class AnalyzerApp:
     def check_post_game(self):
         """One check for the finished match's data; repeats every minute until it's ready."""
         game = self.post_game
-        if not game or game.done:
+        if not game or game.done or not game.match_id:
             return
         if game.expired(time.time()):
             game.done = True

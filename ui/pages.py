@@ -868,7 +868,11 @@ class MatchPage(Page):
     def build(self, match_id: int, view: str = "Overview"):
         self.match_id, self.view = match_id, view
         game = self.app.post_game
-        if game and game.match_id == match_id and not game.done:
+        just_ended = game is not None and (game.match_id or 0) == match_id
+        if just_ended and game.screen and not game.ready:
+            self.show_screen_review(game)  # the end screen's numbers, until the full data arrives
+            return
+        if just_ended and not game.done:
             self.show_waiting(game)  # the app checks for it every minute and redraws this page
             return
         self.message(f"Loading match {match_id}...")
@@ -889,12 +893,46 @@ class MatchPage(Page):
         def failed(error):
             self.clear(self.frame)
             self.heading(f"Match {match_id}")
-            self.message(str(error) if isinstance(error, MatchUnavailable) else f"Couldn't load this match ({error}).")
+            self.message(str(error) + "\n\nOpen this match in game (its end screen, or from your match history) and the app "
+                         "reads how everyone played straight from the screen." if isinstance(error, MatchUnavailable)
+                         else f"Couldn't load this match ({error}).")
             self.app.set_status(f"Match {match_id} couldn't be loaded")
         self.app.run_task(work, lambda result: self.show(*result), failed)
 
     def switch_view(self, view: str):
         self.app.navigate(MatchPage, push=False, match_id=self.match_id, view=view)
+
+    def show_screen_review(self, game):
+        """Straight after a match: how everyone played, from the numbers on the end screen. The full
+        review (build, net-worth chart, accuracy) replaces it once the API has the match."""
+        r = self.review = game.screen
+        me = r.get("me")
+        self.my_team = me["team"] if me else 0
+        self.view, self.score_slot = "Performance", None
+        outer, header = card(self.frame, padding=14)
+        outer.pack(fill="x")
+        won = None if not me or r["winning_team"] is None else r["winning_team"] == me["team"]
+        result, color = {True: ("VICTORY", "win"), False: ("DEFEAT", "loss"), None: ("MATCH OVER", "text")}[won]
+        label(header, result, size=24, heading=True, color=color, bg="card").pack(side="left")
+        if me:
+            hero_label(header, me["hero"], "card", size=34, font_size=13).pack(side="left", padx=18)
+        facts = [r["mode"]] + ([f"{r['minutes']:.0f} min"] if r["minutes"] else []) + ["read from the end-of-match screen"]
+        label(header, " · ".join(facts), color="dim", bg="card").pack(side="left", padx=(6, 0))
+        if self.match_id:
+            label(header, f"match {self.match_id}", size=9, color="faint", bg="card").pack(side="right")
+        if not game.match_id:
+            note = "The match ID couldn't be read, so this is what the end screen shows."
+        elif not game.done:
+            note = (f"Your build, the net-worth chart and accuracy are added here when the full match data is ready "
+                    f"(checked {game.checks} time{'s' if game.checks != 1 else ''}).")
+        else:
+            note = "The full match data isn't available yet: try Review this match later."
+        label(self.frame, note, size=9, color="faint").pack(anchor="w", pady=(8, 0))
+        self.body = tk.Frame(self.frame, bg=COLORS["bg"])
+        self.body.pack(fill="both", expand=True)
+        self.message("Comparing everyone's stats with other players on the same heroes...", self.body)
+        self.load_ratings()
+        self.app.set_status("Match over · how everyone played, from the end screen")
 
     def show_waiting(self, game):
         """Just after a match: its data isn't ready yet. Shows the lobby from the scoreboard meanwhile."""
@@ -1040,7 +1078,8 @@ class MatchPage(Page):
     # --- performance
     def load_ratings(self):
         """Rate everyone after the page is shown: one request per hero (~3 s the first time)."""
-        cached = self.app.cache.get(("ratings", self.match_id))
+        self.ratings_key = ("ratings", self.match_id, self.review.get("source", "api"))  # screen and API differ
+        cached = self.app.cache.get(self.ratings_key)
         if cached:
             self.ratings_ready(cached)
             return
@@ -1053,7 +1092,7 @@ class MatchPage(Page):
             self.unavailable(self.body, "the performance ratings", bg="bg")
 
     def ratings_ready(self, rated: Dict[str, Any]):
-        self.app.cache[("ratings", self.match_id)] = rated
+        self.app.cache[self.ratings_key] = rated
         self.rated = rated
         players = self.review["players"]
         me = self.review.get("me")
@@ -1094,13 +1133,14 @@ class MatchPage(Page):
               wraplength=380).pack(anchor="w", pady=(0, 6))
         me = self.review.get("me")
         for team in (self.my_team, 1 - self.my_team):
-            won = team == self.review["winning_team"]
             title = ("Your team" if me and team == self.my_team else "Enemy team" if me else f"Team {team + 1}")
             head = tk.Frame(everyone, bg=COLORS["card"])
             head.pack(fill="x", pady=(8, 2))
             label(head, title, size=11, heading=True, bg="card",
                   color="friendly" if team == self.my_team else "enemy").pack(side="left")
-            label(head, "won" if won else "lost", bg="card", color="win" if won else "loss").pack(side="left", padx=8)
+            if self.review["winning_team"] is not None:
+                won = team == self.review["winning_team"]
+                label(head, "won" if won else "lost", bg="card", color="win" if won else "loss").pack(side="left", padx=8)
             members = sorted((i for i, p in enumerate(players) if p["team"] == team),
                              key=lambda i: -((ratings[i] or {}).get("score") or -1))
             for i in members:
@@ -1132,7 +1172,8 @@ class MatchPage(Page):
               color=score_color(rating["score"])).pack(side="right", padx=10, pady=(10, 0))
         low, high = self.rated["window"]
         band = "all ranks" if self.rated["band"] == "All ranks" else self.rated["band"]
-        label(box, f"Compared with {hero} players at {band}, in {low}-{high} minute matches, "
+        length = f"in {low}-{high} minute matches" if low is not None else "in matches of any length"
+        label(box, f"Compared with {hero} players at {band}, {length}, "
                    f"over the last 30 days. The score averages souls, damage, KDA, deaths and objective damage.",
               size=9, color="faint", bg="card", justify="left", wraplength=620).pack(anchor="w", pady=(6, 10))
 

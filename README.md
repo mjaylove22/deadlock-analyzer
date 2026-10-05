@@ -75,7 +75,7 @@ the Esc menu on the **PLAYERS** tab: **auto-detect** notices the scoreboard, cap
 (a sound plays when it's ready). Reopening the menu in the same lobby doesn't redo the work.
 `Ctrl+Shift+D` still captures on demand.
 
-**When a match ends**, the end-of-match scoreboard is recognised too: the app jumps to that match's review and fills it in once the match data is ready (usually a few minutes), opening on how you played on your hero.
+**When a match ends** (or when you open a past match from the in-game match history), the app reads the end-of-match scoreboard straight from the screen and shows how everyone played on their hero right away. The full review (your build, the net-worth chart) is added once the match data reaches the public API.
 
 The app has pages, with a **Back** button (or Alt+Left) and the title as a link to **Home**:
 
