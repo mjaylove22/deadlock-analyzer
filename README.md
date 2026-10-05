@@ -1,12 +1,75 @@
 # Deadlock Analyzer
 
-Reads the in-game scoreboard of Valve's **Deadlock** from a screenshot and looks up each player's public stats.
+### [⬇ Download for Windows](https://github.com/mjaylove22/deadlock-analyzer/releases/latest/download/DeadlockAnalyzer-Setup.exe)
 
-```
-screenshot ──► OCR (Tesseract) ──► player / hero / team ──► public Deadlock API ──► favourite heroes, win rates
-```
+Free · Windows 10 and 11 · 28 MB · [what's new](https://github.com/mjaylove22/deadlock-analyzer/releases/latest)
 
-For every player in the lobby, the app shows:
+See who's in your Deadlock match. Open the scoreboard in game and, a few seconds later, the app shows every
+player's rank, their record on the hero they're playing, their favourite heroes, who's queued together, and
+whether you've played with or against them before. When the match ends, it shows how everyone played compared
+with other players on the same hero.
+
+![The lobby page: both teams side by side, with each player's rank, stats on their hero and badges](docs/screenshot.png)
+
+<sub>Player names in this picture are made up.</sub>
+
+## Install
+
+1. **Click [Download for Windows](https://github.com/mjaylove22/deadlock-analyzer/releases/latest/download/DeadlockAnalyzer-Setup.exe).**
+   If your browser says the file *isn't commonly downloaded*, choose **Keep** (in Edge: **...** then **Keep**,
+   then **Show more**, then **Keep anyway**).
+2. **Open the downloaded file.** Windows will probably say **"Windows protected your PC"**. Click
+   **More info**, then **Run anyway**.
+3. Click **Install**. It doesn't ask for an administrator password, and it adds the app to the Start menu
+   and your desktop.
+
+**Why Windows warns you:** Windows warns about any program it hasn't seen many people run, unless the
+developer has bought a code-signing certificate. This is a free hobby project without one. Everything in
+the installer is built from the code on this page, which anyone can read.
+
+**"Smart App Control blocked an app"** (some Windows 11 PCs, with no Run anyway button): Smart App Control
+only runs code-signed programs it doesn't already know, and this version isn't signed yet. Free code signing
+for open-source projects is being set up so a later version installs there too. Please don't turn Smart App
+Control off just for this app.
+
+## First steps
+
+1. **Find your account.** On the app's Home page, type your Steam name and click **Find me**. Open the
+   account that's yours (check the picture and the number of games), then click **Set as my account**.
+   The app then recognises you in every lobby and shows your matchup.
+2. **Play.** Leave the app open (a second monitor is ideal). During a match, press **Esc** and open the
+   **PLAYERS** tab. The app notices, reads the scoreboard and shows the lobby a few seconds later, with a sound.
+   You can close the menu straight away.
+3. **After the match**, the end-of-match scoreboard opens a review of how everyone played.
+
+Good to know:
+- **Deadlock must be set to English.** The app reads the words on the screen.
+- It works in **fullscreen** and in windowed modes. The **Overlay** switch (the app floating over the
+  game) only works in **borderless windowed** mode.
+- **Ctrl+Shift+D** captures the scoreboard by hand, if it's ever missed.
+
+**Updating:** when there's a new version, the app's Home page says so. Click **Download update** and run it;
+your settings and notes are kept. **Uninstalling:** Windows Settings, **Apps**, **Installed apps**,
+Deadlock Analyzer. That also removes its settings, notes and screenshots.
+
+## Is it safe to use with the game?
+
+The app only **looks at your screen**, the way Discord or OBS screen sharing does, and reads the text in
+those screenshots. It never reads or changes the game's memory, never injects anything into the game, never
+edits game files and never presses keys or moves the mouse for you. Those are the things cheats do and
+anti-cheat looks for. The one keyboard shortcut it listens for (Ctrl+Shift+D) works like Discord's
+push-to-talk key.
+
+Valve doesn't approve or certify third-party tools, so nobody can promise you anything on Valve's behalf.
+But nothing this app does touches the game itself.
+
+**Your data:** stats come from the public [Deadlock API](https://deadlock-api.com), which the app asks about
+the Steam names it sees. Your settings, your notes on players and the screenshots stay on your PC, and
+screenshots are deleted after 3 days.
+
+## What it shows
+
+For every player in the lobby:
 
 - **Stats on the hero they're playing right now:** games, win rate, KDA, damage per minute
 - **Badges:** ONE-TRICK, ON MAIN, COMFORT PICK, NEW ON HERO, FIRST GAME ON HERO, HIGH WR / LOW WR, VETERAN
@@ -14,24 +77,54 @@ For every player in the lobby, the app shows:
 - **Parties:** friends queued together on the same team share a colour
 - **Their Steam avatar**, **most-played heroes** (by games played, with win rate) and a clickable profile
 - **ID UNSURE** when the account match is a close call, so you know when not to trust it
-- **NAME FIXED** when OCR misread one character of a name and the real Steam name was found
+- **NAME FIXED** when the app misread one character of a name and found the real Steam name
 - **Your history with them**: `FACED 3× · 2-1` (matches against them, your wins-losses) or `ALLY 4× · 1-3`
-  (with them), and **your own note** on them. In a typical lobby about 3 players are people you've met before.
+  (with them), and **your own note** on them
 
-Both teams sit side by side, so a full 6v6 lobby fits on one screen without scrolling. Heroes are shown
-with their portraits and ranks with their emblems (downloaded once, then kept in a local `cache/` folder).
+**Your matchup** (once you've set your account) appears at the bottom: your hero's win rate against each
+enemy hero compared with its usual (red = harder, green = easier), and the items that help against this team.
 
-**Your matchup** (once the app knows which account is yours) appears in a strip at the bottom: your
-hero's win rate against each enemy hero, compared with your hero's average (red = harder than usual,
-green = easier), and the items most often bought by your hero against this enemy team. Items are shown
-with their in-game icons; hover over one for its cost and how often it's bought.
+The app has pages, with a **Back** button (or Alt+Left) and the title as a link to **Home**:
 
-## Ground rules
+| Page | What it shows |
+|---|---|
+| **Home** | Your account, the last lobby, the strongest heroes right now and your recent matches |
+| **Lobby** | Both teams side by side, with your matchup at the bottom. Click any player to open their page. **Review this match** opens the match once it's over |
+| **Matchup** | Your hero against this team: with each teammate's hero, and a card per enemy (toughest first) with the player's record on their hero, your win rate against that hero, your K/D/A against them and the items that help most |
+| **Settings** | What happens when the scoreboard opens in game (bring the app to the front without taking focus from the game, a sound, open the review when a match ends) and what the lobby cards show |
+| **Heroes** | Every hero's win rate, pick rate, ban share, games and KDA, by mode and rank, with a 12-week trend line per hero |
+| **Items** | Every shop item: how often it's bought, win rate, tier, cost and typical purchase time, with a 14-day trend |
+| **Hero** | **Stats**: win rate over 12 weeks, best and toughest matchups, most-bought items and win rate at every rank. **Guide**: what kind of hero it is, what its abilities do and what players build |
+| **My Stats** | Your own player page |
+| **Player** | Rank, games and win rate for ranked, unranked and Street Brawl, your record with them, a note box (kept only on your PC), who they play with most, per-hero stats and recent matches |
+| **Match review** | **Overview**: victory or defeat, your K/D/A, net worth, damage, healing and last hits against your usual on that hero, your build, the net-worth lead over time and both scoreboards. **Performance**: every stat against other players on the same hero, at the same rank, in matches of a similar length ("better than 82% of Kelvin players"), and a score for every player |
+| **Search** | Type any Steam name in the top bar to see every account with that name, or a **match ID** to open its review |
 
-The tool works **only from screenshots** and public web data. It does not read game memory, inject code,
-modify game files, automate input, or interact with anti-cheat in any way.
+**Overlay** keeps the window semi-transparent and on top of the game (borderless windowed only). While it's on,
+the window is hidden from screen capture so it never covers the scoreboard in its own screenshots; that also
+hides it from Discord/OBS streams. With overlay off, it shows up in screen sharing normally.
 
-## How it works
+## Limitations
+
+- **Screen sizes:** built and checked on real 1920x1080 screenshots. Other sizes (1440p, 4K, ultrawide, 16:10)
+  are found automatically and tested with simulated screenshots; real ones are still needed to confirm them.
+- Some players can't be found: Steam names aren't unique, the screen text is occasionally misread, and some
+  accounts aren't in the public API. Unsure matches are marked rather than guessed.
+- The full match review (build, net-worth chart) appears once the match reaches the public API, which can take
+  a while; bot matches never do. The end-of-match screen is read straight away in the meantime.
+- **Ban share** is each hero's part of all recorded bans, not a ban rate (the API doesn't say how many matches
+  the bans came from). The ranking is the same either way.
+- Hero stats and badges count normal matches; Street Brawl and bot matches aren't included.
+
+---
+
+## For developers
+
+### How it works
+
+```
+screenshot ──► OCR (Tesseract) ──► player / hero / team ──► public Deadlock API ──► favourite heroes, win rates
+```
 
 1. **Capture**: the app (`app.py`) runs in the background and takes a screenshot when the scoreboard opens
    (auto-detect) or when you press `Ctrl+Shift+D`.
@@ -45,91 +138,42 @@ modify game files, automate input, or interact with anti-cheat in any way.
    - Friends on the same team are reported as a party.
    - Players whose name equals their hero (bots in bot lobbies) are skipped.
 
-## Install
+**Ground rules:** screenshots and public web data only. No game memory reading, code injection, game-file
+edits (including Valve's game-state-integration config), input automation or anti-cheat interaction.
 
-**Windows 10/11:** download `DeadlockAnalyzer-Setup-<version>.exe` from
-[Releases](https://github.com/mjaylove22/deadlock-analyzer/releases) and run it. Python and Tesseract are
-included, so nothing else is needed (28 MB download, 87 MB installed). It installs for your Windows
-user only (no admin prompt) and adds Start-menu and desktop shortcuts. Uninstalling it from Windows'
-*Installed apps* list also removes its settings, cache and screenshots.
+For the reasoning behind every design decision, see [docs/DESIGN.md](docs/DESIGN.md).
 
-Windows may show **"Windows protected your PC"**, because the installer isn't code-signed: click
-**More info**, then **Run anyway**.
+### Running from source
 
-**From source** (a git clone, or **Code → Download ZIP** on GitHub, unzipped):
-1. Double-click **`setup.bat`**. It installs whatever is missing with winget (built into Windows 10/11):
+1. Get the code (a git clone, or **Code → Download ZIP** on GitHub, unzipped).
+2. Double-click **`setup.bat`**. It installs whatever is missing with winget (built into Windows 10/11):
    Python 3.13 and the [Tesseract OCR](https://github.com/UB-Mannheim/tesseract/wiki) engine (Windows asks
-   for permission once), then the Python packages, and puts a **Deadlock Analyzer** icon on your desktop.
-   If it had to install Python, it asks you to run it once more.
-2. Start the app from the desktop icon. If Tesseract is ever missing, the Home page offers to install it.
-3. **To update:** `git pull` in the folder (or download the ZIP again), then run `setup.bat` again.
+   for permission once), then the Python packages, and puts a **Deadlock Analyzer (source)** icon on your
+   desktop. If it had to install Python, it asks you to run it once more.
+3. Start the app from that icon. If Tesseract is ever missing, the Home page offers to install it.
+4. **To update:** `git pull` in the folder (or download the ZIP again), then run `setup.bat` again.
 
-Doing it by hand instead: Python 3.13+, Tesseract (to `C:\Program Files\Tesseract-OCR`),
+By hand instead: Python 3.13+, Tesseract (to `C:\Program Files\Tesseract-OCR`),
 `pip install -r requirements.txt`, and optionally `python make_shortcut.py`.
 
-**Building the installer:** `pip install -r requirements-dev.txt`, `winget install JRSoftware.InnoSetup`,
-then `python installer/build.py`. The installer appears in `dist/`.
-
-## Usage
-
-**App:** start it from the desktop or Start-menu icon (from source: `Deadlock Analyzer.pyw`) and leave it running. In game, just open
-the Esc menu on the **PLAYERS** tab: **auto-detect** notices the scoreboard, captures it and shows the lobby
-(a sound plays when it's ready). Reopening the menu in the same lobby doesn't redo the work.
-`Ctrl+Shift+D` still captures on demand.
-
-**When a match ends** (or when you open a past match from the in-game match history), the app reads the end-of-match scoreboard straight from the screen and shows how everyone played on their hero right away. The full review (your build, the net-worth chart) is added once the match data reaches the public API.
-
-The app has pages, with a **Back** button (or Alt+Left) and the title as a link to **Home**:
-
-| Page | What it shows |
-|---|---|
-| **Home** | Your account, the last lobby, the strongest heroes right now and your recent matches |
-| **Lobby** | Both teams side by side, with your matchup at the bottom. Click any player to open their page. The match ID is read from the screen, and **Review this match** opens the match once it's over |
-| **Matchup** | Opened from the Lobby's matchup strip: an overall read of your hero against this team, your hero with each teammate's hero, and a card per enemy (toughest first) with the player's record on their hero, your win rate against that hero overall and in lane (as bars from your usual), your K/D/A against them, and the items that help most against them. Plus items that win more than usual against the whole team |
-| **Settings** | What happens when the scoreboard opens in game (bring the app to the front without taking focus from the game, a sound, show the lobby again when nothing changed, open the review when a match ends) and what the lobby cards show (rank, current-hero stats, badges, most-played heroes, your history with them, your matchup) |
-| **Heroes** | Every hero's win rate, pick rate, ban share, games and KDA, for Normal or Street Brawl and any rank band, with a 12-week trend line per hero and whether it's rising, falling or steady. Hover a trend line for each week's numbers; click a heading to sort, or a hero to open it |
-| **Items** | Every shop item: how often it's bought, win rate, tier, cost and typical purchase time, with a 14-day trend line and whether it's rising, falling or steady. By mode, rank band and category (weapon, vitality, spirit); hover a line for each day |
-| **Hero** | **Stats**: a hero's win rate over the last 12 weeks (hover for each week), its best and toughest matchups (against its own average), its most-bought items with icons, and its win rate at every rank, by mode and rank band. **Guide**: what kind of hero it is (type, complexity, gun, health and speed against other heroes), what its abilities do, what players build, and the four abilities with cooldowns |
-| **My Stats** | Your own player page |
-| **Player** | Avatar, rank, games and win rate for ranked, unranked and Street Brawl, your record with them (and a link to your last match together), a note box (kept only on your PC, shown on their lobby card), who they play with most, a sortable per-hero table (All / Ranked / Unranked / Street Brawl) and recent matches with their type (click one for its review) |
-| **Match review** | A finished match. **Overview**: victory or defeat, your K/D/A, net worth, damage, healing and last hits with your place in the lobby and how they compare with your usual on that hero, your final build, the net-worth lead over time and both scoreboards. **Performance**: every stat against other players on the same hero, at the same rank, in matches of a similar length ("better than 82% of Kelvin players"), your strengths and weak spots, a score from Rough game to Great game, and every player's score |
-| **Search** | Type any Steam name in the top bar to see every account with that name, or a **match ID** to open its review |
-
-- **Set your account:** search your Steam name, open your account and click **Set as my account**. You're
-  then identified exactly in every lobby (even if others share your name) and your matchup appears.
-- **Overlay** keeps the window semi-transparent and on top of the game (needs **borderless windowed**
-  mode). While overlay is on, the window is hidden from screen capture so it never covers the
-  scoreboard in its own screenshots; that also hides it from Discord/OBS streams. With overlay off, it
-  shows up in screen sharing normally.
-- Screenshots older than **3 days are deleted automatically** (except ones kept as test cases), so
-  they take ~35 MB at most even on a busy week.
-- **Light:** ~3,400 lines of Python, about 70 MB of memory, the window opens in ~0.4 s, and the local
-  cache stays around 2 MB. API answers are reused for a few minutes, so going Back or revisiting a
-  page is instant. The biggest piece is the Tesseract OCR engine (~116 MB, installed separately).
-
-**Terminal:**
-
 ```bash
+python "Deadlock Analyzer.pyw"      # the app
 python player_lookup.py             # report for the latest screenshot (or pass a path)
 python scoreboard_ocr.py            # debug view: raw OCR lines and parsed rows
 python -m unittest discover -s tests -v
 ```
 
-## Limitations
+### Building the installer
 
-- **Screen sizes:** built and verified on real 1920x1080 screenshots. Other sizes (1440p, 4K, ultrawide,
-  16:10, smaller screens) are located automatically and tested with **simulated** screenshots; real
-  screenshots at those sizes are still needed to confirm how Deadlock lays out its UI there.
-- Works on any monitor and in windowed mode (it captures the Deadlock window itself).
-- OCR occasionally garbles a line; that player is skipped rather than guessed. One misread letter in a
-  hero name, and dropped or added spaces in names, are handled.
-- Match reviews appear a while after a match ends (bot matches never do). Matches the API hasn't stored
-  yet are fetched from Steam, which is limited to 3 an hour, so failed matches aren't retried for 10 minutes.
-- **Ban share** is each hero's part of all recorded bans, not a ban rate: the API gives ban counts but not
-  how many matches they came from. The ranking is the same either way.
-- Hero stats and badges count normal matches only (the API default); Street Brawl and bot matches aren't included.
+`pip install -r requirements-dev.txt`, `winget install JRSoftware.InnoSetup`, then `python installer/build.py`.
+`dist/` then holds `DeadlockAnalyzer-Setup-<version>.exe` (PyInstaller one-folder app with a trimmed
+Tesseract, wrapped by Inno Setup). Each GitHub release carries it under that name and as
+`DeadlockAnalyzer-Setup.exe`, which is what the download link above points to.
 
-## Project layout
+**Light:** about 80 MB of memory, the window opens in about a second, and the local cache stays around 2 MB.
+API answers are reused for a few minutes, so going Back or revisiting a page is instant.
+
+### Project layout
 
 ```
 app.py               desktop app: window, navigation, background tasks, capture and auto-detect
@@ -147,13 +191,13 @@ player_lookup.py     whole-lobby lookup and command-line report
 matchups.py          your hero vs the enemy heroes, and popular items against them
 profiles.py          player pages (per-hero stats, recent matches, modes) and the hero tier list
 match_review.py      post-game review: condenses a match's data, saved on disk
-end_screen.py        spots the end-of-match screen and reads its match ID
+end_screen.py        spots the end-of-match screen and reads its scoreboard and match ID
 postgame.py          waits for a finished match's data without wasting Steam fetches
 settings.py          settings.json: window layout and which account is you (stays on your PC)
 paths.py             where shipped files and the app's own files live, from source or installed
-version.py           the version number, shown on the Home page and used by the installer
+version.py           the version number and release links (shown on Home, used by the installer)
 installer/           build.py (Tesseract trim + PyInstaller + Inno Setup), setup.iss, licence notices
-make_shortcut.py     creates the desktop shortcut
+make_shortcut.py     creates the from-source desktop shortcut
 performance.py       how well someone played their hero: stats as percentiles among players on that hero
 insights.py          stats on the current hero and badge rules
 history.py           your history with other players: matches with/against them, and your notes (notes.json)
@@ -163,8 +207,6 @@ tools/privacy_scan.py  pre-commit hook: blocks commits containing real player na
 docs/DESIGN.md       design decisions and technology choices
 utils/logger.py      logging to logs/app.log and the console
 ```
-
-For the reasoning behind the design, see [docs/DESIGN.md](docs/DESIGN.md).
 
 ## License
 
