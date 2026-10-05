@@ -49,6 +49,7 @@ PREFERENCES = {
     "show_badges": True,
     "show_most_played": True,
     "show_matchup": True,
+    "show_history": True,        # your record with each player, and your notes on them
 }
 
 

@@ -27,6 +27,7 @@ screenshot ──► crop ──► Tesseract OCR ──► lines + positions �
 | `identity.py` | Decide which same-named account is which; detect parties. Pure logic, no network | standard library only |
 | `player_lookup.py` | Fetch candidates and stats for the whole lobby; `analyze_screenshot()` runs the full pipeline | `scoreboard_ocr`, `deadlock_api`, `identity` |
 | `insights.py` | Stats on the current hero and badge rules (one-trick, new on hero, ...). Pure logic, no network | standard library only |
+| `history.py` | Your history with other players: matches with/against them (API, cached a day) and your notes (notes.json) | `deadlock_api` |
 | `matchups.py` | Your hero vs the enemy heroes (relative to the hero's average) and popular items against them | `deadlock_api` |
 | `settings.py` | settings.json (gitignored): window layout and which account is you; saving merges | standard library only |
 | `scoreboard_detector.py` | Spots the open scoreboard from a tiny grab of the PLAYERS tab (colour + pattern match) | `mss`, `Pillow` |
@@ -317,9 +318,17 @@ Checked against a real Street Brawl lobby where 2 of 8 players weren't found:
 - **Who's who:** each hero is played once per match, so the lobby captured during the match gives each row its account (and so the players' ranks for the comparison); "you" are found by account, or by Steam name without a lobby.
 - **Found while building it:** the first version read 22 of 96 fields and took 20 s, though each column read right on its own. The settings were written (cutoff, scale) in the prototype but read as (scale, cutoff), so images were blown up 75x with a cutoff of 3. Now written (scale, cutoff) like every other settings list in the code.
 
+### 4.37 Your history with other players, and notes
+- **Chosen by ranking ideas from other trackers** (Statlocker, Statlocked, Deadlock Labs, Porofessor, Blitz, Dotabuff/STRATZ, tracker.gg) by value to a player against weight added, dropping anything that needs game state (objective timers, enemy ultimates, live item tracking: game-state integration or constant capture) or edits game files (exporting builds into the client). Two ideas from that list were built: "met before" and notes.
+- **Measured first:** in the author's last 50 matches, 47 lobbies had at least one player the author had met before, about 3 per lobby (1.8 counting only people met twice or more). So the record is shown for anyone met even once.
+- **From the API, not from saved lobbies:** `/v1/players/{you}/enemy-stats` and `/mate-stats` list every opponent and teammate with matches and wins, so the record covers the whole history, not just lobbies since the app was installed. `wins` is the queried account's own result (checked in the API's source), so it's *your* wins. Both default to normal mode, so Street Brawl is asked for too: four requests at once, once a day (0.4 s). The full answers are ~600 KB and aren't kept in memory; stored slim as `[faced, won against, teamed, won with, last match]` per account: 8,370 people, 302 KB on disk, ~2 MB of memory while a lobby is looked up, freed afterwards. The API gets matches hours after they end, so someone met earlier the same evening may not count yet.
+- **On the card:** pills in the badge row (`FACED 3× · 2-1`, `ALLY 4× · 1-3`, your wins first), so cards don't get taller; a note adds one line only when there is one, cut to fit. The worst case (12 cards, every one with badges and history, three with notes) needs 797 px of 854. The player page shows the record as a sentence, a link to the last match together, and the note box; its tables show one row fewer to make room (measured: 866 px needed before, 832 after).
+- **Notes stay on the PC** (`notes.json`, gitignored, removed on uninstall), keyed by account id since Steam names change, one line of up to 200 characters. The lobby re-reads them on every visit, so a note written on a player page shows on Back. The privacy hook also treats every account in the "met before" cache and in notes as private.
+- **Not built yet, from the same ranking:** rank progress (`ranked_display_badge` and `ranked_delta` checked on two ranked accounts: ±300 per match, +370/390 on win streaks, 0/-20/-60 when demotion protection absorbs a loss, the badge moving every 3-4 net wins; the author is still in placement games, so it would show nothing for that account yet), a session summary (needs the end-screen reading confirmed, since the API's history lags hours) and a score trend.
+
 ## 5. Testing
 
-`python -m unittest discover -s tests -v` runs 209 tests in a few seconds:
+`python -m unittest discover -s tests -v` runs 219 tests in a few seconds:
 - **Parser tests** use OCR output actually produced from real screenshots, including a noisy version, plus edge cases: headers, noise-only lines, duplicate player names, multi-word heroes, hero lines with nothing above them.
 - **Identity tests** use plain data to cover settling by unique name, friend links (including links listed by only one side and chains of settled players), ties falling back to hero history, and party grouping.
 - **Insights tests** cover each badge rule and its thresholds.

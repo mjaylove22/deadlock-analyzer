@@ -50,9 +50,14 @@ class LookupLobbyTests(unittest.TestCase):
         guard.start()
         self.addCleanup(guard.stop)
 
-    def run_lookup(self, records, profiles_by_name, stats=(), live=(), me=None, live_profiles=(), mates=()):
+    def run_lookup(self, records, profiles_by_name, stats=(), live=(), me=None, live_profiles=(), mates=(),
+                   met=None, notes=None):
         api = player_lookup.deadlock_api
-        with patch.object(api, "search_steam_profiles", side_effect=fake_search(profiles_by_name)), \
+        # Never the real notes.json or "met before" cache on this PC
+        failure = met if isinstance(met, Exception) else None
+        with patch.object(player_lookup.history, "met_before", return_value=met or {}, side_effect=failure), \
+             patch.object(player_lookup.history, "load_notes", return_value=notes or {}), \
+             patch.object(api, "search_steam_profiles", side_effect=fake_search(profiles_by_name)), \
              patch.object(api, "get_hero_stats", return_value=list(stats)) as get_stats, \
              patch.object(api, "fetch_rank_tiers", return_value=RANK_TIERS), \
              patch.object(api, "get_player_ranks", side_effect=lambda ids: [rank(a, 7, 2) for a in ids]), \
@@ -201,6 +206,26 @@ class LookupLobbyTests(unittest.TestCase):
                                         mates=[self.mate(3, "Dr. Night Owl", 12)])
         r = results[0]
         self.assertEqual((r["account_id"], r["player"], r["confident"]), (3, "Dr. Night Owl", False))
+
+    def test_your_history_and_note_are_on_the_players_you_met_but_not_on_you(self):
+        met = {"5": [3, 2, 1, 0, 111203456]}  # faced 3 times (you won 2), teamed once (lost)
+        notes = {"5": {"text": "plays safe, ganks mid", "name": "Grey Mirage", "updated": 0}}
+        results, _, _ = self.run_lookup([record("Me", "Haze"), record("Grey Mirage", "Paradox", "enemy")],
+                                        {"Grey Mirage": [profile(5, "Grey Mirage")]}, me=self.ME, met=met, notes=notes,
+                                        live_profiles=[profile(100, "Me")])
+        me, enemy = results
+        self.assertTrue(me["is_me"] and me["status"] == "found")
+        self.assertEqual(enemy["history"], {"faced": 3, "won_against": 2, "teamed": 1, "won_with": 0,
+                                            "last_match": 111203456})
+        self.assertEqual(enemy["my_note"], "plays safe, ganks mid")
+        self.assertEqual((me["history"], me["my_note"]), (None, ""))
+
+    def test_the_lobby_still_loads_when_history_fails(self):
+        results, _, _ = self.run_lookup([record("Me", "Haze"), record("Grey Mirage", "Paradox", "enemy")],
+                                        {"Grey Mirage": [profile(5, "Grey Mirage")]}, me=self.ME,
+                                        met=OSError("offline"), live_profiles=[profile(100, "Me")])
+        self.assertEqual([r["status"] for r in results], ["found", "found"])
+        self.assertIsNone(results[1]["history"])
 
     def test_network_error_is_reported_not_raised(self):
         with patch.object(player_lookup.deadlock_api, "search_steam_profiles", side_effect=OSError("timed out")):

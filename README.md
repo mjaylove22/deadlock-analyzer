@@ -15,6 +15,8 @@ For every player in the lobby, the app shows:
 - **Their Steam avatar**, **most-played heroes** (by games played, with win rate) and a clickable profile
 - **ID UNSURE** when the account match is a close call, so you know when not to trust it
 - **NAME FIXED** when OCR misread one character of a name and the real Steam name was found
+- **Your history with them**: `FACED 3× · 2-1` (matches against them, your wins-losses) or `ALLY 4× · 1-3`
+  (with them), and **your own note** on them. In a typical lobby about 3 players are people you've met before.
 
 Both teams sit side by side, so a full 6v6 lobby fits on one screen without scrolling. Heroes are shown
 with their portraits and ranks with their emblems (downloaded once, then kept in a local `cache/` folder).
@@ -84,12 +86,12 @@ The app has pages, with a **Back** button (or Alt+Left) and the title as a link 
 | **Home** | Your account, the last lobby, the strongest heroes right now and your recent matches |
 | **Lobby** | Both teams side by side, with your matchup at the bottom. Click any player to open their page. The match ID is read from the screen, and **Review this match** opens the match once it's over |
 | **Matchup** | Opened from the Lobby's matchup strip: an overall read of your hero against this team, your hero with each teammate's hero, and a card per enemy (toughest first) with the player's record on their hero, your win rate against that hero overall and in lane (as bars from your usual), your K/D/A against them, and the items that help most against them. Plus items that win more than usual against the whole team |
-| **Settings** | What happens when the scoreboard opens in game (bring the app to the front without taking focus from the game, a sound, show the lobby again when nothing changed, open the review when a match ends) and what the lobby cards show (rank, current-hero stats, badges, most-played heroes, your matchup) |
+| **Settings** | What happens when the scoreboard opens in game (bring the app to the front without taking focus from the game, a sound, show the lobby again when nothing changed, open the review when a match ends) and what the lobby cards show (rank, current-hero stats, badges, most-played heroes, your history with them, your matchup) |
 | **Heroes** | Every hero's win rate, pick rate, ban share, games and KDA, for Normal or Street Brawl and any rank band, with a 12-week trend line per hero and whether it's rising, falling or steady. Hover a trend line for each week's numbers; click a heading to sort, or a hero to open it |
 | **Items** | Every shop item: how often it's bought, win rate, tier, cost and typical purchase time, with a 14-day trend line and whether it's rising, falling or steady. By mode, rank band and category (weapon, vitality, spirit); hover a line for each day |
 | **Hero** | **Stats**: a hero's win rate over the last 12 weeks (hover for each week), its best and toughest matchups (against its own average), its most-bought items with icons, and its win rate at every rank, by mode and rank band. **Guide**: what kind of hero it is (type, complexity, gun, health and speed against other heroes), what its abilities do, what players build, and the four abilities with cooldowns |
 | **My Stats** | Your own player page |
-| **Player** | Avatar, rank, games and win rate for ranked, unranked and Street Brawl, who they play with most, a sortable per-hero table (All / Ranked / Unranked / Street Brawl) and recent matches with their type (click one for its review) |
+| **Player** | Avatar, rank, games and win rate for ranked, unranked and Street Brawl, your record with them (and a link to your last match together), a note box (kept only on your PC, shown on their lobby card), who they play with most, a sortable per-hero table (All / Ranked / Unranked / Street Brawl) and recent matches with their type (click one for its review) |
 | **Match review** | A finished match. **Overview**: victory or defeat, your K/D/A, net worth, damage, healing and last hits with your place in the lobby and how they compare with your usual on that hero, your final build, the net-worth lead over time and both scoreboards. **Performance**: every stat against other players on the same hero, at the same rank, in matches of a similar length ("better than 82% of Kelvin players"), your strengths and weak spots, a score from Rough game to Great game, and every player's score |
 | **Search** | Type any Steam name in the top bar to see every account with that name, or a **match ID** to open its review |
 
@@ -154,6 +156,7 @@ installer/           build.py (Tesseract trim + PyInstaller + Inno Setup), setup
 make_shortcut.py     creates the desktop shortcut
 performance.py       how well someone played their hero: stats as percentiles among players on that hero
 insights.py          stats on the current hero and badge rules
+history.py           your history with other players: matches with/against them, and your notes (notes.json)
 report.py            wording shared by the terminal and the app
 tests/               unit tests (API calls are mocked)
 tools/privacy_scan.py  pre-commit hook: blocks commits containing real player names or IDs (--install)

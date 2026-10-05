@@ -8,6 +8,8 @@ What counts as private is collected on this PC each time, never from the repo:
   - your account in settings.json (name, account ID, Steam64 ID)
   - the people you play with (cache/api/mates_*.json): names and account IDs
   - players in saved match reviews (cache/matches): account IDs and the match ID
+  - everyone you've played with or against (cache/api/met_*.json) and players you wrote notes on
+    (notes.json): account IDs, and the names saved with notes
   - hand-checked screenshot answers (screenshots/*.expected.json) and names in logs/app.log
   - anything listed in .git/info/private-terms.txt (one per line), which git never commits
 Only added lines of the staged diff are checked. Names are compared after Unicode NFKC folding,
@@ -69,6 +71,11 @@ def collect_terms(root: str = ROOT) -> Tuple[Set[str], Set[str]]:
         summary = _read_json(path) or {}
         ids.add(str(summary.get("match_id") or ""))
         ids.update(str(p.get("account_id") or "") for p in summary.get("players", []))
+    for path in glob.glob(os.path.join(root, "cache", "api", "met_*.json")):
+        ids.update(_read_json(path) or {})  # everyone you've played with or against
+    for account_id, note in (_read_json(os.path.join(root, "notes.json")) or {}).items():
+        names.add(note.get("name") or "")
+        ids.add(account_id)
     for path in glob.glob(os.path.join(root, "screenshots", "*.expected.json")):
         names.update(row.get("player") or "" for row in _read_json(path) or [])
     try:

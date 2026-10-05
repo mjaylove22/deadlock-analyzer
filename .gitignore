@@ -15,8 +15,9 @@ logs/
 # Private notes (interview prep etc.)
 notes/
 
-# Per-user app settings (window position, overlay mode)
+# Per-user app settings (window position, overlay mode) and notes on other players
 settings.json
+notes.json
 
 # Downloaded hero and rank images (re-downloaded if missing)
 cache/

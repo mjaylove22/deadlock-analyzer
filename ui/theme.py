@@ -18,9 +18,10 @@ COLORS = {
     "text": "#eef1f6", "dim": "#8a94a6", "faint": "#596377",
     "friendly": "#5ec8ff", "enemy": "#ff7a45", "accent": "#5ec8ff", "accent_dark": "#3a9fd1",
     "button": "#232a37", "button_hover": "#2d3646", "link": "#7ab8ff",
-    "win": "#5fd38d", "loss": "#ff6b6b", "selected": "#26324a",
+    "win": "#5fd38d", "loss": "#ff6b6b", "selected": "#26324a", "note": "#d9c27a",
 }
-BADGE_COLORS = {"strong": "#f5b942", "good": "#3fbf74", "warn": "#f0803c", "info": "#3d4a5c", "you": "#5ec8ff"}
+BADGE_COLORS = {"strong": "#f5b942", "good": "#3fbf74", "warn": "#f0803c", "info": "#3d4a5c", "you": "#5ec8ff",
+                "history": "#4b3f72"}
 PARTY_COLORS = ["#b36bff", "#2ec4b6", "#ffb347", "#6c8cff"]
 MATCHUP_COLORS = {"good": "#2f9e5b", "bad": "#d64545", "even": "#3d4a5c"}
 ITEM_SLOT_COLORS = {"weapon": "#ec981a", "vitality": "#6aa11a", "spirit": "#a977d2"}  # the shop's three categories, sampled from the game

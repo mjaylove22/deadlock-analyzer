@@ -12,6 +12,8 @@ import tkinter as tk
 import webbrowser
 from typing import Any, Dict
 
+import customtkinter as ctk
+
 import assets
 import deadlock_api
 from match_review import REVIEW_STATS, MatchUnavailable, match_review, rate_match
@@ -22,11 +24,12 @@ from matchups import hero_breakdown, matchup_details
 from player_lookup import search_player
 from profiles import (API_GAME_MODES, LOW_SAMPLE_GAMES, MATCH_TYPES, RANK_BANDS, hero_rank_curve, hero_tier_list, hero_trends,
                       player_profile, teammates, when)
-from report import TEAM_TITLES, team_summary
+import history
+from report import TEAM_TITLES, history_text, team_summary
 from scoreboard_ocr import find_tesseract
 from settings import get_me, get_preferences, save_settings, set_preference
 from ui import images
-from ui.theme import (BADGE_COLORS, COLORS, ITEM_SLOT_COLORS, MATCHUP_COLORS, PARTY_COLORS, button, card, dropdown,
+from ui.theme import (BADGE_COLORS, COLORS, FONT, ITEM_SLOT_COLORS, MATCHUP_COLORS, PARTY_COLORS, button, card, dropdown,
                       label, pill, segmented, switch)
 from version import __version__
 from ui.charts import (ITEM_DAYS, ITEM_TREND_SPAN, ChartTable, Column, advantage_bar, change_text, change_tip, hero_cell, item_cell,
@@ -243,6 +246,10 @@ class LobbyPage(Page):
             matchup_strip(self.frame, lobby["matchup"], on_open=lambda: self.app.navigate(MatchupPage)).pack(
                 side="bottom", fill="x", pady=(6, 0))
         results, parties = lobby["results"], lobby["parties"]
+        notes = history.load_notes()  # read again on every visit: a note written on a player page shows on Back
+        for r in results:
+            if r["status"] == "found" and not r.get("is_me"):
+                r["my_note"] = notes.get(str(r["account_id"]), {}).get("text", "")
         party_of = {i: (PARTY_COLORS[n % len(PARTY_COLORS)], f"PARTY {chr(65 + n)}")
                     for n, party in enumerate(parties) for i in party}
         columns = tk.Frame(self.frame, bg=COLORS["bg"])
@@ -1323,6 +1330,11 @@ class PlayerPage(Page):
             pill(chips, f"{m['mode']}  {m['games']:,} games · {m['win_rate']:.0%} WR", COLORS["button"],
                  size=9, text_color=COLORS["text"]).pack(side="left", padx=(0, 6))
 
+        rows = 14  # table rows that fit in the window
+        if not is_me:
+            self.history_card(p, me)
+            rows = 13
+
         # Frequent teammates: loaded after the page is on screen, so they never delay it
         self.mates_row = tk.Frame(self.frame, bg=COLORS["bg"])
         self.mates_row.pack(fill="x", pady=(10, 0))
@@ -1357,7 +1369,7 @@ class PlayerPage(Page):
                 ("kda", "KDA", 55, lambda v: f"{v:.1f}", "center"),
                 ("damage_per_min", "Dmg/min", 70, lambda v: f"{v:,.0f}", "center"),
                 ("last_played", "Last played", 85, when, "center"),
-            ], list(p["heroes"]), height=14, hero_key="hero")
+            ], list(p["heroes"]), height=rows, hero_key="hero")
         else:
             kind = "" if self.mode == "All" else self.mode.lower() + " "
             self.message(f"No recorded {kind}matches.", left)
@@ -1371,11 +1383,54 @@ class PlayerPage(Page):
                 ("result", "Result", 55, str, "center"),
                 ("kda_text", "K/D/A", 70, str, "center"),
                 ("type", "Type", 90, str, "center"),
-            ], list(p["recent"]), height=14, tag=lambda m: "win" if m["won"] else "loss", hero_key="hero",
+            ], list(p["recent"]), height=rows, tag=lambda m: "win" if m["won"] else "loss", hero_key="hero",
                 on_click=lambda m: self.app.open_match(m["match_id"]))
         else:
             self.message("No recorded matches.", right)
         self.app.set_status(f"{p['name']} · click a match for its post-game review")
+
+    def history_card(self, p: Dict[str, Any], me):
+        """Your record with this player (loaded after the page is shown) and your note on them."""
+        outer, box = card(self.frame, padding=10)
+        outer.pack(fill="x", pady=(10, 0))
+        top = tk.Frame(box, bg=COLORS["card"])
+        top.pack(fill="x")
+        label(top, "Your history", size=10, color="dim", bold=True, bg="card").pack(side="left", padx=(0, 10))
+        record = label(top, "loading..." if me else "Set your account to see your record with them.",
+                       color="faint", bg="card")
+        record.pack(side="left")
+
+        def show_record(r):
+            record.config(text=history_text(r), fg=COLORS["text"])
+            if r and r["last_match"]:
+                link = label(top, "Last match together  >", size=9, color="link", bg="card", cursor="hand2")
+                link.pack(side="left", padx=(12, 0))
+                link.bind("<Button-1>", lambda event: self.app.open_match(r["last_match"]))
+        if me:
+            self.app.run_task(lambda: history.record_with(p["account_id"], history.met_before(me)), show_record,
+                              lambda error: record.config(text="Couldn't load your record with them."))
+
+        row = tk.Frame(box, bg=COLORS["card"])
+        row.pack(fill="x", pady=(8, 0))
+        label(row, "Note", size=10, color="dim", bold=True, bg="card").pack(side="left", padx=(0, 10))
+        entry = ctk.CTkEntry(row, height=30, corner_radius=8, border_width=1, font=(FONT, 10),
+                             placeholder_text="Only on this PC, shown on their lobby card. e.g. \"plays safe, ganks mid\"",
+                             fg_color=COLORS["button"], border_color=COLORS["card_border"],
+                             text_color=COLORS["text"], placeholder_text_color=COLORS["faint"])
+        entry.pack(side="left", fill="x", expand=True)
+        saved = history.get_note(p["account_id"])
+        if saved:
+            entry.insert(0, saved)
+
+        def save(event=None):
+            try:
+                history.save_note(p["account_id"], p["name"], entry.get())
+            except OSError as e:
+                self.app.set_status(f"Couldn't save the note: {e}")
+                return
+            self.app.set_status("Note saved." if entry.get().strip() else "Note removed.")
+        entry.bind("<Return>", save)
+        button(row, "Save", save).pack(side="left", padx=(8, 0))
 
     def show_mates(self, mates, downloaded):
         self.app.avatars.store(downloaded)
@@ -1421,6 +1476,9 @@ class SettingsPage(Page):
         ("show_hero_stats", "Stats on their current hero", "Games, win rate, KDA and damage on the hero they're playing."),
         ("show_badges", "Badges", "ONE-TRICK, HIGH WR, NEW ON HERO... ID UNSURE and NAME FIXED always show."),
         ("show_most_played", "Most-played heroes", ""),
+        ("show_history", "Your history with them",
+         "FACED 3× · 2-1: matches against them and your wins-losses (ALLY: with them). Plus your notes on them, "
+         "written on their player page. Needs your account set."),
         ("show_matchup", "Your matchup", "Your hero against each enemy hero, and popular items against them."),
     ]
 

@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 import customtkinter as ctk
 
-from report import badge_labels, hero_stats_text, matchup_kind, matchup_text, most_played_text
+from report import badge_labels, hero_stats_text, history_labels, matchup_kind, matchup_text, most_played_text
 from ui import images
 from ui.theme import BADGE_COLORS, COLORS, FONT, ITEM_SLOT_COLORS, MATCHUP_COLORS, card, label, pill
 
@@ -197,6 +197,8 @@ def player_card(parent, r: Dict[str, Any], accent: str, avatars: AvatarCache,
     badges = badge_labels(r if shown("show_badges") else dict(r, badges=[]))
     if party_label:
         badges.insert(0, (party_label, "party"))
+    if shown("show_history"):
+        badges += [(text, "history") for text in history_labels(r.get("history"))]
     if badges:
         row = tk.Frame(info, bg=COLORS["card"])
         row.grid(row=2, column=0, columnspan=2, sticky="w", pady=(3, 0))
@@ -206,6 +208,10 @@ def player_card(parent, r: Dict[str, Any], accent: str, avatars: AvatarCache,
     details = most_played_text(r) if shown("show_most_played") else ""
     if details:
         label(info, details, size=9, color="dim", bg="card", anchor="w").grid(row=3, column=0, columnspan=2, sticky="w", pady=(2, 0))
+    if r.get("my_note") and shown("show_history"):
+        note = r["my_note"] if len(r["my_note"]) <= 70 else r["my_note"][:69] + "…"  # one line on a narrow card
+        label(info, f"Your note: {note}", size=9, color="note", bg="card", anchor="w").grid(
+            row=4, column=0, columnspan=2, sticky="w", pady=(2, 0))
 
     if clickable:
         outer.after_idle(lambda: bind_click(outer, on_open))

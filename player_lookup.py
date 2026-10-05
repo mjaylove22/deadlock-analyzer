@@ -14,6 +14,7 @@ from collections import defaultdict
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import deadlock_api
+import history
 from identity import find_parties, resolve_lobby
 from insights import compute_badges, hero_summary
 from matchups import build_matchup
@@ -178,7 +179,7 @@ def lookup_lobby(records: List[Dict[str, str]], hero_ids_by_name: Dict[str, int]
     """
     results = [dict(r, status=None, note="", account_id=None, profile_url=None, top_heroes=[],
                     hero_stats=None, badges=[], confident=False, rank=None, corrected_from=None,
-                    avatar_url=None, is_me=False) for r in records]
+                    avatar_url=None, is_me=False, history=None, my_note="") for r in records]
 
     for result in results:
         if is_likely_bot(result):
@@ -243,6 +244,7 @@ def lookup_lobby(records: List[Dict[str, str]], hero_ids_by_name: Dict[str, int]
     all_ids = list(dict.fromkeys(c["account_id"] for cs in candidates_by_player.values() for c in cs))
     stats_by_account = defaultdict(list)
     ranks = {}
+    met = {}
     if all_ids:
         report_progress(progress, "Loading hero stats and ranks...")
 
@@ -252,7 +254,7 @@ def lookup_lobby(records: List[Dict[str, str]], hero_ids_by_name: Dict[str, int]
             except Exception as e:
                 logger.warning(f"Could not load hero stats ({e}); identities will rely on names and friends only")
                 return []
-        entries, ranks = deadlock_api.parallel(stats, lambda: fetch_ranks(all_ids))
+        entries, ranks, met = deadlock_api.parallel(stats, lambda: fetch_ranks(all_ids), lambda: load_met_before(me))
         for entry in entries:
             stats_by_account[entry["account_id"]].append(entry)
 
@@ -282,11 +284,28 @@ def lookup_lobby(records: List[Dict[str, str]], hero_ids_by_name: Dict[str, int]
                           confident=is_confident(candidates_by_player[i], reason))
 
     apply_ranks(results, ranks)
+    notes = history.load_notes()
+    for r in results:
+        if r["status"] == "found" and not r["is_me"]:
+            r["history"] = history.record_with(r["account_id"], met)
+            r["my_note"] = notes.get(str(r["account_id"]), {}).get("text", "")
     parties = find_parties(resolved, {i: results[i]["team"] for i in resolved})
     missing = [f"{r['player']} ({r['note']})" for r in results if r["status"] in ("not found", "error")]
     logger.info(f"Lobby lookup: {sum(r['status'] == 'found' for r in results)} found, "
                 f"{sum(r['status'] == 'skipped' for r in results)} bots" + (f", not found: {'; '.join(missing)}" if missing else ""))
     return results, parties
+
+
+def load_met_before(me: Optional[Dict[str, Any]]) -> Dict[str, list]:
+    """Everyone the user has met in a recorded match (see history.met_before); {} without an account
+    set, or if it can't be loaded: the lobby is still shown, just without "met before"."""
+    if not me:
+        return {}
+    try:
+        return history.met_before(me)
+    except Exception as e:
+        logger.info(f"Couldn't load who you've met before ({e})")
+        return {}
 
 
 def live_match_candidates(results: List[Dict[str, Any]], candidates_by_player: Dict[int, List[Dict[str, Any]]],

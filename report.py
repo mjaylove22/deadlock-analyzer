@@ -62,6 +62,31 @@ def badge_labels(r: Dict[str, Any]) -> List[Tuple[str, str]]:
     return labels
 
 
+def history_labels(record: Dict[str, int]) -> List[str]:
+    """Short pills for your record with a player, your wins first: e.g. "FACED 3× · 2-1", "ALLY 4× · 1-3"."""
+    if not record:
+        return []
+    labels = []
+    for count, wins, title in ((record["faced"], record["won_against"], "FACED"),
+                               (record["teamed"], record["won_with"], "ALLY")):
+        if count:
+            labels.append(f"{title} {count}× · {wins}-{count - wins}")
+    return labels
+
+
+def history_text(record: Dict[str, int]) -> str:
+    """e.g. "You've faced them 3 times (you won 2) and played with them once (won 0)"."""
+    if not record:
+        return "You haven't played with or against them in a recorded match."
+    times = lambda n: "once" if n == 1 else "twice" if n == 2 else f"{n} times"  # noqa: E731
+    parts = []
+    if record["faced"]:
+        parts.append(f"faced them {times(record['faced'])} (you won {record['won_against']})")
+    if record["teamed"]:
+        parts.append(f"played with them {times(record['teamed'])} (won {record['won_with']})")
+    return "You've " + " and ".join(parts)
+
+
 def team_summary(team_results: List[Dict[str, Any]], team_parties: List[List[int]]) -> str:
     """One line about a team, e.g. "4 players · party of 3 · 3 new on hero · best rank Oracle 4"."""
     parts = [f"{len(team_results)} player" + ("" if len(team_results) == 1 else "s")]
@@ -122,6 +147,10 @@ def build_report(results: List[Dict[str, Any]], parties: List[List[int]]) -> Lis
             badges = badge_labels(r)
             if badges:
                 lines.append(("    " + " ".join(f"[{label}]" for label, _ in badges), "note"))
+            if r.get("history"):
+                lines.append(("    Met before: " + " · ".join(history_labels(r["history"])), "note"))
+            if r.get("my_note"):
+                lines.append((f"    Your note: {r['my_note']}", "note"))
             for extra in (most_played_text(r), identity_text(r)):
                 if extra:
                     lines.append((f"    {extra}", "note"))
