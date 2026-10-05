@@ -20,8 +20,10 @@ from profiles import GAME_MODES
 CACHE_DIR = paths.data("cache", "matches")
 MAX_SAVED_MATCHES = 50
 RETRY_AFTER_S = 600  # a match that failed isn't asked for again for 10 minutes (3 Steam fetches/hour)
+STEAM_FETCHES_PER_HOUR = 3  # the API's limit (per IP) for matches it has to fetch from Steam
 
 _failed: Dict[int, tuple] = {}  # match_id -> (time, error message)
+_steam_fetches: List[float] = []  # when this app last asked for matches from Steam
 
 
 class MatchUnavailable(Exception):
@@ -128,6 +130,45 @@ def load_saved(match_id: int) -> Optional[Dict[str, Any]]:
         return json.load(f)
 
 
+def steam_fetches_left(now: Optional[float] = None) -> int:
+    """How many matches can still be fetched from Steam this hour."""
+    now = time.time() if now is None else now
+    _steam_fetches[:] = [t for t in _steam_fetches if now - t < 3600]
+    return STEAM_FETCHES_PER_HOUR - len(_steam_fetches)
+
+
+def fetch_metadata(match_id: int, allow_steam: bool = True) -> Dict[str, Any]:
+    """A match's raw data. The API's stored copy is tried first: it's free (100 requests per 10 s),
+    while a match it has to fetch from Steam counts against 3 an hour. Raises OSError for HTTP and
+    network errors, or MatchUnavailable when this hour's Steam fetches are used up.
+
+    max_age=0: the raw ~1.5 MB response isn't kept in the memory cache; the summary is kept instead."""
+    path = f"/v1/matches/{match_id}/metadata"
+    try:
+        return deadlock_api.get_json(path, {"disable_steam": "true"}, max_age=0)
+    except urllib.error.HTTPError as e:
+        if e.code != 404 or not allow_steam:  # 404: not stored (yet)
+            raise
+    if steam_fetches_left() <= 0:
+        raise MatchUnavailable("This match isn't stored yet, and this hour's fetches from Steam (3 an hour) "
+                               "are used up. Try again later.")
+    _steam_fetches.append(time.time())
+    return deadlock_api.get_json(path, max_age=0)
+
+
+def get_summary(match_id: int, hero_names_by_id: Dict[int, str], allow_steam: bool = True) -> Dict[str, Any]:
+    """The match's summary: saved on disk, or fetched, condensed and saved. Raises MatchUnavailable."""
+    summary = load_saved(match_id)
+    if summary is None:
+        try:
+            metadata = fetch_metadata(match_id, allow_steam)
+        except OSError as e:  # HTTP errors and network problems
+            raise MatchUnavailable(explain(e)) from e
+        summary = summarize(metadata, hero_names_by_id, deadlock_api.fetch_items())
+        save(summary)
+    return summary
+
+
 def match_review(match_id: int, hero_names_by_id: Dict[int, str], me: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Everything the review page needs (worker thread). Raises if the match isn't available yet."""
     summary = load_saved(match_id)
@@ -136,13 +177,10 @@ def match_review(match_id: int, hero_names_by_id: Dict[int, str], me: Optional[D
         if time.time() - failed_at < RETRY_AFTER_S:
             raise MatchUnavailable(message)  # asked recently and it failed: don't spend another request
         try:
-            # max_age=0: don't keep the raw 1.5 MB response in the memory cache; the summary is kept instead
-            metadata = deadlock_api.get_json(f"/v1/matches/{match_id}/metadata", max_age=0)
-        except OSError as e:  # HTTP errors and network problems
-            _failed[match_id] = (time.time(), explain(e))
-            raise MatchUnavailable(explain(e)) from e
-        summary = summarize(metadata, hero_names_by_id, deadlock_api.fetch_items())
-        save(summary)
+            summary = get_summary(match_id, hero_names_by_id)
+        except MatchUnavailable as e:
+            _failed[match_id] = (time.time(), str(e))
+            raise
 
     ids = [p["account_id"] for p in summary["players"] if p["account_id"]]
     my_player = next((p for p in summary["players"] if me and p["account_id"] == me["account_id"]), None)

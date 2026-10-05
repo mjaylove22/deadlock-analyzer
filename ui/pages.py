@@ -211,9 +211,16 @@ class LobbyPage(Page):
     def build(self):
         lobby = self.app.lobby
         subtitle = f"captured {clock(lobby['time'])} · {os.path.basename(lobby['path'])}" if lobby else ""
+        if lobby and lobby.get("match_id"):
+            subtitle += f" · match {lobby['match_id']}"
         row = self.heading("Lobby", subtitle, size=16, gap=6)
         button(row, "Open screenshot...", self.app.open_screenshot).pack(side="right")
         button(row, "Analyze latest", self.app.analyze_latest).pack(side="right", padx=8)
+        if lobby and lobby.get("match_id"):
+            review = button(row, "Review this match", lambda: self.app.open_match(lobby["match_id"]), primary=True)
+            review.pack(side="right")
+            tooltip(review, "The full match: scoreboards, your build and how you played on your hero.\n"
+                            "Available once the match is over.")
         if not lobby:
             self.message("No lobby yet.\n\nOpen the Esc menu on the PLAYERS tab in game, or analyze a saved screenshot.")
             return

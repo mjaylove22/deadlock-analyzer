@@ -283,6 +283,13 @@ Checked against a real Street Brawl lobby where 2 of 8 players weren't found:
 - **Reuses the heroes page's pieces:** the canvas table, the trend lines and the steady test (last 7 days against the 7 before). The trend popups now take their wording (weeks or days) as a parameter. Item lines use a 3-point scale (heroes: 5), since item win rates move less from day to day.
 - **Icons for all 156 items** download once, 4 at a time: 8 at once made the image server drop connections.
 
+### 4.33 The match ID, and fetching matches without wasting Steam fetches
+- **Why it matters:** a match ID is the only exact link from a lobby to its data afterwards (every player's account, stats and build). The Esc menu prints it bottom right during a match: "MATCH: 111203456".
+- **Reading it:** the digits are 8 px tall, and Tesseract merges the thin 1s. Tuned against 12 real screenshots with hand-read answers: only one setting (3x upscale, cutoff 100) read all 12, and its neighbours dropped or merged 1s ("1203456", "11203456", "MATCH: Itt03456"). Every wrong reading had the wrong length, so only a 9-10 digit reading is accepted, trying two more settings otherwise. Result: 13 of 13 (including a desktop screenshot, correctly "no ID"), no wrong ID accepted, ~95 ms, run alongside the player lookups so a lobby takes no longer.
+- **Measured before relying on the API for "when did the match end":** the author's match history (the API's stored copy; it's only fresh from Steam for accounts friends with the API's bots) was missing four matches played 1-4 hours earlier, and the stored match data for them was missing too. Only the Steam fallback has fresh matches, and it allows **3 an hour** per IP.
+- **So the stored copy comes first:** `disable_steam=true` asks only the API's store (100 requests per 10 s), and Steam is asked only when that says 404. The app counts its own Steam fetches and never makes a fourth in an hour; the page says why instead.
+- **Lobby page:** the match ID shows next to the capture time, with a **Review this match** button.
+
 ## 5. Testing
 
 `python -m unittest discover -s tests -v` runs 158 tests in a few seconds:

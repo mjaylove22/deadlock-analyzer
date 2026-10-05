@@ -85,5 +85,49 @@ class MatchReviewTests(unittest.TestCase):
         self.assertIn("3 an hour", str(caught.exception))
 
 
+class FetchMetadataTests(unittest.TestCase):
+    """The stored copy is free; Steam allows 3 an hour, so it's only asked when needed and counted."""
+
+    def setUp(self):
+        patcher = patch.object(match_review, "_steam_fetches", [])
+        self.steam_fetches = patcher.start()
+        self.addCleanup(patcher.stop)
+
+    @staticmethod
+    def not_stored(path, params=None, max_age=0):
+        import urllib.error
+        if params and params.get("disable_steam") == "true":
+            raise urllib.error.HTTPError(path, 404, "Not Found", None, None)
+        return {"from": "steam"}
+
+    def test_the_stored_copy_is_tried_first(self):
+        with patch.object(match_review.deadlock_api, "get_json", return_value={"from": "store"}) as get_json:
+            self.assertEqual(match_review.fetch_metadata(7), {"from": "store"})
+        get_json.assert_called_once_with("/v1/matches/7/metadata", {"disable_steam": "true"}, max_age=0)
+        self.assertEqual(match_review.steam_fetches_left(), 3)
+
+    def test_steam_only_when_not_stored_and_each_fetch_is_counted(self):
+        with patch.object(match_review.deadlock_api, "get_json", side_effect=self.not_stored):
+            self.assertEqual(match_review.fetch_metadata(7), {"from": "steam"})
+        self.assertEqual(match_review.steam_fetches_left(), 2)
+
+    def test_no_steam_fetch_once_this_hours_are_used_up(self):
+        self.steam_fetches.extend([1000.0, 1100.0, 1200.0])
+        with patch.object(match_review.time, "time", return_value=1300.0), \
+             patch.object(match_review.deadlock_api, "get_json", side_effect=self.not_stored) as get_json:
+            with self.assertRaises(match_review.MatchUnavailable):
+                match_review.fetch_metadata(7)
+        self.assertEqual(get_json.call_count, 1)  # only the stored copy was asked
+        self.assertEqual(match_review.steam_fetches_left(now=1000.0 + 3600), 1)  # the oldest has expired
+
+    def test_stored_copy_only(self):
+        with patch.object(match_review, "load_saved", return_value=None), \
+             patch.object(match_review.deadlock_api, "get_json", side_effect=self.not_stored) as get_json:
+            with self.assertRaises(match_review.MatchUnavailable):
+                match_review.get_summary(7, NAMES, allow_steam=False)
+        self.assertEqual(get_json.call_count, 1)
+        self.assertEqual(match_review.steam_fetches_left(), 3)
+
+
 if __name__ == "__main__":
     unittest.main()

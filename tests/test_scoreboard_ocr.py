@@ -153,5 +153,28 @@ class NoConsoleTests(unittest.TestCase):
         self.assertTrue(flags & subprocess.CREATE_NO_WINDOW)
 
 
+class MatchIdTests(unittest.TestCase):
+    """Only a full-length ID is accepted; a reading that dropped or merged a 1 tries the next setting."""
+
+    def read(self, *ocr_texts):
+        from unittest.mock import patch
+        from PIL import Image
+        import layout
+        import scoreboard_ocr
+        with patch.object(scoreboard_ocr.pytesseract, "image_to_string", side_effect=list(ocr_texts)) as ocr:
+            found = scoreboard_ocr.read_match_id(Image.new("RGB", (1920, 1080)), layout.REFERENCE_LAYOUT)
+        return found, ocr.call_count
+
+    def test_a_clean_reading(self):
+        self.assertEqual(self.read("MATCH: 123456789\n"), (123456789, 1))
+
+    def test_misread_ones_are_rejected_and_the_next_setting_tried(self):
+        # Real misreadings: a dropped "11", merged 1s read as letters, one 1 too few
+        self.assertEqual(self.read("MATCH: 1203456", "MATCH: Itt03456", "MATCH: 104567893"), (104567893, 3))
+
+    def test_none_when_no_setting_reads_a_full_id(self):
+        self.assertEqual(self.read("MATCH: 11203456", "", "12:51 AM"), (None, 3))
+
+
 if __name__ == "__main__":
     unittest.main()

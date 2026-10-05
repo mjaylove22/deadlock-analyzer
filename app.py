@@ -34,6 +34,7 @@ import paths
 from version import __version__
 from matchups import build_matchup
 from player_lookup import analyze_records, read_lobby
+from scoreboard_ocr import read_match_id_file
 import game_window
 import layout as layout_module
 from screenshot_manager import SCREENSHOT_DIR, capture_and_save_screenshot, delete_old_screenshots, get_screenshot_path
@@ -431,7 +432,10 @@ class AnalyzerApp:
                 os.remove(path)
                 self.events.put(self.same_lobby)
                 return
-            results, parties = analyze_records(records, progress=self.progress, me=get_me())
+            # The match ID (bottom right) is read while the players are looked up, so it costs no time
+            (results, parties), match_id = deadlock_api.parallel(
+                lambda: analyze_records(records, progress=self.progress, me=get_me()),
+                lambda: self.read_match_id(path))
             def matchup():
                 if not any(r.get("is_me") for r in results):
                     return None
@@ -448,13 +452,24 @@ class AnalyzerApp:
             self.progress("Loading your matchup and avatars...")
             matchup, images = deadlock_api.parallel(
                 matchup, lambda: self.avatars.download(r.get("avatar_url") for r in results))
+            if match_id:
+                logger.info(f"Match ID read from the scoreboard: match {match_id}")
             lobby = {"path": path, "records": records, "results": results, "parties": parties,
-                     "matchup": matchup, "images": images, "time": time.time(), "from_game": from_game}
+                     "matchup": matchup, "images": images, "time": time.time(), "from_game": from_game,
+                     "match_id": match_id}
             self.events.put(lambda: self.show_lobby(lobby))
         except Exception as e:
             logger.exception("Analysis failed")
             error = str(e)
             self.events.put(lambda: self.analysis_failed(error))
+
+    def read_match_id(self, path: str):
+        """The screenshot's match ID, or None: the lobby is still worth showing without it."""
+        try:
+            return read_match_id_file(path)
+        except Exception:
+            logger.exception("Couldn't read the match ID")
+            return None
 
     def check_focus_kept(self):
         """Log it if keyboard focus moved while capturing: the app must never pull you out of the game."""

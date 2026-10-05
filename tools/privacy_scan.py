@@ -74,6 +74,7 @@ def collect_terms(root: str = ROOT) -> Tuple[Set[str], Set[str]]:
     try:
         with open(os.path.join(root, "logs", "app.log"), encoding="utf-8", errors="replace") as f:
             for line in f:
+                ids.update(re.findall(r"\bmatch (\d+)", line))
                 for found in re.findall(r"not found: (.*)", line):
                     for part in found.split("; "):
                         names.add(re.sub(r" \(closest name: .*\)$", "", part))

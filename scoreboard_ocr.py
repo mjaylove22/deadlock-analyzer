@@ -237,6 +237,35 @@ def parse_player_rows(lines: List[Tuple[int, str]], hero_names: List[str]) -> Li
     return rows
 
 
+# The match ID, bottom right of the Esc menu during a match: "MATCH: 111203456", grey on black.
+# The digits are only 8 px tall and the thin 1s run together: across 12 real screenshots only one
+# setting (3x upscale, cutoff 100) read every ID; the others dropped or merged 1s ("1203456",
+# "11203456", "MATCH: Itt03456"). Every wrong reading had the wrong length, while real IDs are 9
+# digits (10 in a few years), so a reading is only accepted at that length, trying the next setting
+# otherwise. Reviews still check that the match has the lobby's heroes before calling it yours.
+MATCH_ID_BOX = (1700, 1040, 1915, 1062)
+MATCH_ID_ATTEMPTS = ((3, 100), (4, 100), (4, 60))  # (upscale, brightness cutoff), most reliable first
+MATCH_ID_PATTERN = re.compile(r"MATCH\W*(\d{9,10})(?!\d)")
+
+
+def read_match_id(image: Image.Image, layout: layout_module.Layout = None, box=MATCH_ID_BOX) -> Optional[int]:
+    """The match ID printed on screen, or None if it can't be read with confidence."""
+    crop = layout_module.normalized_crop(image, layout or find_layout(image), box).convert("L")
+    for scale, cutoff in MATCH_ID_ATTEMPTS:
+        prepared = crop.resize((crop.width * scale, crop.height * scale), Image.LANCZOS)
+        prepared = prepared.point(lambda v, cutoff=cutoff: 0 if v > cutoff else 255)
+        text = pytesseract.image_to_string(prepared, config="--psm 7")  # one line of text
+        found = MATCH_ID_PATTERN.search(text.replace(" ", ""))
+        if found:
+            return int(found.group(1))
+    return None
+
+
+def read_match_id_file(file_path: str) -> Optional[int]:
+    with Image.open(file_path) as image:
+        return read_match_id(image)
+
+
 def read_scoreboard(file_path: str, hero_names: List[str]) -> List[Dict[str, str]]:
     """Return one {"player", "hero", "team"} record per player found in the screenshot."""
     with Image.open(file_path) as image:
@@ -267,6 +296,7 @@ def main():
     print("\nRaw OCR lines (top = pixels from the top of the crop):")
     for top, text in lines:
         print(f"  top={top:3d}  {text!r}")
+    print(f"\nMatch ID: {read_match_id_file(file_path)}")
     print("\nParsed rows:")
     for name_top, player, hero in parse_player_rows(lines, hero_names):
         print(f"  {team_for_row(name_top):<8}  {player} -> {hero}")
