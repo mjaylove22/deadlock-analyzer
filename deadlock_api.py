@@ -163,9 +163,10 @@ def fetch_hero_assets() -> List[Dict[str, Any]]:
              "card": (h.get("images") or {}).get("icon_hero_card"),
              "color": (h.get("colors") or {}).get("style_hex") or "#4a5a6a"}
             for h in get_json("/v1/assets/heroes", max_age=0)
-            if h["player_selectable"] and not h["disabled"] and not h["in_development"]
+            # not in_development: it lags behind the game (Baba was in matches while still flagged)
+            if h["player_selectable"] and not h["disabled"]
         ]
-    return disk_cached("heroes", build)
+    return disk_cached("playable_heroes", build)  # renamed so a list cached by an older version isn't used
 
 
 def fetch_heroes() -> List[Dict[str, Any]]:

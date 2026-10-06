@@ -97,9 +97,9 @@ SMALL_SCREEN_SHARPEN = ImageFilter.UnsharpMask(radius=2, percent=150, threshold=
 # words scored 60+, so low-confidence words are dropped from the end of each line.
 TRAILING_JUNK_CONFIDENCE = 50
 
-# Used only when the API is unreachable. Verified against the API on 2026-10-03.
+# Used only when the API is unreachable. Verified against the API on 2026-10-06.
 FALLBACK_HERO_NAMES = [
-    "Abrams", "Apollo", "Bebop", "Billy", "Calico", "Celeste", "Drifter",
+    "Abrams", "Apollo", "Baba", "Bebop", "Billy", "Calico", "Celeste", "Drifter",
     "Dynamo", "Graves", "Grey Talon", "Haze", "Holliday", "Infernus",
     "Ivy", "Kelvin", "Lady Geist", "Lash", "McGinnis", "Mina", "Mirage",
     "Mo & Krill", "Paige", "Paradox", "Pocket", "Rat King", "Rem", "Seven",

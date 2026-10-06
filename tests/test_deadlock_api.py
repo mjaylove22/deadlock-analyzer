@@ -36,6 +36,18 @@ class FetchItemsTests(unittest.TestCase):
                          {1: ("a_art.webp", False), 2: ("b_art.png", False), 3: ("c_symbol.png", True), 4: (None, True)})
 
 
+class FetchHeroesTests(unittest.TestCase):
+    def test_selectable_heroes_count_even_while_flagged_in_development(self):
+        hero = {"player_selectable": True, "disabled": False, "in_development": False}
+        raw = [dict(hero, id=1, name="Haze"),
+               dict(hero, id=88, name="Baba", in_development=True),       # in matches while still flagged
+               dict(hero, id=2, name="Bot", player_selectable=False),
+               dict(hero, id=3, name="Gone", disabled=True)]
+        with patch.object(deadlock_api, "get_json", return_value=raw), \
+                patch.object(deadlock_api, "disk_cached", lambda name, build, max_age=0: build()):
+            self.assertEqual([h["name"] for h in deadlock_api.fetch_heroes()], ["Haze", "Baba"])
+
+
 class ResponseCacheTests(unittest.TestCase):
     def setUp(self):
         deadlock_api._memory.clear()
