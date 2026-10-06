@@ -174,6 +174,10 @@ def read_ocr_lines(image: Image.Image, layout: layout_module.Layout = None) -> L
 # drop them. Short names have too many one-letter neighbours to guess safely, hence a minimum length.
 MISREAD_MIN_LENGTH = 6
 HERO_MISREAD_MIN_LENGTH = 5  # only 39 hero names to confuse, so a slightly shorter minimum is safe
+# Letters OCR swaps in the game's font, made equal before comparing hero names. A real end screen read
+# "Ivy" as "luy", two letters off in a 3-letter name. Checked: no two of the 39 heroes then look alike,
+# none is inside another, and none appears inside "Level".
+LOOKALIKES = str.maketrans("l1|u", "iiiv")
 
 
 def squash(text: str) -> str:
@@ -192,9 +196,10 @@ def looks_like_misread(ocr_text: str, real_text: str, min_length: int = MISREAD_
 
 
 def match_hero(line: str, heroes_longest_first: List[str]) -> Optional[str]:
-    """The hero named in a "<Hero> Level" line: an exact match, or else one letter off ("Oynamo")."""
-    lowered = line.lower()
-    exact = next((h for h in heroes_longest_first if h.lower() in lowered), None)
+    """The hero named in a "<Hero> Level" line: an exact match (look-alike letters counted as equal,
+    so "luy" is Ivy), or else one letter off ("Oynamo")."""
+    lowered = line.lower().translate(LOOKALIKES)
+    exact = next((h for h in heroes_longest_first if h.lower().translate(LOOKALIKES) in lowered), None)
     if exact:
         return exact
     words = re.findall(r"[^\s]+", line)

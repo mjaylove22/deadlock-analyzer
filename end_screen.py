@@ -12,6 +12,7 @@ Screen reading only, like any screen recorder.
 """
 
 import re
+import statistics
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable, Dict, List, Optional
 
@@ -97,6 +98,24 @@ TEXT_CUTOFF = 75
 # the most common reading of these three: 84 of 84.
 NUMBER_SETTINGS = ((3, 75), (3, 90), (4, 75))  # (upscale, cutoff), like the match ID settings
 NUMBER_PATTERN = re.compile(r"(\d+(?:\.\d)?)(k?)")
+# Your own row is highlighted: its background was 33 and 52 on two real end screens, where other rows
+# are 14-27. On 52 a lobby-best star (~86) sits above the cutoff and reads as digits ("32k" as "232k").
+ROW_BACKGROUND = 25
+
+
+def even_rows(table: Image.Image) -> Image.Image:
+    """Darken any row whose background is brighter than an ordinary row's down to it, so the
+    highlighted row reads like the others. Rows are judged by their number columns only."""
+    left, right = NUMBER_COLUMNS[0][1] - TABLE_BOX[0], NUMBER_COLUMNS[-1][2] - TABLE_BOX[0]
+    out = table.copy()
+    for top in TEAM_FIRST_ROW:
+        for row in range(ROWS_PER_TEAM):
+            y = top + row * ROW_PITCH - TABLE_BOX[1]
+            band = table.crop((0, y, table.width, y + ROW_PITCH))
+            excess = statistics.median(band.crop((left, 4, right, ROW_PITCH - 8)).get_flattened_data()) - ROW_BACKGROUND
+            if excess > 0:
+                out.paste(band.point(lambda v: max(0, v - excess)), (0, y))
+    return out
 
 
 def darkest_channel(image: Image.Image) -> Image.Image:
@@ -149,6 +168,7 @@ def read_scoreboard(image: Image.Image, layout: layout_module.Layout, hero_names
     {"minutes", "mode", "winning_team", "players": [{"name", "hero", "team", "won", "kills", ...}]}.
     Teams are 0 (upper table) and 1 (lower). None if no hero could be read."""
     table = darkest_channel(layout_module.normalized_crop(image, layout, TABLE_BOX))
+    numbers = even_rows(table)
     full = layout_module.normalized_crop(image, layout, (0, 0, 1920, 1080))
     heroes_longest_first = sorted(hero_names, key=len, reverse=True)
 
@@ -160,7 +180,7 @@ def read_scoreboard(image: Image.Image, layout: layout_module.Layout, hero_names
         for team, top in enumerate(TEAM_FIRST_ROW):
             for key, left, right in NUMBER_COLUMNS:
                 for setting in NUMBER_SETTINGS:
-                    jobs[(team, key, setting)] = pool.submit(_column_readings, table, top, left, right, *setting)
+                    jobs[(team, key, setting)] = pool.submit(_column_readings, numbers, top, left, right, *setting)
             for row in range(ROWS_PER_TEAM):
                 y = top + row * ROW_PITCH
                 jobs[(team, "hero", row)] = pool.submit(_line, region((NAME_COLUMN[0], y + HERO_LINE[0], NAME_COLUMN[1], y + HERO_LINE[1])))

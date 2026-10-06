@@ -115,6 +115,12 @@ class OcrNoiseTests(unittest.TestCase):
         self.assertEqual(match_hero("Oynamo Level -1", self.HEROES), "Dynamo")
         self.assertEqual(match_hero("Mo & Krlll Level 1", self.HEROES), "Mo & Krill")
 
+    def test_look_alike_letters_count_as_equal(self):
+        # A real end screen read "Ivy" as "luy": I as l, v as u
+        self.assertEqual(match_hero("luy", ["Ivy", "Haze"]), "Ivy")
+        self.assertEqual(match_hero("lvy Level 1", ["Ivy", "Haze"]), "Ivy")
+        self.assertEqual(match_hero("Infernvs Level 3", ["Infernus"]), "Infernus")
+
     def test_short_hero_names_are_not_guessed(self):
         self.assertIsNone(match_hero("Rern Level 1", self.HEROES))  # Rem: too short to guess safely
         self.assertIsNone(match_hero("Wer Level-1", self.HEROES))
