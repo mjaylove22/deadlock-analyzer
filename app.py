@@ -38,7 +38,7 @@ from player_lookup import analyze_records, read_lobby
 from scoreboard_ocr import TESSERACT_INSTALL, find_tesseract, read_match_id_file
 import end_screen
 from match_review import get_summary
-from postgame import CHECK_EVERY_S, PostGame, is_our_match, link_players
+from postgame import CHECK_EVERY_S, PostGame, is_our_match, link_players, remember_end_screen
 import game_window
 import layout as layout_module
 from screenshot_manager import (SCREENSHOT_DIR, capture_and_save_screenshot, delete_old_screenshots, get_screenshot_path,
@@ -626,6 +626,7 @@ class AnalyzerApp:
                 same_match = recent and (not read or read == lobby_id)
                 link_players(screen, get_me(), recent["results"] if same_match else [])
                 screen["match_id"] = match_id
+                remember_end_screen(screen, match_id)  # for Home's recent matches and session summary
             logger.info(f"Match over: match {match_id} (from {'the end screen' if read else 'the lobby' if match_id else 'nowhere'}); "
                         f"scoreboard: {len(screen['players']) if screen else 0} players read")
             self.events.put(lambda: self.start_post_game(match_id, screen))

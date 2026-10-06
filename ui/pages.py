@@ -22,6 +22,7 @@ from guides import hero_guide
 from item_trends import item_trends
 from matchups import hero_breakdown, matchup_details
 from player_lookup import search_player
+from postgame import last_session, load_end_screens, recent_matches
 from profiles import (API_GAME_MODES, LOW_SAMPLE_GAMES, MATCH_TYPES, RANK_BANDS, hero_rank_curve, hero_tier_list, hero_trends,
                       player_profile, teammates, when)
 import history
@@ -206,11 +207,13 @@ class HomePage(Page):
         def work():
             names = self.app.hero_names_by_id()
             tiers = self.app.cache.get(("tiers", "Normal", "All ranks")) or hero_tier_list(names, "normal")
-            recent = player_profile(me["account_id"], names)["recent"][:8] if me else None
+            recent = recent_matches(player_profile(me["account_id"], names)["recent"], load_end_screens()) if me else None
             return tiers, recent
 
         def done(result):
             tiers, recent = result
+            session = last_session(recent) if recent else None
+            recent = recent[:8] if recent else recent
             self.app.cache[("tiers", "Normal", "All ranks")] = tiers
             for box in (self.heroes_box, self.recent_box):
                 for widget in box.winfo_children()[1:]:  # keep each section's title
@@ -227,10 +230,17 @@ class HomePage(Page):
             if recent is None:
                 label(self.recent_box, "Set your account to see your recent matches here.", color="dim", bg="card").pack(anchor="w")
                 return
+            if session:
+                s = session
+                souls = f" · {s['souls_per_min']:,.0f} souls/min" if s["souls_per_min"] else ""
+                label(self.recent_box, f"Last session, {when(s['ended'])}: {s['games']} game{'s' if s['games'] > 1 else ''} · "
+                      f"{s['wins']}-{s['losses']} · {s['kills']:.1f}/{s['deaths']:.1f}/{s['assists']:.1f}{souls}",
+                      bg="card", bold=True).pack(anchor="w", pady=(0, 6))
             for m in recent:
                 row = tk.Frame(self.recent_box, bg=COLORS["card"])
                 row.pack(fill="x", pady=2)
-                result = pill(row, "WIN" if m["won"] else "LOSS", COLORS["win"] if m["won"] else COLORS["loss"])
+                won = {True: ("WIN", COLORS["win"]), False: ("LOSS", COLORS["loss"])}.get(m["won"], ("?", COLORS["button"]))
+                result = pill(row, *won)
                 result.configure(width=46)  # same width for WIN and LOSS, so the columns line up
                 result.pack(side="left", padx=(0, 10))
                 hero_label(row, m["hero"], "card", size=24, color=COLORS["text"]).pack(side="left")

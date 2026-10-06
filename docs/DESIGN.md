@@ -347,9 +347,15 @@ Checked against a real Street Brawl lobby where 2 of 8 players weren't found:
 - **0.2.1 checked by installing it** (Smart App Control briefly off): the CI installer went over an installed 0.2.0 in 3.4 s, kept `settings.json` and `notes.json` byte-for-byte (only `_internal` is replaced), opened in 0.9 s at 80 MB, read a real screenshot 12 of 12 and logged no warnings.
 - **Prepared for SignPath, then declined:** its terms need a product name and version on signed files (the app's `.exe` had none; `build.py` now writes PyInstaller's `--version-file` from `version.py`, and `setup.iss` sets `VersionInfoVersion`) and a privacy statement. Its stock sentence ("will not transfer any information … unless specifically requested") isn't true of the update check, so the README now lists every host the app contacts. Both stay: they're useful anyway. Signing itself was declined by the author: the publisher would read "SignPath Foundation", review takes weeks, every release needs a manual approval, and the app is for a few friends. Friends with Smart App Control on can't install it (4.38).
 
+### 4.40 Session summary
+- **The problem it had to get around:** the API's match history only has a match once its database stores it, which for the author's account (not friends with an API bot) is hours later: the newest match showed up 15 h after it was played. A summary built on the history alone would miss tonight's games. The full match data is no better right after a game: one live match never arrived in the hour the app waited for it.
+- **The end screen is always there:** the app already reads it (4.36), including your row (hero, K/D/A, souls) and which team won. Your row is now kept in `cache/end_screens.json` (newest 20, ~3 KB), shaped like a match-history entry, and Home's "Your recent matches" lists the API's matches plus kept ones the API doesn't have yet. The API's row wins when both exist, because opening an old match in game also shows an end screen, and the API knows when that match really was. A match whose ID couldn't be read isn't kept (it shows once the API has it); an unread result banner shows as "?".
+- **A session** is the newest run of matches with under 2 hours between one ending and the next starting. One line above the list: games, record, average K/D/A and souls per minute. It's on Home rather than a new card on My Stats because Home already listed recent matches; no extra request is made.
+- **Not built:** a score trend. The performance ratings need each match's full data, which arrives late or not at all (above), so a trend would have gaps exactly where the newest games are.
+
 ## 5. Testing
 
-`python -m unittest discover -s tests -v` runs 228 tests in a few seconds:
+`python -m unittest discover -s tests -v` runs 234 tests in a few seconds:
 - **Parser tests** use OCR output actually produced from real screenshots, including a noisy version, plus edge cases: headers, noise-only lines, duplicate player names, multi-word heroes, hero lines with nothing above them.
 - **Identity tests** use plain data to cover settling by unique name, friend links (including links listed by only one side and chains of settled players), ties falling back to hero history, and party grouping.
 - **Insights tests** cover each badge rule and its thresholds.

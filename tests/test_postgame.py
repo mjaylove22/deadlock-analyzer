@@ -1,11 +1,14 @@
 """Tests for waiting on a finished match's data without wasting the 3-an-hour Steam fetches."""
 
+import os
+import tempfile
 import unittest
 from unittest.mock import patch
 
 import match_review
+import postgame
 from match_review import MatchUnavailable
-from postgame import GIVE_UP_AFTER_S, PostGame, is_our_match
+from postgame import GIVE_UP_AFTER_S, PostGame, is_our_match, last_session, recent_matches
 
 
 class ScheduleTests(unittest.TestCase):
@@ -60,6 +63,45 @@ class IsOurMatchTests(unittest.TestCase):
         self.assertTrue(is_our_match(self.SUMMARY, None, ["Haze", "Rem", "Vyper", "Kelvin"]))       # half
         self.assertFalse(is_our_match(self.SUMMARY, None, ["Haze", "Vyper", "Kelvin", "Bebop"]))    # a quarter
         self.assertFalse(is_our_match(self.SUMMARY, None, []))                                       # nothing to go on
+
+
+def match(match_id, start, won=True, minutes=30, kills=6, deaths=3, assists=9, net_worth=30000):
+    return {"match_id": match_id, "start_time": start, "won": won, "minutes": minutes, "kills": kills,
+            "deaths": deaths, "assists": assists, "net_worth": net_worth, "hero": "Haze", "mode": "Normal"}
+
+
+class SessionTests(unittest.TestCase):
+    """Home's recent matches and session summary, from the API's history plus kept end screens."""
+
+    def test_end_screens_fill_in_what_the_api_doesnt_have_yet(self):
+        api = [match(2, 10_000), match(1, 5_000)]
+        screens = [match(1, 99_999, kills=0), match(3, 20_000)]  # 1: an old match opened in game; the API's row wins
+        self.assertEqual([(m["match_id"], m["start_time"]) for m in recent_matches(api, screens)],
+                         [(3, 20_000), (2, 10_000), (1, 5_000)])
+
+    def test_session_ends_at_a_long_break(self):
+        hour = 3600
+        matches = [match(4, 20 * hour, won=None), match(3, 19 * hour, won=False, kills=10, net_worth=60000),
+                   match(2, 17 * hour, minutes=40), match(1, 10 * hour)]  # 1 ended 6.5 h before 2 started
+        s = last_session(matches)
+        self.assertEqual((s["games"], s["wins"], s["losses"]), (3, 1, 1))  # 4's result wasn't read
+        self.assertAlmostEqual(s["kills"], (6 + 10 + 6) / 3)
+        self.assertAlmostEqual(s["souls_per_min"], 120000 / 100)
+        self.assertEqual(s["ended"], 20 * hour + 30 * 60)
+        self.assertIsNone(last_session([]))
+
+    def test_remember_end_screen_keeps_your_row_once(self):
+        path = os.path.join(tempfile.mkdtemp(), "end_screens.json")
+        me = {"hero": "Haze", "won": False, "kills": 4, "deaths": 2, "assists": 7, "net_worth": 25000}
+        screen = {"me": me, "minutes": 32.5, "mode": "Normal", "winning_team": None, "players": [me]}
+        with patch.object(postgame, "END_SCREENS_FILE", path):
+            postgame.remember_end_screen(dict(screen, me=None), 111203456)  # you weren't found on it
+            self.assertEqual(postgame.load_end_screens(), [])
+            postgame.remember_end_screen(screen, 111203456, now=10_000)
+            postgame.remember_end_screen(screen, 111203456, now=10_000)  # the same end screen seen again
+            rows = postgame.load_end_screens()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual((rows[0]["won"], rows[0]["minutes"], rows[0]["start_time"]), (None, 32, 10_000 - 1950))
 
 
 if __name__ == "__main__":
