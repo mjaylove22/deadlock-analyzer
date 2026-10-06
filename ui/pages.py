@@ -234,9 +234,11 @@ class HomePage(Page):
             if session:
                 s = session
                 souls = f" · {s['souls_per_min']:,.0f} souls/min" if s["souls_per_min"] else ""
+                rank = (f" · rank\u00a0{s['rank_change']:+,}\u00a0over\u00a0{s['ranked_games']}\u00a0ranked"  # wraps as one piece
+                        if s["rank_change"] is not None else "")
                 label(self.recent_box, f"Last session, {when(s['ended'])}: {s['games']} game{'s' if s['games'] > 1 else ''} · "
-                      f"{s['wins']}-{s['losses']} · {s['kills']:.1f}/{s['deaths']:.1f}/{s['assists']:.1f}{souls}",
-                      bg="card", bold=True).pack(anchor="w", pady=(0, 6))
+                      f"{s['wins']}-{s['losses']} · {s['kills']:.1f}/{s['deaths']:.1f}/{s['assists']:.1f}{souls}{rank}",
+                      bg="card", bold=True, justify="left", wraplength=500).pack(anchor="w", pady=(0, 6))
             for m in recent:
                 row = tk.Frame(self.recent_box, bg=COLORS["card"])
                 row.pack(fill="x", pady=2)

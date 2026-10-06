@@ -9,6 +9,7 @@ import match_review
 import postgame
 from match_review import MatchUnavailable
 from postgame import GIVE_UP_AFTER_S, PostGame, is_our_match, last_session, recent_matches
+from profiles import describe_match
 
 
 class ScheduleTests(unittest.TestCase):
@@ -89,6 +90,18 @@ class SessionTests(unittest.TestCase):
         self.assertAlmostEqual(s["souls_per_min"], 120000 / 100)
         self.assertEqual(s["ended"], 20 * hour + 30 * 60)
         self.assertIsNone(last_session([]))
+
+    def test_rank_change_sums_ranked_matches_but_not_placements(self):
+        def api_row(start, match_mode, delta, calibration=0):  # fields as in a real /match-history response
+            return {"match_id": start, "start_time": start, "hero_id": 1, "game_mode": 1, "match_mode": match_mode,
+                    "player_team": 0, "match_result": 0, "player_kills": 6, "player_deaths": 3, "player_assists": 9,
+                    "net_worth": 30000, "match_duration_s": 1800, "ranked_delta": delta, "ranked_calibration_match": calibration}
+        api = [describe_match(m, {1: "Haze"}) for m in
+               (api_row(9000, 4, -300), api_row(6000, 4, 370), api_row(3000, 1, None))]  # ranked, ranked, unranked
+        session = last_session(recent_matches(api, [match(1, 12_000)]))  # + an end screen the API doesn't have yet
+        self.assertEqual((session["games"], session["rank_change"], session["ranked_games"]), (4, 70, 2))
+        placements = [describe_match(api_row(3000, 4, 0, calibration=2), {1: "Haze"})]
+        self.assertIsNone(last_session(placements)["rank_change"])
 
     def test_remember_end_screen_keeps_your_row_once(self):
         path = os.path.join(tempfile.mkdtemp(), "end_screens.json")

@@ -134,7 +134,7 @@ def recent_matches(api_matches: List[Dict[str, Any]], end_screens: List[Dict[str
 
 def last_session(matches: List[Dict[str, Any]], gap_s: float = SESSION_GAP_S) -> Optional[Dict[str, Any]]:
     """The newest run of matches (newest first) with under gap_s from one's end to the next's start,
-    with the record, average K/D/A and souls per minute. None without matches."""
+    with the record, average K/D/A, souls per minute and rank change. None without matches."""
     if not matches:
         return None
     session = matches[:1]
@@ -143,7 +143,10 @@ def last_session(matches: List[Dict[str, Any]], gap_s: float = SESSION_GAP_S) ->
             break
         session.append(m)
     games, minutes = len(session), sum(m["minutes"] for m in session)
+    # end-screen rows have no rank_change: they don't know ranked from unranked, so they count once the API has them
+    deltas = [m["rank_change"] for m in session if m.get("rank_change") is not None]
     return {"games": games, "wins": sum(m["won"] is True for m in session), "losses": sum(m["won"] is False for m in session),
+            "rank_change": sum(deltas) if deltas else None, "ranked_games": len(deltas),
             **{key: sum(m[key] for m in session) / games for key in ("kills", "deaths", "assists")},
             "souls_per_min": sum(m["net_worth"] for m in session) / minutes if minutes else None,
             "ended": session[0]["start_time"] + session[0]["minutes"] * 60}

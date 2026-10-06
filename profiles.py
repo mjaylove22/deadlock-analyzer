@@ -65,6 +65,8 @@ def describe_match(match: Dict[str, Any], hero_names_by_id: Dict[int, str]) -> D
         "mode": GAME_MODES.get(match["game_mode"], "Other"),
         "type": match_type(match),
         "ranked": match["match_mode"] == 4,
+        # ranked progress gained or lost; None if unranked or a placement match (its delta is always 0)
+        "rank_change": match.get("ranked_delta") if match["match_mode"] == 4 and not match.get("ranked_calibration_match") else None,
     }
 
 
