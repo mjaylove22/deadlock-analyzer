@@ -82,7 +82,10 @@ For every player in the lobby:
 - **Stats on the hero they're playing right now:** games, win rate, KDA, damage per minute
 - **Badges:** ONE-TRICK, ON MAIN, COMFORT PICK, NEW ON HERO, FIRST GAME ON HERO, HIGH WR / LOW WR, VETERAN
 - **Rank**, in the game's rank colours
-- **Parties:** friends queued together on the same team share a colour
+- **Parties:** friends queued together on the same team share a colour, and the team line says how many games
+  they've played together
+- **WATCH** on up to 3 enemies with two or more reasons to watch them (main hero, high win rate on it, 100+ games
+  on it, the lobby's top rank, a party); hover it for the reasons
 - **Their Steam avatar**, **most-played heroes** (by games played, with win rate) and a clickable profile
 - **ID UNSURE** when the account match is a close call, so you know when not to trust it
 - **NO RECENT DATA** when the public API hasn't recorded any of their games for days, so the card may be out of date
@@ -97,16 +100,16 @@ The app has pages, with a **Back** button (or Alt+Left) and the title as a link 
 
 | Page | What it shows |
 |---|---|
-| **Home** | Your account, the last lobby, the strongest heroes right now, and your recent matches with a summary of your last session (record, K/D/A, souls per minute). Matches appear as soon as their end screen is read |
+| **Home** | Your account, the last lobby, the strongest heroes right now, and your recent matches with a summary of your last session (record, K/D/A, souls per minute, rank change in ranked). Matches appear as soon as their end screen is read |
 | **Lobby** | Both teams side by side, with your matchup at the bottom. Click any player to open their page. **Review this match** opens the match once it's over |
 | **Matchup** | Your hero against this team: with each teammate's hero, and a card per enemy (toughest first) with the player's record on their hero, your win rate against that hero, your K/D/A against them and the items that help most |
 | **Settings** | What happens when the scoreboard opens in game (bring the app to the front without taking focus from the game, a sound, open the review when a match ends) and what the lobby cards show |
 | **Heroes** | Every hero's win rate, pick rate, ban share, games and KDA, by mode and rank, with a 12-week trend line per hero |
 | **Items** | Every shop item: how often it's bought, win rate, tier, cost and typical purchase time, with a 14-day trend |
 | **Hero** | **Stats**: win rate over 12 weeks, best and toughest matchups, most-bought items and win rate at every rank. **Guide**: what kind of hero it is, what its abilities do and what players build |
-| **My Stats** | Your own player page |
+| **My Stats** | Your own player page, with **your form**: your last 20 matches against the 20 before (souls per minute, KDA, win rate), overall and per hero, calling out only changes bigger than luck |
 | **Player** | Rank, games and win rate for ranked, unranked and Street Brawl, your record with them, a note box (kept only on your PC), who they play with most, per-hero stats and recent matches |
-| **Match review** | **Overview**: victory or defeat, your K/D/A, net worth, damage, healing and last hits against your usual on that hero, your build, the net-worth lead over time and both scoreboards. **Performance**: every stat against other players on the same hero, at the same rank, in matches of a similar length ("better than 82% of Kelvin players"), and a score for every player |
+| **Match review** | **Overview**: victory or defeat, your K/D/A, net worth, damage, healing and last hits against your usual on that hero, your build, the net-worth lead over time and both scoreboards, with a few lines on how the match went (when the lead changed hands for good, the biggest swing). **Performance**: every stat against other players on the same hero, at the same rank, in matches of a similar length ("better than 82% of Kelvin players"), and a score for every player |
 | **Search** | Type any Steam name in the top bar to see every account with that name, or a **match ID** to open its review |
 
 **Overlay** keeps the window semi-transparent and on top of the game (borderless windowed only). While it's on,
