@@ -1,7 +1,8 @@
 # Builds the Windows installer on GitHub's machines, so releases don't depend on one PC.
 #   - Run by hand (Actions tab, "Run workflow"): builds and keeps the installer as a downloadable artifact.
 #   - Push a version tag (git tag v0.2.1 && git push origin v0.2.1): also makes a DRAFT release with
-#     both installer names, to check and publish by hand.
+#     both installer names, to check and publish by hand. If the tag push doesn't start a run (it didn't
+#     for v0.2.1), `gh workflow run build.yml --ref v0.2.1` runs it on the tag with the same result.
 name: Build installer
 
 on:

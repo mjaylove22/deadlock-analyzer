@@ -63,9 +63,16 @@ push-to-talk key.
 Valve doesn't approve or certify third-party tools, so nobody can promise you anything on Valve's behalf.
 But nothing this app does touches the game itself.
 
-**Your data:** stats come from the public [Deadlock API](https://deadlock-api.com), which the app asks about
-the Steam names it sees. Your settings, your notes on players and the screenshots stay on your PC, and
-screenshots are deleted after 3 days.
+**Your data:** the app has no account system and collects nothing about you. It connects to:
+- the public [Deadlock API](https://deadlock-api.com) (`api.deadlock-api.com`), asking about the Steam names
+  it reads in a lobby, the players and matches you open, and your own match history (for "met before");
+  hero and rank pictures come from
+  `assets-bucket.deadlock-api.com`, profile pictures from Steam (`avatars.steamstatic.com`);
+- GitHub (`api.github.com`), at most every 6 hours, to see whether there's a new version. Nothing about you
+  is sent.
+
+Screenshots are never uploaded. Your settings, your notes on players and the screenshots stay on your PC,
+and screenshots are deleted after 3 days.
 
 ## What it shows
 
@@ -171,6 +178,12 @@ python -m unittest discover -s tests -v
 Tesseract, wrapped by Inno Setup). Each GitHub release carries it under that name and as
 `DeadlockAnalyzer-Setup.exe`, which is what the download link above points to.
 
+**Releases are built by GitHub Actions** ([build.yml](.github/workflows/build.yml), about 2 minutes): bump
+`version.py`, commit, then `git tag v<version>` and `git push origin v<version>`. The workflow runs the tests,
+builds both installer files and makes a draft release to write notes for and publish. If the tag push
+doesn't start a run, `gh workflow run build.yml --ref v<version>` does the same. Pushing workflow changes
+needs a token with the `workflow` scope (`gh auth refresh -s workflow`).
+
 **Light:** about 80 MB of memory, the window opens in about a second, and the local cache stays around 2 MB.
 API answers are reused for a few minutes, so going Back or revisiting a page is instant.
 
@@ -208,6 +221,18 @@ tools/privacy_scan.py  pre-commit hook: blocks commits containing real player na
 docs/DESIGN.md       design decisions and technology choices
 utils/logger.py      logging to logs/app.log and the console
 ```
+
+## Code signing policy
+
+Signing of the Windows installer has been applied for with free code signing for open-source projects:
+"Free code signing provided by [SignPath.io](https://signpath.io), certificate by
+[SignPath Foundation](https://signpath.org)". Releases up to 0.2.1 are unsigned.
+
+- Only builds made by [GitHub Actions](.github/workflows/build.yml) from this repository's source are signed.
+  Bundled third-party programs (Python, Tesseract) are included as their projects publish them.
+- Committers and reviewers: [mjaylove22](https://github.com/mjaylove22). Approver of every signing
+  request: [mjaylove22](https://github.com/mjaylove22).
+- Privacy: see **Your data** above. The app only sends the lookups listed there and an update check.
 
 ## License
 
