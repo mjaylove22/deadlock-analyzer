@@ -16,6 +16,10 @@ def labels(entries, hero_id=HERO):
     return [label for label, _ in compute_badges(entries, hero_id)]
 
 
+def labels_at(entries, now, hero_id=HERO):
+    return [label for label, _ in compute_badges(entries, hero_id, now)]
+
+
 class HeroSummaryTests(unittest.TestCase):
     def test_stats_on_current_hero(self):
         s = hero_summary([entry(HERO, 20, wins=12, kills=60, deaths=30, assists=90, dpm=800)], HERO)
@@ -47,6 +51,21 @@ class ComputeBadgesTests(unittest.TestCase):
     def test_first_game_and_new_on_hero(self):
         self.assertIn("FIRST GAME ON HERO", labels([entry(1, 100)]))
         self.assertIn("NEW ON HERO", labels([entry(1, 100), entry(HERO, 3)]))
+
+    def test_old_data_never_claims_a_first_game(self):
+        # The API's newest game for many players is weeks old, e.g. before a new hero came out
+        now = 1_800_000_000
+        old = [dict(entry(1, 100), last_played=now - 60 * 86400)]
+        found = labels_at(old, now)
+        self.assertIn("NO RECENT DATA", found)
+        self.assertNotIn("FIRST GAME ON HERO", found)
+        self.assertNotIn("NEW ON HERO", labels_at(old + [dict(entry(HERO, 3), last_played=now - 60 * 86400)], now))
+
+    def test_current_data_still_says_first_game(self):
+        now = 1_800_000_000
+        found = labels_at([dict(entry(1, 100), last_played=now - 86400)], now)  # a day behind is normal
+        self.assertIn("FIRST GAME ON HERO", found)
+        self.assertNotIn("NO RECENT DATA", found)
 
     def test_win_rate_badges_need_enough_games(self):
         self.assertIn("HIGH WR", labels([entry(1, 100), entry(HERO, 30, wins=20)]))

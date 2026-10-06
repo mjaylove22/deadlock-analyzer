@@ -4,6 +4,7 @@ Pure logic with no network calls. Input is the hero-stats entries for one accoun
 per hero, as returned by the API). Stats cover normal matches only; bot matches aren't recorded.
 """
 
+import time
 from typing import Dict, List, Optional, Tuple
 
 Badge = Tuple[str, str]  # (label, kind): kind is "strong", "good", "warn" or "info" (sets the colour)
@@ -18,6 +19,10 @@ WIN_RATE_MIN_GAMES = 20       # win rates on fewer games are mostly noise
 HIGH_WIN_RATE = 0.60
 LOW_WIN_RATE = 0.40
 VETERAN_GAMES = 1000
+# The API is 0-2 days behind for players it follows, and weeks or months behind for many others
+# (players in live matches had stored histories ending in August). With nothing recorded in this
+# long, "first game on this hero" can't be told apart from "games the API hasn't got".
+STALE_AFTER_S = 3 * 24 * 3600
 
 
 def hero_summary(entries: List[Dict], hero_id: int) -> Optional[Dict]:
@@ -36,7 +41,7 @@ def hero_summary(entries: List[Dict], hero_id: int) -> Optional[Dict]:
     }
 
 
-def compute_badges(entries: List[Dict], hero_id: int) -> List[Badge]:
+def compute_badges(entries: List[Dict], hero_id: int, now: Optional[float] = None) -> List[Badge]:
     """Badges describing the player's history with the hero they're on right now."""
     played = sorted((e for e in entries if e["matches_played"] > 0), key=lambda e: e["matches_played"], reverse=True)
     total = sum(e["matches_played"] for e in played)
@@ -55,7 +60,10 @@ def compute_badges(entries: List[Dict], hero_id: int) -> List[Badge]:
         badges.append(("ON MAIN", "strong"))
     elif position in (2, 3) and games >= MAIN_MIN_GAMES:
         badges.append(("COMFORT PICK", "good"))
-    if games == 0:
+    newest = max((e.get("last_played") or 0 for e in played), default=0)
+    if newest and (now or time.time()) - newest > STALE_AFTER_S:
+        badges.append(("NO RECENT DATA", "info"))  # so not "first game": they may have played it since
+    elif games == 0:
         badges.append(("FIRST GAME ON HERO", "warn"))
     elif games < NEW_ON_HERO_MAX_GAMES:
         badges.append(("NEW ON HERO", "warn"))

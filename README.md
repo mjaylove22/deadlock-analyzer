@@ -77,6 +77,7 @@ For every player in the lobby:
 - **Parties:** friends queued together on the same team share a colour
 - **Their Steam avatar**, **most-played heroes** (by games played, with win rate) and a clickable profile
 - **ID UNSURE** when the account match is a close call, so you know when not to trust it
+- **NO RECENT DATA** when the public API hasn't recorded any of their games for days, so the card may be out of date
 - **NAME FIXED** when the app misread one character of a name and found the real Steam name
 - **Your history with them**: `FACED 3× · 2-1` (matches against them, your wins-losses) or `ALLY 4× · 1-3`
   (with them), and **your own note** on them
