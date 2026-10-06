@@ -47,6 +47,7 @@ Good to know:
 - It works in **fullscreen** and in windowed modes. The **Overlay** switch (the app floating over the
   game) only works in **borderless windowed** mode.
 - **Ctrl+Shift+D** captures the scoreboard by hand, if it's ever missed.
+- **Something went wrong?** Settings, **Open log folder**, and send `app.log` with a note of what happened.
 
 **Updating:** when there's a new version, the app's Home page says so. Click **Download update** and run it;
 your settings and notes are kept. **Uninstalling:** Windows Settings, **Apps**, **Installed apps**,

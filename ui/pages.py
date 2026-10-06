@@ -37,6 +37,7 @@ from version import DOWNLOAD_URL, __version__
 from ui.charts import (ITEM_DAYS, ITEM_TREND_SPAN, ChartTable, Column, advantage_bar, change_text, change_tip, hero_cell, item_cell,
                        percentile_bar, score_color, trend_cell, trend_chart, trend_color, trend_tip, verdict)
 from ui.widgets import item_tile, item_tooltip_text, tooltip
+from utils.logger import LOG_DIR
 from ui.widgets import bind_click, data_table, hero_label, matchup_strip, player_card, rank_pill
 
 MODES = list(API_GAME_MODES)  # ["Normal", "Street Brawl"]
@@ -1535,6 +1536,12 @@ class SettingsPage(Page):
                 variable = tk.BooleanVar(value=prefs[key])
                 self.variables.append(variable)
                 self.option(parent, title, note, variable, lambda k=key, v=variable: set_preference(k, v.get()))
+        help_outer, help_box = section(grid, "Something went wrong?")
+        help_outer.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(16, 0))
+        label(help_box, "app.log records what the app read from your screen and looked up, including the player names "
+              "in your matches. Send it to whoever gave you the app.", size=9, color="dim", bg="card", justify="left",
+              wraplength=900).pack(anchor="w", pady=(0, 8))
+        button(help_box, "Open log folder", lambda: os.startfile(LOG_DIR)).pack(anchor="w")
         self.app.set_status("Settings")
 
     def option(self, parent, title: str, note: str, variable, command):
