@@ -9,7 +9,8 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 import customtkinter as ctk
 
-from report import badge_labels, hero_stats_text, history_labels, matchup_kind, matchup_text, most_played_text
+from report import (THREAT_HERO_GAMES, badge_labels, hero_stats_text, history_labels, matchup_kind, matchup_text,
+                    most_played_text)
 from ui import images
 from ui.theme import BADGE_COLORS, COLORS, FONT, ITEM_SLOT_COLORS, MATCHUP_COLORS, card, label, pill
 
@@ -197,13 +198,20 @@ def player_card(parent, r: Dict[str, Any], accent: str, avatars: AvatarCache,
     badges = badge_labels(r if shown("show_badges") else dict(r, badges=[]))
     if party_label:
         badges.insert(0, (party_label, "party"))
+    if r.get("watch"):  # report.threats: an enemy with 2+ reasons to watch
+        badges.insert(0, ("WATCH", "watch"))
     if shown("show_history"):
         badges += [(text, "history") for text in history_labels(r.get("history"))]
     if badges:
         row = tk.Frame(info, bg=COLORS["card"])
         row.grid(row=2, column=0, columnspan=2, sticky="w", pady=(3, 0))
         for text, kind in badges:
-            pill(row, text, party_color if kind == "party" else BADGE_COLORS[kind]).pack(side="left", padx=(0, 4))
+            badge = pill(row, text, party_color if kind == "party" else BADGE_COLORS[kind])
+            badge.pack(side="left", padx=(0, 4))
+            if kind == "watch":
+                tooltip(badge, "Worth watching: " + " · ".join(r["watch"]) + f"\n\nShown for enemies with 2 or more of: "
+                        f"main hero or one-trick, a high win rate on their hero, {THREAT_HERO_GAMES}+ games on it, "
+                        "the lobby's top rank, a party.")
 
     details = most_played_text(r) if shown("show_most_played") else ""
     if details:

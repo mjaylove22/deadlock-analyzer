@@ -26,7 +26,7 @@ from postgame import last_session, load_end_screens, recent_matches
 from profiles import (API_GAME_MODES, LOW_SAMPLE_GAMES, MATCH_TYPES, RANK_BANDS, hero_rank_curve, hero_tier_list, hero_trends,
                       PROGRESS_GAMES, party_games, player_profile, teammates, when)
 import history
-from report import TEAM_TITLES, THREAT_HERO_GAMES, history_text, progress_texts, team_summary, threats
+from report import TEAM_TITLES, history_text, progress_texts, team_summary, threats
 from scoreboard_ocr import find_tesseract
 from screenshot_manager import get_screenshot_path
 from settings import get_me, get_preferences, save_settings, set_preference
@@ -288,24 +288,9 @@ class LobbyPage(Page):
                 r["my_note"] = notes.get(str(r["account_id"]), {}).get("text", "")
         party_of = {i: (PARTY_COLORS[n % len(PARTY_COLORS)], f"PARTY {chr(65 + n)}")
                     for n, party in enumerate(parties) for i in party}
-        watch = threats(results, parties)
-        if watch:
-            strip = tk.Frame(self.frame, bg=COLORS["card"], padx=12, pady=6)
-            strip.pack(fill="x", pady=(0, 8))
-            title = label(strip, "WATCH OUT FOR", size=9, color="dim", bold=True, bg="card")
-            title.pack(side="left", anchor="n", padx=(0, 14), pady=(3, 0))
-            tooltip(title, "Enemies with at least two of: main hero or one-trick, a high win rate on their hero, "
-                           f"{THREAT_HERO_GAMES}+ games on it, the top rank in the lobby, a party.\n"
-                           "Players whose account isn't certain are left out.")
-            lines = tk.Frame(strip, bg=COLORS["card"])
-            lines.pack(side="left", fill="x")
-            for i, reasons in watch:
-                r = results[i]
-                line = tk.Frame(lines, bg=COLORS["card"])
-                line.pack(anchor="w")
-                hero_label(line, r["hero"], "card", size=20, color=COLORS["enemy"]).pack(side="left")
-                label(line, f"{r['player']}  ·  " + " · ".join(reasons), bg="card").pack(side="left", padx=(8, 0))
-                bind_click(line, lambda r=r: self.app.open_player(r["account_id"]))
+        watch = dict(threats(results, parties))  # shown as a WATCH pill on those cards: no extra space
+        for i, r in enumerate(results):
+            r["watch"] = watch.get(i)
         columns = tk.Frame(self.frame, bg=COLORS["bg"])
         columns.pack(fill="both", expand=True)
         summaries = {}  # team -> (its summary label, its results, its parties)
@@ -319,8 +304,9 @@ class LobbyPage(Page):
             head.pack(fill="x", pady=(0, 2))
             tk.Frame(head, bg=COLORS[team], width=4, height=20).pack(side="left", padx=(0, 10))
             label(head, title, size=13, color=team, heading=True).pack(side="left")
-            summaries[team] = (label(head, team_summary([results[i] for i in members], team_parties), color="dim"),
-                               [results[i] for i in members], team_parties)
+            summary = label(head, team_summary([results[i] for i in members], team_parties), color="dim",
+                            justify="left", wraplength=400)  # party history can make it two lines
+            summaries[team] = (summary, [results[i] for i in members], team_parties)
             summaries[team][0].pack(side="left", padx=12)
             for i in members:
                 r = results[i]
