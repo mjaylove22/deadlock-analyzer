@@ -6,6 +6,8 @@ game_mode 1 = Normal, 4 = Street Brawl; match_mode 1 = Unranked, 4 = Ranked. The
 team is the winning team" (match_result == player_team), which agrees with it whenever it is set.
 """
 
+import math
+import statistics
 import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -132,6 +134,42 @@ def tier_rows(stats: List[Dict[str, Any]], hero_names_by_id: Dict[int, str],
     return sorted(rows, key=lambda r: r["win_rate"], reverse=True)
 
 
+PROGRESS_GAMES = 20  # compare the last 20 games with the 20 before: fewer and win rate is mostly luck
+PROGRESS_STATS = {  # stat -> its value in one match
+    "souls_per_min": lambda m: m["net_worth"] / (m["match_duration_s"] / 60),
+    "kda": lambda m: (m["player_kills"] + m["player_assists"]) / max(m["player_deaths"], 1),
+    "win_rate": lambda m: float(match_won(m)),
+}
+
+
+def compare_windows(matches: List[Dict[str, Any]], games: int = PROGRESS_GAMES) -> Optional[Dict[str, Dict[str, Any]]]:
+    """The newest `games` matches (newest first) against the `games` before them, per stat:
+    {"before", "recent", "change" (recent - before), "clear"}. A change is clear when it's more than twice
+    its standard error, i.e. bigger than game-to-game variation usually makes. None without enough games."""
+    if len(matches) < 2 * games:
+        return None
+    result = {}
+    for stat, value in PROGRESS_STATS.items():
+        recent = [value(m) for m in matches[:games]]
+        before = [value(m) for m in matches[games:2 * games]]
+        change = statistics.fmean(recent) - statistics.fmean(before)
+        error = math.sqrt((statistics.variance(recent) + statistics.variance(before)) / games)
+        result[stat] = {"before": statistics.fmean(before), "recent": statistics.fmean(recent), "change": change,
+                        "clear": abs(change) > 2 * error}
+    return result
+
+
+def progress(matches: List[Dict[str, Any]], hero_names_by_id: Dict[int, str]) -> Dict[str, Any]:
+    """Your recent form in normal matches (Street Brawl's souls/min isn't comparable), overall and on each
+    hero with enough games: {"overall": compare_windows or None, "heroes": {hero name: compare_windows}}."""
+    normal = [m for m in matches if m["game_mode"] == 1 and m["match_duration_s"] > 0]  # newest first
+    by_hero: Dict[int, List[Dict[str, Any]]] = {}
+    for m in normal:
+        by_hero.setdefault(m["hero_id"], []).append(m)
+    heroes = {hero_names_by_id.get(hero_id, f"hero #{hero_id}"): compare_windows(ms) for hero_id, ms in by_hero.items()}
+    return {"overall": compare_windows(normal), "heroes": {name: c for name, c in heroes.items() if c}}
+
+
 def player_profile(account_id: int, hero_names_by_id: Dict[int, str], match_type_name: str = "All") -> Dict[str, Any]:
     """Everything the player page shows, in one call (run it on a worker thread).
     match_type_name picks which games the hero table covers (see MATCH_TYPES)."""
@@ -155,6 +193,7 @@ def player_profile(account_id: int, hero_names_by_id: Dict[int, str], match_type
         "modes": mode_breakdown(matches),
         "recent": [describe_match(m, hero_names_by_id) for m in matches[:RECENT_MATCHES_SHOWN]],
         "total_matches": len(matches),
+        "progress": progress(matches, hero_names_by_id),
     }
 
 
@@ -224,6 +263,19 @@ def top_mates(mates: List[Dict[str, Any]], count: int = TEAMMATES_SHOWN) -> List
     best = sorted(mates, key=lambda m: m["matches_played"], reverse=True)[:count]
     return [{"account_id": m["mate_id"], "games": m["matches_played"],
              "win_rate": m["wins"] / m["matches_played"] if m["matches_played"] else 0.0} for m in best]
+
+
+def party_games(account_ids: List[int]) -> Optional[Dict[str, int]]:
+    """How much a lobby party has played together: the first member's games on the same team as the
+    member they've played with most, {"games", "wins"}. None under 10 games (the API's filter).
+    Not the API's same_party filter: it returned nothing for an account with 741 games beside a friend.
+    ponytail: pairs without the first member aren't fetched (one request per party); exact for a party of 2."""
+    together = {m["mate_id"]: m for m in deadlock_api.get_mate_stats(account_ids[0])}
+    pairs = [together[a] for a in account_ids[1:] if a in together]
+    if not pairs:
+        return None
+    best = max(pairs, key=lambda m: m["matches_played"])
+    return {"games": best["matches_played"], "wins": best["wins"]}
 
 
 def teammates(account_id: int) -> List[Dict[str, Any]]:

@@ -16,7 +16,7 @@ import customtkinter as ctk
 
 import assets
 import deadlock_api
-from match_review import REVIEW_STATS, MatchUnavailable, match_review, rate_match
+from match_review import REVIEW_STATS, MatchUnavailable, match_review, rate_match, story
 from performance import compared_text
 from guides import hero_guide
 from item_trends import item_trends
@@ -24,9 +24,9 @@ from matchups import hero_breakdown, matchup_details
 from player_lookup import search_player
 from postgame import last_session, load_end_screens, recent_matches
 from profiles import (API_GAME_MODES, LOW_SAMPLE_GAMES, MATCH_TYPES, RANK_BANDS, hero_rank_curve, hero_tier_list, hero_trends,
-                      player_profile, teammates, when)
+                      PROGRESS_GAMES, party_games, player_profile, teammates, when)
 import history
-from report import TEAM_TITLES, history_text, team_summary
+from report import TEAM_TITLES, THREAT_HERO_GAMES, history_text, progress_texts, team_summary, threats
 from scoreboard_ocr import find_tesseract
 from screenshot_manager import get_screenshot_path
 from settings import get_me, get_preferences, save_settings, set_preference
@@ -288,8 +288,27 @@ class LobbyPage(Page):
                 r["my_note"] = notes.get(str(r["account_id"]), {}).get("text", "")
         party_of = {i: (PARTY_COLORS[n % len(PARTY_COLORS)], f"PARTY {chr(65 + n)}")
                     for n, party in enumerate(parties) for i in party}
+        watch = threats(results, parties)
+        if watch:
+            strip = tk.Frame(self.frame, bg=COLORS["card"], padx=12, pady=6)
+            strip.pack(fill="x", pady=(0, 8))
+            title = label(strip, "WATCH OUT FOR", size=9, color="dim", bold=True, bg="card")
+            title.pack(side="left", anchor="n", padx=(0, 14), pady=(3, 0))
+            tooltip(title, "Enemies with at least two of: main hero or one-trick, a high win rate on their hero, "
+                           f"{THREAT_HERO_GAMES}+ games on it, the top rank in the lobby, a party.\n"
+                           "Players whose account isn't certain are left out.")
+            lines = tk.Frame(strip, bg=COLORS["card"])
+            lines.pack(side="left", fill="x")
+            for i, reasons in watch:
+                r = results[i]
+                line = tk.Frame(lines, bg=COLORS["card"])
+                line.pack(anchor="w")
+                hero_label(line, r["hero"], "card", size=20, color=COLORS["enemy"]).pack(side="left")
+                label(line, f"{r['player']}  ·  " + " · ".join(reasons), bg="card").pack(side="left", padx=(8, 0))
+                bind_click(line, lambda r=r: self.app.open_player(r["account_id"]))
         columns = tk.Frame(self.frame, bg=COLORS["bg"])
         columns.pack(fill="both", expand=True)
+        summaries = {}  # team -> (its summary label, its results, its parties)
         for c, (team, title) in enumerate(TEAM_TITLES.items()):
             columns.columnconfigure(c, weight=1, uniform="team")
             frame = tk.Frame(columns, bg=COLORS["bg"])
@@ -300,11 +319,23 @@ class LobbyPage(Page):
             head.pack(fill="x", pady=(0, 2))
             tk.Frame(head, bg=COLORS[team], width=4, height=20).pack(side="left", padx=(0, 10))
             label(head, title, size=13, color=team, heading=True).pack(side="left")
-            label(head, team_summary([results[i] for i in members], team_parties), color="dim").pack(side="left", padx=12)
+            summaries[team] = (label(head, team_summary([results[i] for i in members], team_parties), color="dim"),
+                               [results[i] for i in members], team_parties)
+            summaries[team][0].pack(side="left", padx=12)
             for i in members:
                 r = results[i]
                 player_card(frame, r, COLORS[team], self.app.avatars, party=party_of.get(i), show=show,
                             on_open=lambda r=r: self.app.open_player(r["account_id"]), on_search=self.app.search)
+        if parties:  # how much each party has played together: loaded after the lobby is on screen
+            def load():
+                found = deadlock_api.parallel(*[lambda p=p: party_games([results[i]["account_id"] for i in p]) for p in parties],
+                                                allow_failures=True)
+                return {tuple(p): games for p, games in zip(parties, found) if games}
+
+            def done(games):
+                for summary, members, team_parties in summaries.values():
+                    summary.config(text=team_summary(members, team_parties, games))
+            self.app.run_task(load, done)
 
 
 def counter_item_tip(item: Dict[str, Any], against: str) -> str:
@@ -1047,6 +1078,9 @@ class MatchPage(Page):
     def show_overview(self, r: Dict[str, Any]):
         me, my_team = r.get("me"), self.my_team
         self.score_slot = None
+        summary = " ".join(story(r))
+        if summary:
+            label(self.body, summary, size=11, bg="bg", justify="left", wraplength=1100).pack(anchor="w", pady=(10, 0))
 
         # Your game: lobby place and comparison with your usual on this hero
         if me:
@@ -1367,10 +1401,11 @@ class PlayerPage(Page):
             pill(chips, f"{m['mode']}  {m['games']:,} games · {m['win_rate']:.0%} WR", COLORS["button"],
                  size=9, text_color=COLORS["text"]).pack(side="left", padx=(0, 6))
 
-        rows = 14  # table rows that fit in the window
-        if not is_me:
+        rows = 13  # table rows that fit in the window, under one of the two cards
+        if is_me:
+            self.progress_card(p["progress"])
+        else:
             self.history_card(p, me)
-            rows = 13
 
         # Frequent teammates: loaded after the page is on screen, so they never delay it
         self.mates_row = tk.Frame(self.frame, bg=COLORS["bg"])
@@ -1425,6 +1460,28 @@ class PlayerPage(Page):
         else:
             self.message("No recorded matches.", right)
         self.app.set_status(f"{p['name']} · click a match for its post-game review")
+
+    def progress_card(self, progress: Dict[str, Any]):
+        """Your last 20 normal matches against the 20 before, and any change bigger than chance."""
+        outer, box = card(self.frame, padding=10)
+        outer.pack(fill="x", pady=(10, 0))
+        top = tk.Frame(box, bg=COLORS["card"])
+        top.pack(fill="x")
+        label(top, "Your form", size=10, color="dim", bold=True, bg="card").pack(side="left", padx=(0, 10))
+        summary, changes = progress_texts(progress)
+        if not summary:
+            label(top, f"Shows once you have {2 * PROGRESS_GAMES} recorded normal matches.", color="faint", bg="card").pack(side="left")
+            return
+        label(top, f"Last {PROGRESS_GAMES} normal matches vs the {PROGRESS_GAMES} before: {summary}",
+              bg="card").pack(side="left")
+        line = tk.Frame(box, bg=COLORS["card"])
+        line.pack(fill="x", pady=(4, 0))
+        if not changes:
+            label(line, "No change bigger than the usual ups and downs between games.", size=9, color="dim", bg="card").pack(side="left")
+        for n, (text, better) in enumerate(changes):
+            label(line, ("" if n == 0 else "·  ") + text, size=9, color="win" if better else "loss", bg="card").pack(side="left", padx=(0, 6))
+        tooltip(line, "Clear changes only: bigger than twice the variation you'd expect between two runs of "
+                      f"{PROGRESS_GAMES} games. Per hero, it compares your last {PROGRESS_GAMES} games on that hero with the {PROGRESS_GAMES} before.")
 
     def history_card(self, p: Dict[str, Any], me):
         """Your record with this player (loaded after the page is shown) and your note on them."""

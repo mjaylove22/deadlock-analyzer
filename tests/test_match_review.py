@@ -129,5 +129,27 @@ class FetchMetadataTests(unittest.TestCase):
         self.assertEqual(match_review.steam_fetches_left(), 3)
 
 
+class StoryTests(unittest.TestCase):
+    # team 0's lead at each snapshot, from a real 50-minute match: team 1 fell 33k behind, came back, then won
+    LEAD = [[3, 466], [6, -1719], [9, -7472], [30, -32973], [35, 767], [40, -375], [45, -11875]]
+
+    def test_told_from_your_side(self):
+        me = {"team": 0, "won": False, "hero": "Haze"}
+        review = {"networth_lead": self.LEAD, "winning_team": 1, "me": me, "places": {"damage": 1, "net_worth": 5},
+                  "vs_usual": {"net_worth": -0.18, "damage": 0.04, "healing": None, "last_hits": 0.12}}
+        self.assertEqual(match_review.story(review), [
+            "You lost, 12k souls behind at the end.",
+            "The enemy took the lead for good at minute 40. "
+            "The biggest swing was 34k souls toward your team, between minutes 30 and 35.",
+            "Against your usual Haze: souls 18% lower, last hits 12% higher.",  # damage +4% is ordinary
+            "Most damage in the lobby.",
+        ])
+
+    def test_a_match_you_werent_in_follows_the_winners(self):
+        lead = [[3, 1000], [6, 5000], [9, 40000]]
+        self.assertEqual(match_review.story({"networth_lead": lead, "winning_team": 0}),
+                         ["The winners finished 40k souls ahead.", "The winners led from start to finish."])
+
+
 if __name__ == "__main__":
     unittest.main()

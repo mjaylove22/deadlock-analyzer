@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import deadlock_api
 import profiles
+import report
 from profiles import RANK_BANDS, describe_match, hero_rows, match_type, mode_breakdown, tier_rows, top_mates, when
 
 NAMES = {1: "Haze", 2: "Rem", 3: "Newbie"}
@@ -84,6 +85,37 @@ class ProfilesTests(unittest.TestCase):
     def test_rank_bands_cover_every_rank_once(self):
         tiers = [t for _, band in RANK_BANDS if band for t in range(band[0], band[1] + 1)]
         self.assertEqual(tiers, list(range(1, 12)))  # Initiate (1) to Eternus (11), no gaps or overlaps
+
+
+class ProgressTests(unittest.TestCase):
+    def test_only_changes_bigger_than_chance_are_called_out(self):
+        # 40 Haze games, newest first: farming clearly up (~36k vs ~30k souls in 30.5 min), wins unchanged at 50%
+        haze = [dict(match(won=n % 2 == 0, start=1000 - n), net_worth=(36000 if n < 20 else 30000) + 500 * (n % 3))
+                for n in range(40)]
+        other = [match(hero_id=2, start=500 - n) for n in range(10)]           # too few games on Rem to compare
+        brawl = [dict(match(game_mode=4, start=2000 - n), net_worth=90000) for n in range(5)]  # not comparable
+        p = profiles.progress(brawl + haze + other, NAMES)
+        self.assertEqual(list(p["heroes"]), ["Haze"])
+        souls, wins = p["overall"]["souls_per_min"], p["overall"]["win_rate"]
+        self.assertTrue(souls["clear"])
+        self.assertFalse(wins["clear"])
+        summary, changes = report.progress_texts(p)
+        self.assertIn("win rate 50% → 50%", summary)
+        # averages 30,500 -> 36,475 souls a game (+20%); the Rem games are older, so overall = these 40 Haze games
+        self.assertEqual(changes, [("Overall souls/min up 20%", True), ("Haze souls/min up 20%", True)])
+        self.assertIsNone(profiles.progress(haze[:39], NAMES)["overall"])  # needs 40 games
+
+
+class PartyGamesTests(unittest.TestCase):
+    def test_games_together_from_the_first_members_teammates(self):
+        mates = [{"mate_id": 2, "matches_played": 741, "wins": 381}, {"mate_id": 3, "matches_played": 40, "wins": 20},
+                 {"mate_id": 9, "matches_played": 900, "wins": 400}]  # not in this party
+        with patch.object(deadlock_api, "get_mate_stats", return_value=mates):
+            duo, trio, strangers = (profiles.party_games(ids) for ids in ([1, 2], [1, 3, 2], [1, 5]))
+        self.assertEqual(report.party_text([0, 1], duo), "party of 2 (741 games together, 51% WR)")
+        self.assertEqual(report.party_text([0, 1, 2], trio), "party of 3 (up to 741 games together)")
+        self.assertIsNone(strangers)  # under 10 games together, so not in the API's list
+        self.assertEqual(report.party_text([0, 1], strangers), "party of 2")
 
 
 class TrendTests(unittest.TestCase):

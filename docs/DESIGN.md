@@ -354,9 +354,16 @@ Checked against a real Street Brawl lobby where 2 of 8 players weren't found:
 - **Rank change:** the sum of the match history's `ranked_delta` over the session's ranked matches, e.g. "rank +70 over 2 ranked". Checked against real responses: past placements it's mostly ±300 a match (sometimes 370-430 on a win, -60 or 0 on a loss); placement matches (`ranked_calibration_match` non-zero) always have 0, so they're left out, and a session of only placements shows nothing. End-screen rows can't tell ranked from unranked, so a match counts once the API has it; the "over N ranked" says how many it covers.
 - **Not built:** a score trend. The performance ratings need each match's full data, which arrives late or not at all (above), so a trend would have gaps exactly where the newest games are.
 
+### 4.41 Your form, the players to watch, parties and the match story
+All four use data the app already had; only party history makes a request (one per party, after the lobby is on screen).
+- **Your form (My Stats):** your last 20 normal matches against the 20 before, overall and per hero with 40+ games: souls/min, KDA, win rate. A change is only called out when it's more than twice its standard error (computed from the per-game values), because over 20 games win rate swings about ±15 points by luck alone. On the author's history this flagged +10% souls/min on two heroes and correctly ignored a 70% → 50% win-rate drop. Street Brawl is left out (its souls/min isn't comparable). Damage isn't in the match history, so it isn't tracked.
+- **Watch out for (Lobby):** up to 3 enemies with at least two reasons from what the cards already show: main hero or one-trick, HIGH WR, 100+ games on the hero, the lobby's top rank, a party. Reasons, not a score: a combined "difficulty" grade would need weights nobody could justify. KDA isn't used (it depends too much on the hero's role), and players whose account isn't certain are left out. No smurf labels: the data can't support the claim.
+- **Party history:** `mate-stats` for the party's first member gives games on the same team and wins. Its `same_party` filter was tried first and returned nothing for an account with 741 games beside a friend, so it isn't used; since parties are already Steam friends on the same team, "games on the same team" is the honest measure. Loaded after the lobby appears, so lobbies aren't slower.
+- **Match story (Review):** 2-4 sentences from the net-worth lead and your numbers: the result, when the lead changed hands for the last time, the biggest swing between two snapshots (they're 3 then 5 minutes apart), stats 10%+ off your usual on that hero, and where you were the lobby's best. Facts only, no advice.
+
 ## 5. Testing
 
-`python -m unittest discover -s tests -v` runs 235 tests in a few seconds:
+`python -m unittest discover -s tests -v` runs 241 tests in a few seconds:
 - **Parser tests** use OCR output actually produced from real screenshots, including a noisy version, plus edge cases: headers, noise-only lines, duplicate player names, multi-word heroes, hero lines with nothing above them.
 - **Identity tests** use plain data to cover settling by unique name, friend links (including links listed by only one side and chains of settled players), ties falling back to hero history, and party grouping.
 - **Insights tests** cover each badge rule and its thresholds.

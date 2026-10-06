@@ -2,7 +2,7 @@
 
 import unittest
 
-from report import badge_labels, build_report, hero_stats_text, matchup_kind, matchup_text, team_summary
+from report import badge_labels, build_report, hero_stats_text, matchup_kind, matchup_text, team_summary, threats
 
 
 def result(player, hero, team, status="found", note="unique name", url=None, top=(), stats=None,
@@ -92,6 +92,24 @@ class TeamSummaryTests(unittest.TestCase):
 
     def test_quiet_team(self):
         self.assertEqual(team_summary([result("A", "Haze", "enemy")], []), "1 player")
+
+
+class ThreatTests(unittest.TestCase):
+    def test_enemies_with_two_or_more_reasons_most_first(self):
+        oracle, archon = {"badge": 96, "name": "Oracle 6"}, {"badge": 71, "name": "Archon 1"}
+        main = {"games": 1200, "win_rate": 0.62}
+        results = [
+            result("Grey Mirage", "Haze", "enemy", stats=main, badges=[("ON MAIN", "strong"), ("HIGH WR", "good")], rank=oracle),
+            result("moondog", "Seven", "enemy", stats={"games": 140, "win_rate": 0.5}, rank=archon),  # 1 reason + party
+            result("Quiet Owl", "Lash", "enemy", stats={"games": 30, "win_rate": 0.5}, rank=archon),  # party only
+            result("Unsure", "Ivy", "enemy", stats=main, badges=[("ONE-TRICK", "strong")], confident=False),
+            result("Ally", "Bebop", "friendly", stats=main, badges=[("ONE-TRICK", "strong")], rank=oracle),
+        ]
+        found = threats(results, parties=[[1, 2]])
+        self.assertEqual(found, [
+            (0, ["main hero", "62% WR on Haze", "1,200 games on Haze", "top rank here (Oracle 6)"]),
+            (1, ["140 games on Seven", "party of 2"]),
+        ])
 
 
 if __name__ == "__main__":

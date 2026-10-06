@@ -210,6 +210,53 @@ def match_review(match_id: int, hero_names_by_id: Dict[int, str], me: Optional[D
     return review
 
 
+NOTABLE_VS_USUAL = 0.10  # one match this far from your usual is worth a mention
+STORY_STATS = {"net_worth": "souls", "damage": "damage", "healing": "healing", "last_hits": "last hits"}
+
+
+def souls(amount: float) -> str:
+    return f"{abs(amount) / 1000:.0f}k souls" if abs(amount) >= 1000 else f"{abs(amount):,.0f} souls"
+
+
+def story(review: Dict[str, Any]) -> List[str]:
+    """A few sentences about the match from the net-worth lead and, if you played, your numbers:
+    the result, when the lead changed hands for the last time, the biggest swing, and how you did
+    against your usual on that hero. Told from your side, or the winners' if you weren't in it."""
+    me, lead = review.get("me"), review["networth_lead"]
+    side = me["team"] if me else review["winning_team"]
+    ours = [(minute, value if side == 0 else -value) for minute, value in lead]  # + = our side ahead
+    we, they = ("Your team", "the enemy") if me else ("The winners", "the other team")
+    lines = []
+    if ours:
+        final = ours[-1][1]
+        if me:
+            lines.append(f"You {'won' if me['won'] else 'lost'}, {souls(final)} {'ahead' if final > 0 else 'behind'} at the end.")
+        else:
+            lines.append(f"The winners finished {souls(final)} {'ahead' if final > 0 else 'behind'}.")
+        changes = [n for n in range(1, len(ours)) if (ours[n][1] > 0) != (ours[n - 1][1] > 0)]
+        if not changes:
+            lines.append(f"{we} {'led' if final > 0 else 'trailed'} from start to finish.")
+        else:
+            taker = we if final > 0 else they.capitalize()
+            turning = f"{taker} took the lead for good at minute {ours[changes[-1]][0]:.0f}."
+            if len(ours) > 1:
+                n = max(range(1, len(ours)), key=lambda n: abs(ours[n][1] - ours[n - 1][1]))
+                swing = ours[n][1] - ours[n - 1][1]
+                turning += (f" The biggest swing was {souls(swing)} toward {we.lower() if swing > 0 else they}, "
+                            f"between minutes {ours[n - 1][0]:.0f} and {ours[n][0]:.0f}.")
+            lines.append(turning)
+    if me:
+        notable = sorted(((key, v) for key, v in review.get("vs_usual", {}).items()
+                          if v is not None and abs(v) >= NOTABLE_VS_USUAL), key=lambda kv: -abs(kv[1]))[:2]
+        if notable:
+            lines.append(f"Against your usual {me['hero']}: " + ", ".join(
+                f"{STORY_STATS[key]} {abs(v):.0%} {'higher' if v > 0 else 'lower'}" for key, v in notable) + ".")
+        best = [STORY_STATS[key] for key in STORY_STATS if review.get("places", {}).get(key) == 1]
+        if best:
+            lines.append("Most " + " and ".join(best) + " in the lobby.")
+    return lines
+
+
 def match_badge(review: Dict[str, Any]) -> Optional[float]:
     """The match's average rank (badge = tier * 10 + subrank). Matches often come without it, so then
     the players' current ranks are averaged instead (one batch request; unranked players skipped)."""

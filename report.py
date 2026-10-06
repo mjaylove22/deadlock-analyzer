@@ -4,7 +4,7 @@ The app lays results out as cards and the terminal prints lines, but both use th
 for the wording, so the two always say the same thing.
 """
 
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 Line = Tuple[str, str]  # (text, style): style is one of team, party, player, note, link, hero, blank
 
@@ -87,10 +87,85 @@ def history_text(record: Dict[str, int]) -> str:
     return "You've " + " and ".join(parts)
 
 
-def team_summary(team_results: List[Dict[str, Any]], team_parties: List[List[int]]) -> str:
-    """One line about a team, e.g. "4 players · party of 3 · 3 new on hero · best rank Oracle 4"."""
+PROGRESS_LABELS = {"souls_per_min": ("souls/min", "{:,.0f}"), "kda": ("KDA", "{:.1f}"), "win_rate": ("win rate", "{:.0%}")}
+CLEAR_CHANGES_SHOWN = 4  # what fits on one line
+
+
+def change_amount(stat: str, v: Dict[str, Any]) -> str:
+    """Win rate changes in points ("12 pts"), the others in percent ("10%")."""
+    if stat == "win_rate":
+        return f"{abs(v['change']) * 100:.0f} pts"
+    return f"{abs(v['change']) / v['before']:.0%}" if v["before"] else ""
+
+
+def progress_texts(progress: Dict[str, Any]) -> Tuple[str, List[Tuple[str, bool]]]:
+    """(the overall comparison, [(a clear change, whether it's an improvement)]), e.g.
+    "2,310 → 2,540 souls/min · KDA 3.1 → 3.4 · win rate 45% → 55%" and [("Haze souls/min up 14%", True)]."""
+    overall = progress["overall"]
+    if not overall:
+        return "", []
+    summary = " · ".join(f"{name} {fmt.format(overall[stat]['before'])} → {fmt.format(overall[stat]['recent'])}"
+                         for stat, (name, fmt) in PROGRESS_LABELS.items())
+    clear = [(scope, stat, v) for scope, comparison in [("Overall", overall)] + list(progress["heroes"].items())
+             for stat, v in comparison.items() if v["clear"]]
+    clear.sort(key=lambda c: -abs(c[2]["change"] / (c[2]["before"] or 1)))  # biggest relative changes first
+    return summary, [(f"{scope} {PROGRESS_LABELS[stat][0]} {'up' if v['change'] > 0 else 'down'} {change_amount(stat, v)}",
+                      v["change"] > 0) for scope, stat, v in clear[:CLEAR_CHANGES_SHOWN]]
+
+
+THREAT_HERO_GAMES = 100  # this many games on their current hero counts as a lot of experience on it
+MIN_THREAT_REASONS = 2   # one reason alone (e.g. being in a party) doesn't make a threat
+THREATS_SHOWN = 3
+
+
+def threat_reasons(r: Dict[str, Any], top_badge: int, party_size: int) -> List[str]:
+    """Why an enemy is worth watching, from facts the lobby already shows."""
+    labels = {label for label, _ in r["badges"]}
+    s = r["hero_stats"] or {}
+    reasons = []
+    if "ONE-TRICK" in labels:
+        reasons.append("one-trick")
+    elif "ON MAIN" in labels:
+        reasons.append("main hero")
+    if "HIGH WR" in labels:
+        reasons.append(f"{s['win_rate']:.0%} WR on {r['hero']}")
+    if s.get("games", 0) >= THREAT_HERO_GAMES:
+        reasons.append(f"{s['games']:,} games on {r['hero']}")
+    if r["rank"] and top_badge and r["rank"]["badge"] == top_badge:
+        reasons.append(f"top rank here ({r['rank']['name']})")
+    if party_size > 1:
+        reasons.append(f"party of {party_size}")
+    return reasons
+
+
+def threats(results: List[Dict[str, Any]], parties: List[List[int]]) -> List[Tuple[int, List[str]]]:
+    """The enemies with the most reasons to watch them (at least MIN_THREAT_REASONS), most first:
+    [(index into results, reasons)]. Players whose account isn't certain are left out: their stats
+    may be someone else's."""
+    top_badge = max((r["rank"]["badge"] for r in results if r.get("rank")), default=0)
+    party_size = {i: len(party) for party in parties for i in party}
+    found = [(i, threat_reasons(r, top_badge, party_size.get(i, 1))) for i, r in enumerate(results)
+             if r["team"] == "enemy" and r["status"] == "found" and r["confident"]]
+    found = [(i, reasons) for i, reasons in found if len(reasons) >= MIN_THREAT_REASONS]
+    found.sort(key=lambda t: (-len(t[1]), -((results[t[0]]["hero_stats"] or {}).get("games", 0))))
+    return found[:THREATS_SHOWN]
+
+
+def party_text(party: List[int], together: Optional[Dict[str, int]] = None) -> str:
+    """e.g. "party of 2 (741 games together, 51% WR)"; a bigger party gives its closest pair's games."""
+    if not together:
+        return f"party of {len(party)}"
+    if len(party) == 2:
+        return f"party of 2 ({together['games']:,} games together, {together['wins'] / together['games']:.0%} WR)"
+    return f"party of {len(party)} (up to {together['games']:,} games together)"
+
+
+def team_summary(team_results: List[Dict[str, Any]], team_parties: List[List[int]],
+                 party_games: Optional[Dict[tuple, Dict[str, int]]] = None) -> str:
+    """One line about a team, e.g. "4 players · party of 3 · 3 new on hero · best rank Oracle 4".
+    party_games: profiles.party_games by tuple(party), once loaded."""
     parts = [f"{len(team_results)} player" + ("" if len(team_results) == 1 else "s")]
-    parts += [f"party of {len(p)}" for p in team_parties]
+    parts += [party_text(p, (party_games or {}).get(tuple(p))) for p in team_parties]
     labels = [label for r in team_results for label, _ in r["badges"]]
     one_tricks = labels.count("ONE-TRICK")
     new = labels.count("NEW ON HERO") + labels.count("FIRST GAME ON HERO")
