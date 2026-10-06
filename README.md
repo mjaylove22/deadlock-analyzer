@@ -28,9 +28,9 @@ developer has bought a code-signing certificate. This is a free hobby project wi
 the installer is built from the code on this page, which anyone can read.
 
 **"Smart App Control blocked an app"** (some Windows 11 PCs, with no Run anyway button): Smart App Control
-only runs code-signed programs it doesn't already know, and this version isn't signed yet. Free code signing
-for open-source projects is being set up so a later version installs there too. Please don't turn Smart App
-Control off just for this app.
+only runs code-signed programs it doesn't already know, and this free hobby app isn't signed, so it can't be
+installed while Smart App Control is on. Whether to turn it off is your choice: on some Windows 11 versions it
+can't be turned back on without resetting Windows.
 
 ## First steps
 
@@ -221,18 +221,6 @@ tools/privacy_scan.py  pre-commit hook: blocks commits containing real player na
 docs/DESIGN.md       design decisions and technology choices
 utils/logger.py      logging to logs/app.log and the console
 ```
-
-## Code signing policy
-
-Signing of the Windows installer has been applied for with free code signing for open-source projects:
-"Free code signing provided by [SignPath.io](https://signpath.io), certificate by
-[SignPath Foundation](https://signpath.org)". Releases up to 0.2.1 are unsigned.
-
-- Only builds made by [GitHub Actions](.github/workflows/build.yml) from this repository's source are signed.
-  Bundled third-party programs (Python, Tesseract) are included as their projects publish them.
-- Committers and reviewers: [mjaylove22](https://github.com/mjaylove22). Approver of every signing
-  request: [mjaylove22](https://github.com/mjaylove22).
-- Privacy: see **Your data** above. The app only sends the lookups listed there and an update check.
 
 ## License
 
