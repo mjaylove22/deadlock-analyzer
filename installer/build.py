@@ -95,13 +95,27 @@ def check_tesseract():
     print(f"Tesseract: the copy works on its own (read {result.stdout.strip()!r})")
 
 
+def version_file():
+    """The .exe's Windows file properties (product name and version), which code signing requires."""
+    numbers = tuple(int(n) for n in __version__.split(".")) + (0,)
+    strings = {"CompanyName": "mjaylove22", "FileDescription": APP_NAME, "FileVersion": __version__,
+               "InternalName": APP_NAME, "OriginalFilename": f"{APP_NAME}.exe", "ProductName": APP_NAME,
+               "ProductVersion": __version__, "LegalCopyright": "MIT License"}
+    table = ", ".join(f"StringStruct({key!r}, {value!r})" for key, value in strings.items())
+    path = os.path.join(BUILD, "version_info.txt")
+    with open(path, "w", encoding="utf-8") as f:  # PyInstaller's format: Python syntax, read with eval
+        f.write(f"VSVersionInfo(ffi=FixedFileInfo(filevers={numbers}, prodvers={numbers}), kids=["
+                f"StringFileInfo([StringTable('040904B0', [{table}])]), VarFileInfo([VarStruct('Translation', [1033, 1200])])])")
+    return path
+
+
 def run_pyinstaller():
     def data(source, target):
         return ["--add-data", f"{os.path.join(ROOT, source)}{os.pathsep}{target}"]
     subprocess.run([
         sys.executable, "-m", "PyInstaller", os.path.join(ROOT, "Deadlock Analyzer.pyw"),
         "--name", APP_NAME, "--onedir", "--windowed", "--noconfirm", "--clean",
-        "--icon", os.path.join(ROOT, "assets", "icon.ico"),
+        "--icon", os.path.join(ROOT, "assets", "icon.ico"), "--version-file", version_file(),
         "--collect-data", "customtkinter",  # its themes and fonts
         *data("assets", "assets"),
         "--exclude-module", "PIL.AvifImagePlugin", "--exclude-module", "PIL._avif",  # 8 MB, never used

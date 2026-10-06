@@ -15,6 +15,7 @@
 AppId={{4F03D513-80DA-4ADF-9BEE-9EB4CEEAF010}
 AppName={#AppName}
 AppVersion={#AppVersion}
+VersionInfoVersion={#AppVersion}
 AppPublisher=mjaylove22
 AppPublisherURL=https://github.com/mjaylove22/deadlock-analyzer
 AppSupportURL=https://github.com/mjaylove22/deadlock-analyzer/issues
