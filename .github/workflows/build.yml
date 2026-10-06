@@ -1,0 +1,62 @@
+# Builds the Windows installer on GitHub's machines, so releases don't depend on one PC.
+#   - Run by hand (Actions tab, "Run workflow"): builds and keeps the installer as a downloadable artifact.
+#   - Push a version tag (git tag v0.2.1 && git push origin v0.2.1): also makes a DRAFT release with
+#     both installer names, to check and publish by hand.
+name: Build installer
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write  # only to create the draft release
+
+jobs:
+  build:
+    runs-on: windows-2022  # has Inno Setup 6 installed
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install Python packages
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Install Tesseract (UB Mannheim build, the one the app is tested with)
+        run: |
+          choco install tesseract -y --no-progress
+          & "C:\Program Files\Tesseract-OCR\tesseract.exe" --version  # where build.py looks for it
+
+      - name: Check the tag matches version.py
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          $version = python -c "from version import __version__; print(__version__)"
+          if ("v$version" -ne "${{ github.ref_name }}") { throw "Tag ${{ github.ref_name }} but version.py says $version" }
+
+      - name: Run the tests
+        run: python -m unittest discover -s tests
+
+      - name: Build the installer
+        run: |
+          python installer/build.py
+          $versioned = Get-ChildItem dist\DeadlockAnalyzer-Setup-*.exe | Select-Object -First 1
+          Copy-Item $versioned.FullName dist\DeadlockAnalyzer-Setup.exe
+          Get-FileHash dist\DeadlockAnalyzer-Setup*.exe -Algorithm SHA256 | Format-Table Hash, Path -AutoSize
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: installer
+          path: dist/DeadlockAnalyzer-Setup*.exe
+
+      - name: Draft a release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" --draft --title "Deadlock Analyzer $("${{ github.ref_name }}".TrimStart('v'))" `
+            --notes "Built by GitHub Actions from ${{ github.sha }}. Write the release notes, then publish." `
+            (Get-ChildItem dist\DeadlockAnalyzer-Setup*.exe).FullName
