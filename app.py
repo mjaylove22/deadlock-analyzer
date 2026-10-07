@@ -37,7 +37,7 @@ from matchups import build_matchup
 from player_lookup import analyze_records, read_lobby
 from scoreboard_ocr import TESSERACT_INSTALL, find_tesseract, read_match_id_file
 import end_screen
-from match_review import get_summary
+from match_review import MatchUnavailable, get_summary
 from postgame import CHECK_EVERY_S, PostGame, is_our_match, link_players, remember_end_screen
 import game_window
 import layout as layout_module
@@ -256,7 +256,10 @@ class AnalyzerApp:
                 result = work()
                 self.events.put(lambda: on_done(result) if token == self.page_token else None)
             except Exception as e:
-                logger.exception("Background task failed")
+                if isinstance(e, MatchUnavailable):  # expected (not stored yet) and explained on the page
+                    logger.info("Match not available: %s", e)
+                else:
+                    logger.exception("Background task failed")
                 error = e  # bound now: Python clears "e" when the except block ends
                 if on_error:
                     self.events.put(lambda: on_error(error) if token == self.page_token else None)
