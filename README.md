@@ -95,6 +95,8 @@ For every player in the lobby:
 
 **Your matchup** (once you've set your account) appears at the bottom: your hero's win rate against each
 enemy hero compared with its usual (red = harder, green = easier), and the items that help against this team.
+30 seconds after a new lobby appears, the window switches to the **full matchup**, which also shows each enemy's
+rank, main hero and WATCH pill. Click anything before then and it stays where you are; **Back** returns to the lobby.
 
 The app has pages, with a **Back** button (or Alt+Left) and the title as a link to **Home**:
 

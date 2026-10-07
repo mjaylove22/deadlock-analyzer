@@ -468,8 +468,16 @@ class MatchupPage(Page):
             danger = stats["games"] >= 20 and stats["win_rate"] >= 0.55
             label(threat, f"{stats['games']} game{'' if stats['games'] == 1 else 's'} on {enemy} · {stats['win_rate']:.0%} WR · {stats['kda']:.1f} KDA",
                   size=9, color="loss" if danger else "text", bold=danger, bg="card").pack(side="left")
-            for text, kind in player["badges"][:2]:
+            if player.get("watch"):  # set by the lobby page (report.threats)
+                watch = pill(threat, "WATCH", BADGE_COLORS["watch"], size=8)
+                watch.pack(side="left", padx=(6, 0))
+                tooltip(watch, "Worth watching: " + " · ".join(player["watch"]))
+            for text, kind in player["badges"][:1 if player.get("watch") else 2]:  # a third pill overflows the card
                 pill(threat, text, BADGE_COLORS[kind], size=8).pack(side="left", padx=(6, 0))
+        if player and player["status"] == "found" and player["top_heroes"]:
+            main = player["top_heroes"][0]
+            label(box, f"Main: {main['hero']} · {main['matches']} games ({main['win_rate']:.0%})",
+                  size=9, color="dim", bg="card").pack(anchor="w", pady=(0, 4))
         else:
             label(threat, f"First recorded game on {enemy}" if player and player["status"] == "found" else "Player not identified",
                   size=9, color="faint", bg="card").pack(side="left")

@@ -44,8 +44,8 @@ import layout as layout_module
 from screenshot_manager import (SCREENSHOT_DIR, capture_and_save_screenshot, delete_old_screenshots, get_screenshot_path,
                                 save_end_screen)
 from settings import get_me, get_preferences, load_settings, save_settings
-from ui.pages import (HeroesPage, HeroPage, HomePage, ItemsPage, LobbyPage, MatchPage, PlayerPage, SearchPage,
-                      SettingsPage, SetupPage)
+from ui.pages import (HeroesPage, HeroPage, HomePage, ItemsPage, LobbyPage, MatchPage, MatchupPage, PlayerPage,
+                      SearchPage, SettingsPage, SetupPage)
 from ui import images
 from ui.theme import COLORS, FONT, HEADING_FONT, label, setup_styles, switch
 from ui.widgets import AvatarCache, hide_tooltip
@@ -67,6 +67,7 @@ WATCH_INTERVAL_S = 1.0   # how often auto-detect checks for the scoreboard (one 
 SETTLE_S = 0.5           # after the scoreboard appears, wait for the menu animation before capturing
 END_CHECK_INTERVAL_S = 2.0  # how often the end-of-match screen is looked for (one check ~8 ms)
 LOBBY_MATCH_ID_MAX_AGE_S = 90 * 60  # a lobby's match ID stands in for an unreadable end screen this long
+MATCHUP_AFTER_MS = 30_000  # a new lobby turns into the full matchup after this long, unless the user moved on
 NAV_TABS = [("lobby", "Lobby"), ("heroes", "Heroes"), ("items", "Items"), ("mystats", "My Stats"), ("settings", "Settings")]
 ICON_PATH = paths.resource("assets", "icon.ico")
 
@@ -548,6 +549,9 @@ class AnalyzerApp:
         watching = "watching for the scoreboard" if self.watching else f"{HOTKEY.upper()} for a new screenshot"
         self.set_status(f"{len(lobby['results'])} players  ·  {watching}")
         prefs = get_preferences()
+        if lobby.get("matchup") and prefs["show_matchup"]:  # any navigation (a click, a new lobby) cancels it
+            token = self.page_token
+            self.root.after(MATCHUP_AFTER_MS, lambda: self.navigate(MatchupPage) if token == self.page_token else None)
         if prefs["sound"]:
             self.root.bell()  # audible cue when the report is ready while you're in game
         if lobby["from_game"] and prefs["pop_up"]:
