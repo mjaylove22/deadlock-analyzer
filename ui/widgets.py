@@ -2,6 +2,7 @@
 
 import logging
 import tkinter as tk
+import tkinter.font as tkfont
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from tkinter import ttk
@@ -9,8 +10,8 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 import customtkinter as ctk
 
-from report import (THREAT_HERO_GAMES, badge_labels, badge_tip,hero_stats_text, history_labels, matchup_kind, matchup_text,
-                    most_played_text)
+from report import (THREAT_HERO_GAMES, badge_labels, badge_tip, hero_stats_text, history_labels, matchup_kind,
+                    matchup_text, most_played_text)
 from ui import images
 from ui.theme import BADGE_COLORS, COLORS, FONT, ITEM_SLOT_COLORS, MATCHUP_COLORS, card, label, pill
 
@@ -163,6 +164,31 @@ def hero_label(parent, hero: str, bg: str, size: int = 22, font_size: int = 10, 
                     fg=color or images.readable_on_dark(images.hero_color(hero)), font=(FONT, font_size, "bold"))
 
 
+def card_badges(r: Dict[str, Any], party_label: Optional[str], shown: Callable[[str], bool]) -> List[Tuple[str, str]]:
+    """The pills on a player's card, in order: WATCH, party, badges, then your history with them."""
+    # With badges off, how the account was identified (ID UNSURE, NAME FIXED...) still shows: it's about trust
+    badges = badge_labels(r if shown("show_badges") else dict(r, badges=[]))
+    if party_label:
+        badges.insert(0, (party_label, "party"))
+    if r.get("watch"):  # report.threats: an enemy with 2+ reasons to watch
+        badges.insert(0, ("WATCH", "watch"))
+    if shown("show_history"):
+        badges += [(text, "history") for text in history_labels(r.get("history"))]
+    return badges
+
+
+def badge_pill(parent, r: Dict[str, Any], text: str, kind: str, party_color: Optional[str], size: int = 8) -> ctk.CTkLabel:
+    """One of card_badges as a pill, with what it means on hover."""
+    badge = pill(parent, text, party_color if kind == "party" else BADGE_COLORS[kind], size=size)
+    if kind == "watch":
+        tooltip(badge, "Worth watching: " + " · ".join(r["watch"]) + f"\n\nShown for enemies with 2 or more of: "
+                f"main hero or one-trick, a high win rate on their hero, {THREAT_HERO_GAMES}+ games on it, "
+                "the lobby's top rank, a party.")
+    elif badge_tip(text, r):
+        tooltip(badge, badge_tip(text, r))
+    return badge
+
+
 def player_card(parent, r: Dict[str, Any], accent: str, avatars: AvatarCache,
                 on_open: Optional[Callable[[], None]] = None, on_search: Optional[Callable[[str], None]] = None,
                 party: Optional[Tuple[str, str]] = None, show: Optional[Dict[str, bool]] = None) -> ctk.CTkFrame:
@@ -194,26 +220,12 @@ def player_card(parent, r: Dict[str, Any], accent: str, avatars: AvatarCache,
     if shown("show_hero_stats"):
         label(line, hero_stats_text(r), bg="card", color="text").pack(side="left")
 
-    # With badges off, how the account was identified (ID UNSURE, NAME FIXED...) still shows: it's about trust
-    badges = badge_labels(r if shown("show_badges") else dict(r, badges=[]))
-    if party_label:
-        badges.insert(0, (party_label, "party"))
-    if r.get("watch"):  # report.threats: an enemy with 2+ reasons to watch
-        badges.insert(0, ("WATCH", "watch"))
-    if shown("show_history"):
-        badges += [(text, "history") for text in history_labels(r.get("history"))]
+    badges = card_badges(r, party_label, shown)
     if badges:
         row = tk.Frame(info, bg=COLORS["card"])
         row.grid(row=2, column=0, columnspan=2, sticky="w", pady=(3, 0))
         for text, kind in badges:
-            badge = pill(row, text, party_color if kind == "party" else BADGE_COLORS[kind])
-            badge.pack(side="left", padx=(0, 4))
-            if kind == "watch":
-                tooltip(badge, "Worth watching: " + " · ".join(r["watch"]) + f"\n\nShown for enemies with 2 or more of: "
-                        f"main hero or one-trick, a high win rate on their hero, {THREAT_HERO_GAMES}+ games on it, "
-                        "the lobby's top rank, a party.")
-            elif badge_tip(text, r):
-                tooltip(badge, badge_tip(text, r))
+            badge_pill(row, r, text, kind, party_color).pack(side="left", padx=(0, 4))
 
     details = most_played_text(r) if shown("show_most_played") else ""
     if details:
@@ -229,6 +241,60 @@ def player_card(parent, r: Dict[str, Any], accent: str, avatars: AvatarCache,
         query = r.get("corrected_from") or r["player"]
         link = label(info, "Search similar names  >", size=9, color="link", bg="card", cursor="hand2")
         link.grid(row=4, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        link.bind("<Button-1>", lambda event: on_search(query))
+    return outer
+
+
+def player_tile(parent, r: Dict[str, Any], accent: str, avatars: AvatarCache, width: int,
+                on_open: Optional[Callable[[], None]] = None, on_search: Optional[Callable[[str], None]] = None,
+                party: Optional[Tuple[str, str]] = None, show: Optional[Dict[str, bool]] = None) -> ctk.CTkFrame:
+    """player_card as a narrow, tall tile for a team laid out in a row: the same information, larger
+    text, and pills that wrap. width: the room for content, in pixels."""
+    shown = lambda part: (show or {}).get(part, True)  # noqa: E731
+    clickable = r["status"] == "found" and on_open is not None
+    outer, body = card(parent, padding=8, hoverable=clickable)
+    party_color, party_label = party or (None, None)
+
+    head = tk.Frame(body, bg=COLORS["card"])
+    head.pack(fill="x")
+    tk.Label(head, image=avatars.get(r.get("avatar_url"), 40, ring=party_color or accent), bg=COLORS["card"]).pack(
+        side="left", anchor="n", padx=(0, 8))
+    rp = rank_pill(head, r.get("rank")) if shown("show_rank") else None
+    if rp:
+        rp.pack(side="right", anchor="n")
+    label(body, r["player"], size=12, bold=True, bg="card", heading=True, anchor="w", justify="left",
+          wraplength=width).pack(anchor="w", pady=(4, 0))
+
+    if r.get("hero"):
+        hero_label(body, r["hero"], "card", size=20, font_size=11).pack(anchor="w", pady=(2, 0))
+    if shown("show_hero_stats"):
+        parts = hero_stats_text(r).split(" · ")
+        text = f"{' · '.join(parts[:2])}\n{' · '.join(parts[2:])}" if len(parts) == 4 else " · ".join(parts)
+        label(body, text, size=10, bg="card", anchor="w", justify="left", wraplength=width).pack(anchor="w", pady=(2, 0))
+
+    font = tkfont.Font(family=FONT, size=-10, weight="bold")  # CustomTkinter sizes are pixels, hence negative
+    row, used = None, width
+    for text, kind in card_badges(r, party_label, shown):
+        need = font.measure(f" {text} ") + 14 + 4  # measured: a pill is its text + 14 px; then the gap
+        if used + need > width + 4:  # wrap onto a new line of pills (the last one needs no gap)
+            row, used = tk.Frame(body, bg=COLORS["card"]), 0
+            row.pack(anchor="w", pady=(4, 0))
+        badge_pill(row, r, text, kind, party_color, size=10).pack(side="left", padx=(0, 4))
+        used += need
+
+    if shown("show_most_played") and r.get("top_heroes"):
+        label(body, "\n".join(f"{h['hero']} {h['matches']} ({h['win_rate']:.0%})" for h in r["top_heroes"]),
+              size=10, color="dim", bg="card", anchor="w", justify="left").pack(anchor="w", pady=(6, 0))
+    if r.get("my_note") and shown("show_history"):
+        label(body, f"Your note: {r['my_note']}", size=10, color="note", bg="card", anchor="w", justify="left",
+              wraplength=width).pack(anchor="w", pady=(4, 0))
+
+    if clickable:
+        outer.after_idle(lambda: bind_click(outer, on_open))
+    elif r["status"] == "not found" and on_search:
+        query = r.get("corrected_from") or r["player"]
+        link = label(body, "Search similar names  >", size=10, color="link", bg="card", cursor="hand2")
+        link.pack(anchor="w", pady=(4, 0))
         link.bind("<Button-1>", lambda event: on_search(query))
     return outer
 

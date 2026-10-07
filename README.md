@@ -103,7 +103,7 @@ The app has pages, with a **Back** button (or Alt+Left) and the title as a link 
 | Page | What it shows |
 |---|---|
 | **Home** | Your account, the last lobby, the strongest heroes right now, and your recent matches with a summary of your last session (record, K/D/A, souls per minute, rank change in ranked). Matches appear as soon as their end screen is read |
-| **Lobby** | Both teams side by side, with your matchup at the bottom. Click any player to open their page. **Review this match** opens the match once it's over |
+| **Lobby** | Each team as a row of player tiles, with your matchup at the bottom. Hover a pill for what it means; click a player to open their page. **Review this match** opens the match once it's over |
 | **Matchup** | Your hero against this team: with each teammate's hero, and a card per enemy (toughest first) with the player's record on their hero, your win rate against that hero, your K/D/A against them and the items that help most |
 | **Settings** | What happens when the scoreboard opens in game (bring the app to the front without taking focus from the game, a sound, open the review when a match ends) and what the lobby cards show |
 | **Heroes** | Every hero's win rate, pick rate, ban share, games and KDA, by mode and rank, with a 12-week trend line per hero |

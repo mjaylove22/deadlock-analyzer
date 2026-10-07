@@ -38,7 +38,7 @@ from ui.charts import (ITEM_DAYS, ITEM_TREND_SPAN, ChartTable, Column, advantage
                        percentile_bar, score_color, trend_cell, trend_chart, trend_color, trend_tip, verdict)
 from ui.widgets import item_tile, item_tooltip_text, tooltip
 from utils.logger import LOG_DIR
-from ui.widgets import bind_click, data_table, hero_label, matchup_strip, player_card, rank_pill
+from ui.widgets import bind_click, data_table, hero_label, matchup_strip, player_card, player_tile, rank_pill
 
 MODES = list(API_GAME_MODES)  # ["Normal", "Street Brawl"]
 HOTKEY_TEXT = "Ctrl+Shift+D"
@@ -291,27 +291,29 @@ class LobbyPage(Page):
         watch = dict(threats(results, parties))  # shown as a WATCH pill on those cards: no extra space
         for i, r in enumerate(results):
             r["watch"] = watch.get(i)
-        columns = tk.Frame(self.frame, bg=COLORS["bg"])
-        columns.pack(fill="both", expand=True)
         summaries = {}  # team -> (its summary label, its results, its parties)
-        for c, (team, title) in enumerate(TEAM_TITLES.items()):
-            columns.columnconfigure(c, weight=1, uniform="team")
-            frame = tk.Frame(columns, bg=COLORS["bg"])
-            frame.grid(row=0, column=c, sticky="nsew", padx=(0, 8) if c == 0 else (8, 0))
+        per_row = max(sum(r["team"] == team for r in results) for team in TEAM_TITLES)
+        # ponytail: tiles are sized for the window at build time; resizing re-wraps on the next visit
+        tile_width = (self.app.root.winfo_width() - 40) // per_row - 8 - 20  # gaps, then the tile's padding
+        for t, (team, title) in enumerate(TEAM_TITLES.items()):
             members = [i for i, r in enumerate(results) if r["team"] == team]
             team_parties = [p for p in parties if results[p[0]]["team"] == team]
-            head = tk.Frame(frame, bg=COLORS["bg"])
-            head.pack(fill="x", pady=(0, 2))
+            head = tk.Frame(self.frame, bg=COLORS["bg"])
+            head.pack(fill="x", pady=(10 if t else 0, 4))
             tk.Frame(head, bg=COLORS[team], width=4, height=20).pack(side="left", padx=(0, 10))
             label(head, title, size=13, color=team, heading=True).pack(side="left")
-            summary = label(head, team_summary([results[i] for i in members], team_parties), color="dim",
-                            justify="left", wraplength=400)  # party history can make it two lines
+            summary = label(head, team_summary([results[i] for i in members], team_parties), size=10, color="dim",
+                            justify="left", wraplength=900)
             summaries[team] = (summary, [results[i] for i in members], team_parties)
-            summaries[team][0].pack(side="left", padx=12)
-            for i in members:
+            summary.pack(side="left", padx=12)
+            row = tk.Frame(self.frame, bg=COLORS["bg"])
+            row.pack(fill="x")
+            row.columnconfigure(tuple(range(per_row)), weight=1, uniform="tiles")
+            for n, i in enumerate(members):
                 r = results[i]
-                player_card(frame, r, COLORS[team], self.app.avatars, party=party_of.get(i), show=show,
-                            on_open=lambda r=r: self.app.open_player(r["account_id"]), on_search=self.app.search)
+                player_tile(row, r, COLORS[team], self.app.avatars, tile_width, party=party_of.get(i), show=show,
+                            on_open=lambda r=r: self.app.open_player(r["account_id"]), on_search=self.app.search
+                            ).grid(row=0, column=n, sticky="nsew", padx=(0 if n == 0 else 4, 0 if n == per_row - 1 else 4))
         if parties:  # how much each party has played together: loaded after the lobby is on screen
             def load():
                 found = deadlock_api.parallel(*[lambda p=p: party_games([results[i]["account_id"] for i in p]) for p in parties],
