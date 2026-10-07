@@ -151,5 +151,26 @@ class StoryTests(unittest.TestCase):
                          ["The winners finished 40k souls ahead.", "The winners led from start to finish."])
 
 
+class SaveTests(unittest.TestCase):
+    def test_saving_many_at_once_never_fails(self):
+        # The Coach saves ~30 summaries at once; pruning used to remove a file another thread was sorting by
+        import threading
+        errors = []
+
+        def save(n):
+            try:
+                match_review.save({"match_id": n, "players": []})
+            except OSError as e:
+                errors.append(e)
+        with tempfile.TemporaryDirectory() as folder, patch.object(match_review, "CACHE_DIR", folder),                 patch.object(match_review, "MAX_SAVED_MATCHES", 5):
+            threads = [threading.Thread(target=save, args=(n,)) for n in range(40)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+            self.assertEqual(errors, [])
+            self.assertEqual(len(os.listdir(folder)), 5)
+
+
 if __name__ == "__main__":
     unittest.main()

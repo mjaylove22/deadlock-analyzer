@@ -10,6 +10,7 @@ fetched from Steam, which allows only 3 requests an hour.
 import json
 import math
 import os
+import threading
 import time
 import urllib.error
 from typing import Any, Dict, List, Optional
@@ -26,6 +27,7 @@ RETRY_AFTER_S = 600  # a match that failed isn't asked for again for 10 minutes 
 STEAM_FETCHES_PER_HOUR = 3  # the API's limit (per IP) for matches it has to fetch from Steam
 
 _failed: Dict[int, tuple] = {}  # match_id -> (time, error message)
+_save_lock = threading.Lock()
 _steam_fetches: List[float] = []  # when this app last asked for matches from Steam
 
 
@@ -167,13 +169,18 @@ def compare_to_usual(player: Dict[str, Any], minutes: float, hero_entry: Optiona
 
 
 def save(summary: Dict[str, Any]) -> None:
-    """Keep a summary on disk, and only the newest MAX_SAVED_MATCHES, so the cache stays small."""
+    """Keep a summary on disk, and only the newest MAX_SAVED_MATCHES, so the cache stays small. Thread-safe:
+    the Coach saves many at once, and one thread pruning a file another was sorting by lost that match."""
     os.makedirs(CACHE_DIR, exist_ok=True)
-    with open(os.path.join(CACHE_DIR, f"{summary['match_id']}.json"), "w", encoding="utf-8") as f:
-        json.dump(summary, f)
-    saved = sorted((os.path.join(CACHE_DIR, name) for name in os.listdir(CACHE_DIR)), key=os.path.getmtime)
-    for old in saved[:-MAX_SAVED_MATCHES]:
-        os.remove(old)
+    with _save_lock:
+        with open(os.path.join(CACHE_DIR, f"{summary['match_id']}.json"), "w", encoding="utf-8") as f:
+            json.dump(summary, f)
+        saved = sorted((os.path.join(CACHE_DIR, name) for name in os.listdir(CACHE_DIR)), key=os.path.getmtime)
+        for old in saved[:-MAX_SAVED_MATCHES]:
+            try:
+                os.remove(old)
+            except FileNotFoundError:  # already gone (e.g. two app windows): nothing to do
+                pass
 
 
 def load_saved(match_id: int) -> Optional[Dict[str, Any]]:
