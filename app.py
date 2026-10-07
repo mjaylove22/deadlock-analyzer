@@ -32,7 +32,8 @@ from PIL import Image
 import assets
 import deadlock_api
 import paths
-from version import LATEST_RELEASE_API, __version__, is_newer
+import updater
+from version import __version__, is_newer
 from matchups import build_matchup
 from player_lookup import analyze_records, read_lobby
 from scoreboard_ocr import TESSERACT_INSTALL, find_tesseract, read_match_id_file
@@ -88,6 +89,7 @@ class AnalyzerApp:
         self.page = None
         self.page_token = 0          # bumped on every navigation; stale task results are dropped
         self.update_tag = None       # a newer release's tag ("v0.2.1"), shown on the Home page
+        self.update_release = None   # its {"tag", "url", "sha256"} for Update now (updater.py)
 
         settings = load_settings()
         self.overlay = tk.BooleanVar(value=settings.get("overlay", False))
@@ -302,19 +304,43 @@ class AnalyzerApp:
         """Background: is there a newer release on GitHub? Its answer is kept on disk for 6 hours, so
         this is one small request now and then (GitHub allows 60 an hour without an account)."""
         try:
-            tag = deadlock_api.disk_cached("latest_release", lambda: deadlock_api._download(LATEST_RELEASE_API)["tag_name"],
-                                           max_age=6 * 3600)
+            release = deadlock_api.disk_cached("latest_release_v2", updater.latest_release, max_age=6 * 3600)
         except Exception as e:  # offline, or no release yet (404): nothing to say
             logger.info(f"Couldn't check for updates ({e})")
             return
-        if is_newer(tag):
-            logger.info(f"Update available: {tag}")
-            self.events.put(lambda: self.show_update(tag))
+        if is_newer(release["tag"]):
+            logger.info(f"Update available: {release['tag']}")
+            self.events.put(lambda: self.show_update(release))
 
-    def show_update(self, tag: str):
-        self.update_tag = tag
+    def show_update(self, release: Dict[str, Any]):
+        self.update_tag, self.update_release = release["tag"], release
         if isinstance(self.page, HomePage):
             self.navigate(HomePage, push=False)
+
+    def update_now(self):
+        """Download the newest installer, check its SHA-256, run it and close so it can replace this app's
+        files; it opens the app again when done. Not while Deadlock runs: the app would vanish mid-match.
+        Its own thread, not run_task: leaving the page mustn't drop a finished download."""
+        if game_window.find_window():
+            self.set_status("Close Deadlock first: updating closes this app for a few seconds.")
+            return
+        release, shown = self.update_release, [-1]
+        self.set_status("Downloading the update...")
+
+        def progress(done, total):
+            if total and done * 10 // total != shown[0]:  # every 10%, not every chunk
+                shown[0] = done * 10 // total
+                self.progress(f"Downloading the update: {done / 1e6:.0f} of {total / 1e6:.0f} MB")
+
+        def work():
+            try:
+                path = updater.download(release, progress)
+            except Exception as e:  # network, disk, or a checksum mismatch: say so, keep running
+                logger.warning(f"Update failed: {e}")
+                self.events.put(lambda: self.set_status(f"The update didn't work ({e}). Try again, or use Download update."))
+                return
+            self.events.put(lambda: (updater.install(path), self.close()))
+        threading.Thread(target=work, daemon=True).start()
 
     def hero_names_by_id(self) -> Dict[int, str]:
         return {h["id"]: h["name"] for h in deadlock_api.fetch_heroes()}

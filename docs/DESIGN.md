@@ -389,9 +389,15 @@ The author's brief for the Coach's next step: find out why and when, notice whet
 - **Only actionable weaknesses headline:** a weak stat with no tip (healing, which mostly reflects the build) stays in the bars but isn't a finding. Seen on a test player's Bebop, where it had become the "biggest weakness".
 - **Checked on two real players:** the author (30 matches: consistent strengths, an early sign about Vyper, no change bigger than luck, which is the honest answer) and a player from their lobbies who dies ~10 times a game (consistent: deaths and last hits behind most players on the same heroes, dying most in the laning phase).
 
+### 4.45 Match filters and one-click updates
+From the author's next list (export/share was dropped: Win+Shift+S already captures any page).
+- **Match filters:** the player page now lists every recorded match (the history was already downloaded; only 20 were shown) under three filters: the mode switch it already had for the hero table (now shared, so "Ranked" means ranked in both tables), a hero (click it in the hero table; a ✕ chip clears it) and wins or losses. Two filter changes on the author's 1,019 matches redraw in 45 ms. Found on the way: dates older than a week had no year, so last October appeared after this August in a newest-first list; dates from another year now read "Oct 14 '25", fixed once in the shared `when()`.
+- **One-click update, not silent:** Home's **Update now** downloads the release's installer, checks it against the SHA-256 GitHub records for every release file (its `digest`), runs it with `/SILENT /relaunch=1` and closes so its files can be replaced; the installer opens the app again. The installer's normal launch step skips silent installs, so a second one runs only when `/relaunch=1` is passed. It refuses while Deadlock's window exists (the app would vanish mid-match) and only follows https addresses that end on GitHub's servers. The checksum proves the file is the one GitHub holds, not who uploaded it: that's why a person clicks, rather than the app updating itself. Running from source keeps the download link.
+- **Checked for real:** from source, Update now read the live release (0.2.6), downloaded it, matched the checksum, started the installer and closed; the installer put 0.2.6 in place. A local build with the relaunch step, installed over it with the updater's arguments, finished in 3.9 s and reopened the app 5 s after starting, on the monitor its settings name, without taking focus. Tests cover a matching download, a tampered one (deleted, never run) and a redirect away from GitHub. Older versions don't have the button, so the first one-click update will be from 0.2.7.
+
 ## 5. Testing
 
-`python -m unittest discover -s tests -v` runs 247 tests in a few seconds:
+`python -m unittest discover -s tests -v` runs 254 tests in a few seconds:
 - **Parser tests** use OCR output actually produced from real screenshots, including a noisy version, plus edge cases: headers, noise-only lines, duplicate player names, multi-word heroes, hero lines with nothing above them.
 - **Identity tests** use plain data to cover settling by unique name, friend links (including links listed by only one side and chains of settled players), ties falling back to hero history, and party grouping.
 - **Insights tests** cover each badge rule and its thresholds.

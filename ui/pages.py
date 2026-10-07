@@ -17,6 +17,7 @@ import customtkinter as ctk
 
 import assets
 import deadlock_api
+import paths
 from coach import ALONE_UNITS, COACH_MATCHES, LEVEL_WORDS, PHASES, QUICK_DEATH_S, coach_report, load_map, load_matches
 from match_review import REVIEW_STATS, MatchUnavailable, match_review, rate_match, story
 from performance import compared_text
@@ -136,9 +137,16 @@ class HomePage(Page):
             outer.pack(fill="x", pady=(0, 16))
             label(inner, f"Version {self.app.update_tag.lstrip('v')} is out (you have {__version__})", size=14, heading=True,
                   bg="card").pack(anchor="w")
-            label(inner, "Download it and run it: it updates this app and keeps your settings and notes.",
+            one_click = paths.INSTALLED and (self.app.update_release or {}).get("sha256")
+            label(inner, "Update now downloads it, checks it's the genuine file and installs it: the app closes and opens "
+                         "again, with your settings and notes kept." if one_click else
+                         "Download it and run it: it updates this app and keeps your settings and notes.",
                   color="dim", bg="card").pack(anchor="w", pady=(4, 10))
-            button(inner, "Download update", lambda: webbrowser.open(DOWNLOAD_URL), primary=True).pack(anchor="w")
+            buttons = tk.Frame(inner, bg=COLORS["card"])
+            buttons.pack(anchor="w")
+            if one_click:
+                button(buttons, "Update now", self.app.update_now, primary=True).pack(side="left", padx=(0, 8))
+            button(buttons, "Download update", lambda: webbrowser.open(DOWNLOAD_URL), primary=not one_click).pack(side="left")
 
         grid = tk.Frame(self.frame, bg=COLORS["bg"])
         grid.pack(fill="x")

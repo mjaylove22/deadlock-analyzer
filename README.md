@@ -49,8 +49,10 @@ Good to know:
 - **Ctrl+Shift+D** captures the scoreboard by hand, if it's ever missed.
 - **Something went wrong?** Settings, **Open log folder**, and send `app.log` with a note of what happened.
 
-**Updating:** when there's a new version, the app's Home page says so. Click **Download update** and run it;
-your settings and notes are kept. **Uninstalling:** Windows Settings, **Apps**, **Installed apps**,
+**Updating:** when there's a new version, the app's Home page says so. Click **Update now**: the app downloads
+the installer, checks it's the exact file published on GitHub (its SHA-256), installs it and opens again a few
+seconds later, with your settings and notes kept. It won't update while Deadlock is running, and never on its own.
+(**Download update** still works too: run the file it downloads.) **Uninstalling:** Windows Settings, **Apps**, **Installed apps**,
 Deadlock Analyzer. That also removes its settings, notes and screenshots.
 
 ## Is it safe to use with the game?
@@ -69,8 +71,9 @@ But nothing this app does touches the game itself.
   it reads in a lobby, the players and matches you open, and your own match history (for "met before");
   hero and rank pictures come from
   `assets-bucket.deadlock-api.com`, profile pictures from Steam (`avatars.steamstatic.com`);
-- GitHub (`api.github.com`), at most every 6 hours, to see whether there's a new version. Nothing about you
-  is sent.
+- GitHub (`api.github.com`), at most every 6 hours, to see whether there's a new version, and, only when you
+  click **Update now**, GitHub's file servers (`github.com`, `*.githubusercontent.com`) for the installer.
+  Nothing about you is sent.
 
 Screenshots are never uploaded. Your settings, your notes on players and the screenshots stay on your PC,
 and screenshots are deleted after 3 days.
@@ -212,6 +215,7 @@ player_lookup.py     whole-lobby lookup and command-line report
 matchups.py          your hero vs the enemy heroes, and popular items against them
 profiles.py          player pages (per-hero stats, recent matches, modes) and the hero tier list
 match_review.py      post-game review: condenses a match's data, saved on disk
+updater.py           one-click updates: download, check the SHA-256, run the installer
 coach.py             the Coach tab: patterns across your recent matches, and tips
 end_screen.py        spots the end-of-match screen and reads its scoreboard and match ID
 postgame.py          waits for a finished match's data without wasting Steam fetches

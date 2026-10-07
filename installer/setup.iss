@@ -54,6 +54,8 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; AppUserModelID: "
 
 [Run]
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
+; After a one-click update (updater.py runs this installer with /SILENT /relaunch=1): open the app again
+Filename: "{app}\{#AppExe}"; Flags: nowait; Check: RelaunchAfterUpdate
 
 [UninstallDelete]
 ; Files the app made while running: removing the app removes them too
@@ -62,3 +64,9 @@ Type: filesandordirs; Name: "{app}\screenshots"
 Type: filesandordirs; Name: "{app}\logs"
 Type: files; Name: "{app}\settings.json"
 Type: files; Name: "{app}\notes.json"
+
+[Code]
+function RelaunchAfterUpdate: Boolean;
+begin
+  Result := WizardSilent and (ExpandConstant('{param:relaunch|0}') = '1');
+end;
