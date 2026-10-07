@@ -549,7 +549,9 @@ class AnalyzerApp:
         watching = "watching for the scoreboard" if self.watching else f"{HOTKEY.upper()} for a new screenshot"
         self.set_status(f"{len(lobby['results'])} players  ·  {watching}")
         prefs = get_preferences()
-        if lobby.get("matchup") and prefs["show_matchup"]:  # any navigation (a click, a new lobby) cancels it
+        # Only for a lobby captured in game: an opened screenshot is someone wanting to look at that lobby.
+        # Any navigation (a click, a new lobby) cancels it.
+        if lobby["from_game"] and lobby.get("matchup") and prefs["show_matchup"]:
             token = self.page_token
             self.root.after(MATCHUP_AFTER_MS, lambda: self.navigate(MatchupPage) if token == self.page_token else None)
         if prefs["sound"]:

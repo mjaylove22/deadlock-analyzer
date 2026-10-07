@@ -86,7 +86,7 @@ For every player in the lobby:
   they've played together
 - **WATCH** on up to 3 enemies with two or more reasons to watch them (main hero, high win rate on it, 100+ games
   on it, the lobby's top rank, a party); hover it for the reasons
-- **Their Steam avatar**, **most-played heroes** (by games played, with win rate) and a clickable profile
+- **Their Steam avatar** and a click-through to their page (all their heroes, matches and your notes)
 - **ID UNSURE** when the account match is a close call, so you know when not to trust it
 - **NO RECENT DATA** when the public API hasn't recorded any of their games for days, so the card may be out of date
 - **NAME FIXED** when the app misread one character of a name and found the real Steam name
@@ -95,8 +95,8 @@ For every player in the lobby:
 
 **Your matchup** (once you've set your account) appears at the bottom: your hero's win rate against each
 enemy hero compared with its usual (red = harder, green = easier), and the items that help against this team.
-30 seconds after a new lobby appears, the window switches to the **full matchup**, which also shows each enemy's
-rank, main hero and WATCH pill. Click anything before then and it stays where you are; **Back** returns to the lobby.
+30 seconds after a lobby captured in game appears, the window switches to the **full matchup**, which also shows
+each enemy's rank, badges and WATCH pill (not for a screenshot you open yourself). Click anything before then and it stays where you are; **Back** returns to the lobby.
 
 The app has pages, with a **Back** button (or Alt+Left) and the title as a link to **Home**:
 

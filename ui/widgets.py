@@ -282,9 +282,6 @@ def player_tile(parent, r: Dict[str, Any], accent: str, avatars: AvatarCache, wi
         badge_pill(row, r, text, kind, party_color, size=10).pack(side="left", padx=(0, 4))
         used += need
 
-    if shown("show_most_played") and r.get("top_heroes"):
-        label(body, "\n".join(f"{h['hero']} {h['matches']} ({h['win_rate']:.0%})" for h in r["top_heroes"]),
-              size=10, color="dim", bg="card", anchor="w", justify="left").pack(anchor="w", pady=(6, 0))
     if r.get("my_note") and shown("show_history"):
         label(body, f"Your note: {r['my_note']}", size=10, color="note", bg="card", anchor="w", justify="left",
               wraplength=width).pack(anchor="w", pady=(4, 0))
@@ -369,10 +366,10 @@ def matchup_strip(parent, matchup: Dict[str, Any], on_open: Optional[Callable[[]
     word = "FAVOURABLE" if shift >= 0.01 else "TOUGH" if shift <= -0.01 else "EVEN"
     label(top, f"  YOUR MATCHUP", color="dim", bg="surface").pack(side="left")
     pill(top, f"{word} {shift * 100:+.1f}", MATCHUP_COLORS["good" if shift >= 0.01 else "bad" if shift <= -0.01 else "even"],
-         size=9).pack(side="left", padx=(8, 10))
+         size=10).pack(side="left", padx=(8, 10))
     label(top, "vs", color="dim", bg="surface").pack(side="left", padx=(0, 6))
     for m in matchup["matchups"]:  # toughest first
-        pill(top, matchup_text(m), MATCHUP_COLORS[matchup_kind(m["vs_average"])], size=9,
+        pill(top, matchup_text(m), MATCHUP_COLORS[matchup_kind(m["vs_average"])], size=10,
              image=images.hero_badge(m["enemy_hero"], 18, kind="ctk")).pack(side="left", padx=(0, 5))
     if on_open:
         label(top, "Full matchup  >", size=10, bold=True, color="link", bg="surface", cursor="hand2").pack(side="right")
@@ -380,9 +377,9 @@ def matchup_strip(parent, matchup: Dict[str, Any], on_open: Optional[Callable[[]
     if matchup["items"]:
         row = tk.Frame(inner, bg=COLORS["surface"])
         row.pack(fill="x", pady=(5, 0))
-        label(row, "Popular vs this team:", size=9, color="dim", bg="surface").pack(side="left", padx=(0, 6))
+        label(row, "Popular vs this team:", size=10, color="dim", bg="surface").pack(side="left", padx=(0, 6))
         for item in matchup["items"]:
-            chip = pill(row, f"{item['name']} {item['win_rate']:.0%}", COLORS["button"], size=8,
+            chip = pill(row, f"{item['name']} {item['win_rate']:.0%}", COLORS["button"], size=10,
                         image=images.item_icon(item, 16, kind="ctk"), text_color=COLORS["text"])
             chip.pack(side="left", padx=(0, 4))
             tooltip(chip, item_tooltip_text(item))
