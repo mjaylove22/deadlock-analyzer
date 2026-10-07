@@ -957,9 +957,7 @@ class MatchPage(Page):
 
         def work():
             review = match_review(match_id, self.app.hero_names_by_id(), get_me())
-            tiers = deadlock_api.fetch_rank_tiers()
-            review["team_ranks"] = [f"{tiers[b // 10]['name']} {b % 10}" if b and b // 10 in tiers else None
-                                    for b in review["team_badges"]]
+            review["team_ranks"] = [deadlock_api.badge_name(b) for b in review["team_badges"]]
             me = review.get("me")
             if me:  # only your build is shown, so only its icons are needed
                 items = deadlock_api.fetch_items()
@@ -1403,6 +1401,11 @@ class PlayerPage(Page):
         for m in p["modes"]:
             pill(chips, f"{m['mode']}  {m['games']:,} games · {m['win_rate']:.0%} WR", COLORS["button"],
                  size=9, text_color=COLORS["text"]).pack(side="left", padx=(0, 6))
+        if p.get("rank_progress"):  # fits beside the avatar and portrait, so the page doesn't grow
+            rp = p["rank_progress"]
+            line = label(info, rp["text"], size=10, color={1: "win", -1: "loss", 0: "dim"}[rp["change"]], bg="card")
+            line.pack(anchor="w", pady=(8, 0))
+            tooltip(line, rp["tip"])
 
         rows = 13  # table rows that fit in the window, under one of the two cards
         if is_me:

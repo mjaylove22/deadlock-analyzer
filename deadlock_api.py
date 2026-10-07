@@ -245,6 +245,12 @@ def fetch_rank_tiers() -> Dict[int, Dict[str, str]]:
     return {tier["tier"]: {"name": tier["name"], "color": tier["color"]} for tier in fetch_rank_assets()}
 
 
+def badge_name(badge: int) -> Optional[str]:
+    """A rank badge (tier * 10 + subrank) as its name, e.g. 73 -> "Emissary 3"; None for 0 or an unknown tier."""
+    tier = fetch_rank_tiers().get(badge // 10) if badge else None
+    return f"{tier['name']} {badge % 10}" if tier else None
+
+
 def get_profiles(account_ids: List[int]) -> List[Dict[str, Any]]:
     """Steam profiles (same shape as search results) for specific accounts."""
     return get_json("/v1/players/steam", {"account_ids": ",".join(str(a) for a in account_ids)})

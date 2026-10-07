@@ -407,6 +407,11 @@ From the author's next list (export/share was dropped: Win+Shift+S already captu
 - **WATCH stays in Simple** (the author's call): it never depended on the Badges switch, so it needed no code. Party pills and the trust pills (ID UNSURE, ID VIA FRIENDS, YOU) stay too, for the same reason as before: they're about who the player is, not how good.
 - **Checked on the real 6v6 lobby:** Simple tiles are about a third shorter, and the Settings page with the new row fits the same 1196×999 window.
 
+### 4.48 Rank progress
+- **Checked on a real history first** (a player from the author's lobbies; the author is still in placements): match history has `ranked_display_badge` (tier × 10 + subrank) on ranked matches only. It's the rank **after** the match: the last placement match already carries the rank it gave (earlier placements show 0), and a demotion shows on the loss that caused it. It doesn't always agree with `ranked_delta` (one +300 win showed a lower badge than the match before), so the badge is shown as given rather than rebuilt by adding up deltas.
+- **One line in the player page header**, which had spare height beside the avatar and portrait, so the tables keep their 13 rows: "Placed Seeker 2 (Aug 8) → Seeker 2 after 20 ranked matches · peak Seeker 3", green when higher than the placement and red when lower; hover for each change with its date. Every player page gets it, since it's the same history; with no ranked rank yet (placements) there's no line.
+- **Badge to name** is now one helper (`deadlock_api.badge_name`), also used by the match page's team ranks.
+
 ## 5. Testing
 
 `python -m unittest discover -s tests -v` runs 256 tests in a few seconds:

@@ -110,6 +110,22 @@ class ProgressTests(unittest.TestCase):
         self.assertIsNone(profiles.progress(haze[:39], NAMES)["overall"])  # needs 40 games
 
 
+class RankProgressTests(unittest.TestCase):
+    def test_changes_from_placement_peak_and_direction(self):
+        day = 86400
+        # (start, badge): two placements without a rank yet, the last placement gives 22, up to 23, back to 22
+        ranked = [dict(match(match_mode=4, start=n * day), ranked_display_badge=b)
+                  for n, b in enumerate([0, 0, 22, 23, 23, 22])]
+        rp = profiles.rank_progress(ranked + [match(start=9 * day)])  # an unranked match is ignored
+        self.assertEqual(rp["steps"], [(2 * day, 22), (3 * day, 23), (5 * day, 22)])
+        self.assertEqual((rp["peak"], rp["games"]), (23, 4))
+        shown = profiles.rank_progress_text(rp, lambda b: f"Seeker {b % 10}")
+        self.assertIn("Placed Seeker 2", shown["text"])
+        self.assertIn("→ Seeker 2 after 4 ranked matches · peak Seeker 3", shown["text"])
+        self.assertEqual(shown["change"], 0)
+        self.assertIsNone(profiles.rank_progress([match()]))
+
+
 class PartyGamesTests(unittest.TestCase):
     def test_games_together_from_the_first_members_teammates(self):
         mates = [{"mate_id": 2, "matches_played": 741, "wins": 381}, {"mate_id": 3, "matches_played": 40, "wins": 20},

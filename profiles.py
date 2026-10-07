@@ -182,6 +182,39 @@ def progress(matches: List[Dict[str, Any]], hero_names_by_id: Dict[int, str]) ->
     return {"overall": compare_windows(normal), "heroes": {name: c for name, c in heroes.items() if c}}
 
 
+def rank_progress(matches: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """How the rank moved over the recorded ranked matches: {"steps": [(start_time, badge)] each time it
+    changed, oldest first (the first is the placement), "peak": badge, "games": ranked matches}; None if none.
+    ranked_display_badge is the rank after the match (the last placement match already carries the rank it
+    gave, earlier ones 0). It's used as given rather than rebuilt from ranked_delta, which doesn't always agree."""
+    ranked = sorted((m for m in matches if m["match_mode"] == 4 and m.get("ranked_display_badge")),
+                    key=lambda m: m["start_time"])
+    if not ranked:
+        return None
+    steps = []
+    for m in ranked:
+        if not steps or steps[-1][1] != m["ranked_display_badge"]:
+            steps.append((m["start_time"], m["ranked_display_badge"]))
+    return {"steps": steps, "peak": max(badge for _, badge in steps), "games": len(ranked)}
+
+
+def rank_progress_text(rp: Dict[str, Any], name) -> Dict[str, Any]:
+    """rank_progress as {"text", "tip" (every change, newest last), "change": +1 up, -1 down, 0 same}.
+    name: badge -> rank name (deadlock_api.badge_name)."""
+    day = lambda t: datetime.fromtimestamp(t).strftime("%b %d").replace(" 0", " ")  # noqa: E731
+    (placed_at, first), last = rp["steps"][0], rp["steps"][-1][1]
+    games = f"{rp['games']} ranked match{'es' if rp['games'] != 1 else ''}"
+    if len(rp["steps"]) == 1:
+        text = f"Placed {name(first)} ({day(placed_at)}) · no change in {games}"
+    else:
+        text = f"Placed {name(first)} ({day(placed_at)}) → {name(last)} after {games}"
+        if rp["peak"] > max(first, last):
+            text += f" · peak {name(rp['peak'])}"
+    lines = [f"{day(t)}   {name(badge)}{'  (placed)' if n == 0 else ''}" for n, (t, badge) in enumerate(rp["steps"])]
+    tip = "Rank after each change, from match history:\n" + "\n".join(lines[-12:])
+    return {"text": text, "tip": tip, "change": (last > first) - (last < first)}
+
+
 def player_profile(account_id: int, hero_names_by_id: Dict[int, str], match_type_name: str = "All") -> Dict[str, Any]:
     """Everything the player page shows, in one call (run it on a worker thread).
     match_type_name picks which games the hero table covers (see MATCH_TYPES)."""
@@ -194,6 +227,7 @@ def player_profile(account_id: int, hero_names_by_id: Dict[int, str], match_type
     profile = profiles[0] if profiles else {}
     matches = sorted(history, key=lambda m: m["start_time"], reverse=True)
     described = [describe_match(m, hero_names_by_id) for m in matches]
+    rp = rank_progress(matches)
     return {
         "account_id": account_id,
         "name": profile.get("personaname", f"Account {account_id}"),
@@ -208,6 +242,7 @@ def player_profile(account_id: int, hero_names_by_id: Dict[int, str], match_type
         "history": described,  # every recorded match, newest first, for the filters on the player page
         "total_matches": len(matches),
         "progress": progress(matches, hero_names_by_id),
+        "rank_progress": rank_progress_text(rp, deadlock_api.badge_name) if rp else None,
     }
 
 
