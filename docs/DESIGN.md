@@ -395,9 +395,16 @@ From the author's next list (export/share was dropped: Win+Shift+S already captu
 - **One-click update, not silent:** Home's **Update now** downloads the release's installer, checks it against the SHA-256 GitHub records for every release file (its `digest`), runs it with `/SILENT /relaunch=1` and closes so its files can be replaced; the installer opens the app again. The installer's normal launch step skips silent installs, so a second one runs only when `/relaunch=1` is passed. It refuses while Deadlock's window exists (the app would vanish mid-match) and only follows https addresses that end on GitHub's servers. The checksum proves the file is the one GitHub holds, not who uploaded it: that's why a person clicks, rather than the app updating itself. Running from source keeps the download link.
 - **Checked for real:** from source, Update now read the live release (0.2.6), downloaded it, matched the checksum, started the installer and closed; the installer put 0.2.6 in place. A local build with the relaunch step, installed over it with the updater's arguments, finished in 3.9 s and reopened the app 5 s after starting, on the monitor its settings name, without taking focus. Tests cover a matching download, a tampered one (deleted, never run) and a redirect away from GitHub. Older versions don't have the button, so the first one-click update will be from 0.2.7.
 
+### 4.46 Patches
+- **The obvious source was a preview:** the Deadlock API's `/v1/patches` mirrors the forum's changelog posts, but each is a link card with a ~300-character excerpt ending in "...", and its date is when the forum post went up ("08-12-2026 Update" was posted on Sep 16). A page built on it would be a list of teasers.
+- **Steam's own news API** (`ISteamNews/GetNewsForApp`, public, no key) returns every Deadlock announcement in full (up to 13,000 characters) with its real date, and had an update (10-05-2026) the forum feed didn't. It's Valve's public data, so it fits the "public data only" rule; it's one ~70 KB request at most once an hour, and the README lists the new host.
+- **BBCode to text:** paragraphs become lines, a bold-only paragraph, `[h2]` or `\[ General ]` becomes a heading, `- ` and `[*]` lines become items, and pictures, videos and link markup are dropped. Checked on the 15 newest announcements (e.g. 122 items under 3 headings in 09-16).
+- **Changes to one hero:** hero changes are written "Haze: Bullet Dance damage reduced...", so picking a hero keeps only the updates and lines that mention them (whole word), each under its heading, with the name highlighted. On the author's heroes: Kelvin changed in 2 of the 15, Haze in 4.
+- **Not done, on purpose:** no claims that a patch changed a hero's win rate ("patch impact" was on the skip list); the notes are shown as written.
+
 ## 5. Testing
 
-`python -m unittest discover -s tests -v` runs 254 tests in a few seconds:
+`python -m unittest discover -s tests -v` runs 256 tests in a few seconds:
 - **Parser tests** use OCR output actually produced from real screenshots, including a noisy version, plus edge cases: headers, noise-only lines, duplicate player names, multi-word heroes, hero lines with nothing above them.
 - **Identity tests** use plain data to cover settling by unique name, friend links (including links listed by only one side and chains of settled players), ties falling back to hero history, and party grouping.
 - **Insights tests** cover each badge rule and its thresholds.

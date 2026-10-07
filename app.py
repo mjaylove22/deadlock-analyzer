@@ -45,7 +45,7 @@ import layout as layout_module
 from screenshot_manager import (SCREENSHOT_DIR, capture_and_save_screenshot, delete_old_screenshots, get_screenshot_path,
                                 save_end_screen)
 from settings import get_me, get_preferences, load_settings, save_settings
-from ui.pages import (CoachPage, HeroesPage, HeroPage, HomePage, ItemsPage, LobbyPage, MatchPage, MatchupPage, PlayerPage,
+from ui.pages import (CoachPage, HeroesPage, PatchesPage, HeroPage, HomePage, ItemsPage, LobbyPage, MatchPage, MatchupPage, PlayerPage,
                       SearchPage, SettingsPage, SetupPage)
 from ui import images
 from ui.theme import COLORS, FONT, HEADING_FONT, label, setup_styles, switch
@@ -69,7 +69,7 @@ SETTLE_S = 0.5           # after the scoreboard appears, wait for the menu anima
 END_CHECK_INTERVAL_S = 2.0  # how often the end-of-match screen is looked for (one check ~8 ms)
 LOBBY_MATCH_ID_MAX_AGE_S = 90 * 60  # a lobby's match ID stands in for an unreadable end screen this long
 MATCHUP_AFTER_MS = 30_000  # a new lobby turns into the full matchup after this long, unless the user moved on
-NAV_TABS = [("lobby", "Lobby"), ("heroes", "Heroes"), ("items", "Items"), ("mystats", "My Stats"), ("coach", "Coach"), ("settings", "Settings")]
+NAV_TABS = [("lobby", "Lobby"), ("heroes", "Heroes"), ("items", "Items"), ("patches", "Patches"), ("mystats", "My Stats"), ("coach", "Coach"), ("settings", "Settings")]
 ICON_PATH = paths.resource("assets", "icon.ico")
 
 
@@ -196,7 +196,7 @@ class AnalyzerApp:
 
     def open_tab(self, key: str):
         {"lobby": self.open_lobby, "heroes": self.open_heroes, "items": self.open_items, "mystats": self.open_my_stats,
-         "coach": lambda: self.navigate(CoachPage), "settings": lambda: self.navigate(SettingsPage)}[key]()
+         "coach": lambda: self.navigate(CoachPage), "patches": lambda: self.navigate(PatchesPage), "settings": lambda: self.navigate(SettingsPage)}[key]()
 
     def open_lobby(self):
         self.navigate(LobbyPage)

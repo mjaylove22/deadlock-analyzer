@@ -138,3 +138,6 @@ def setup_styles(root) -> None:
     style.configure("Vertical.TScrollbar", background=COLORS["button"], troughcolor=COLORS["card"],
                     borderwidth=0, arrowcolor=COLORS["dim"], bordercolor=COLORS["card"],
                     lightcolor=COLORS["button"], darkcolor=COLORS["button"])
+    # Nothing to scroll: clam has no colours for that state and shows a white bar, so blend it into the card
+    style.map("Vertical.TScrollbar", background=[("disabled", COLORS["card"])], arrowcolor=[("disabled", COLORS["card"])],
+              lightcolor=[("disabled", COLORS["card"])], darkcolor=[("disabled", COLORS["card"])])

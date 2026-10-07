@@ -9,6 +9,7 @@ import logging
 import os
 import time
 import tkinter as tk
+from tkinter import ttk
 import webbrowser
 from collections import Counter
 from typing import Any, Dict
@@ -18,6 +19,7 @@ import customtkinter as ctk
 import assets
 import deadlock_api
 import paths
+from patches import lines_about, news
 from coach import ALONE_UNITS, COACH_MATCHES, LEVEL_WORDS, PHASES, QUICK_DEATH_S, coach_report, load_map, load_matches
 from match_review import REVIEW_STATS, MatchUnavailable, match_review, rate_match, story
 from performance import compared_text
@@ -34,7 +36,7 @@ from scoreboard_ocr import find_tesseract
 from screenshot_manager import get_screenshot_path
 from settings import get_me, get_preferences, save_settings, set_preference
 from ui import images
-from ui.theme import (BADGE_COLORS, COLORS, FONT, ITEM_SLOT_COLORS, MATCHUP_COLORS, PARTY_COLORS, button, card, dropdown,
+from ui.theme import (BADGE_COLORS, COLORS, FONT, HEADING_FONT, ITEM_SLOT_COLORS, MATCHUP_COLORS, PARTY_COLORS, button, card, dropdown,
                       label, pill, segmented, switch)
 from version import DOWNLOAD_URL, __version__
 from ui.charts import (ITEM_DAYS, ITEM_TREND_SPAN, ChartTable, Column, advantage_bar, change_text, change_tip, death_map, hero_cell, item_cell,
@@ -1576,6 +1578,81 @@ class PlayerPage(Page):
         save_settings({"me": {"name": p["name"], "account_id": p["account_id"]}})
         self.app.set_status(f"Saved: you are {p['name']}. You'll be identified exactly in every lobby.")
         self.app.open_player(p["account_id"], mode=self.mode, nav=self.nav, push=False)
+
+
+class PatchesPage(Page):
+    """Deadlock's update notes and announcements, in full, from Steam (patches.py). Pick a hero to see
+    only the updates that changed them, and only those lines."""
+    nav = "patches"
+
+    def build(self, hero: str = None, selected: int = None):
+        self.hero, self.selected = hero, selected
+        self.head = self.heading("Patches", "Deadlock's update notes, from Steam")
+        self.body = tk.Frame(self.frame, bg=COLORS["bg"])
+        self.body.pack(fill="both", expand=True)
+        self.message("Loading the update notes...", self.body)
+
+        def failed(error):
+            self.clear(self.body)
+            self.unavailable(self.body, "the update notes from Steam", bg="bg")
+        self.app.run_task(news, self.show, failed)
+
+    def show(self, items):
+        self.clear(self.body)
+        heroes = sorted(self.app.hero_names_by_id().values())
+        dropdown(self.head, ["All changes"] + heroes, self.hero or "All changes",
+                 lambda h: self.app.navigate(PatchesPage, push=False, hero=None if h == "All changes" else h)).pack(side="right")
+        label(self.head, "Only changes to", color="dim").pack(side="right", padx=8)
+        rows = []
+        for n, item in enumerate(items):
+            lines = lines_about(item["lines"], self.hero)
+            changes = sum(kind != "heading" for kind, _ in lines)
+            if self.hero and not changes:
+                continue
+            rows.append({"n": n, "date": item["date"], "title": item["title"], "changes": changes, "lines": lines})
+        if not rows:
+            self.message(f"No changes to {self.hero} in the last {len(items)} announcements.", self.body)
+            return
+        chosen = next((r for r in rows if r["n"] == self.selected), rows[0])
+        self.body.columnconfigure(0, weight=2, uniform="patches")
+        self.body.columnconfigure(1, weight=5, uniform="patches")
+        left, right = tk.Frame(self.body, bg=COLORS["bg"]), tk.Frame(self.body, bg=COLORS["bg"])
+        left.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        right.grid(row=0, column=1, sticky="nsew", padx=(8, 0))
+        self.body.rowconfigure(0, weight=1)
+        columns = [("date", "Date", 80, lambda t: time.strftime("%b %d '%y", time.localtime(t)).replace(" 0", " "), "w"),
+                   ("title", "Announcement", 230, str, "w")]
+        data_table(left, columns, rows, height=20, tag=lambda r: "me" if r is chosen else "",
+                   on_click=lambda r: self.app.navigate(PatchesPage, push=False, hero=self.hero, selected=r["n"]))
+
+        outer, box = card(right, padding=14)
+        outer.pack(fill="both", expand=True)
+        top = tk.Frame(box, bg=COLORS["card"])
+        top.pack(fill="x", pady=(0, 8))
+        label(top, chosen["title"], size=15, heading=True, bg="card").pack(side="left")
+        link = label(top, "Open on Steam  >", size=10, color="link", bg="card", cursor="hand2")
+        link.pack(side="right")
+        link.bind("<Button-1>", lambda event: webbrowser.open(items[chosen["n"]]["url"]))
+        text = tk.Text(box, wrap="word", bg=COLORS["card"], fg=COLORS["text"], font=(FONT, 10), relief="flat",
+                       highlightthickness=0, padx=4, spacing1=2, spacing3=2, cursor="arrow")
+        scrollbar = ttk.Scrollbar(box, orient="vertical", command=text.yview)
+        text.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side="right", fill="y")
+        text.pack(side="left", fill="both", expand=True)
+        text.tag_configure("heading", font=(HEADING_FONT, 12), foreground=COLORS["accent"], spacing1=10, spacing3=4)
+        text.tag_configure("item", lmargin1=6, lmargin2=20)
+        text.tag_configure("hero", foreground=COLORS["note"], font=(FONT, 10, "bold"))
+        for kind, line in chosen["lines"]:
+            text.insert("end", ("•  " if kind == "item" else "") + line + "\n", kind)
+        if self.hero:  # the hero's name stands out in every line about them
+            start = "1.0"
+            while start := text.search(self.hero, start, "end", nocase=True):
+                end = f"{start}+{len(self.hero)}c"
+                text.tag_add("hero", start, end)
+                start = end
+        text.configure(state="disabled")  # read-only, but still selectable for copying
+        what = f"{len(rows)} updates changed {self.hero}" if self.hero else f"{len(items)} announcements"
+        self.app.set_status(f"Patches · {what} · from Steam's news for Deadlock")
 
 
 LEVEL_COLORS = {"early": BADGE_COLORS["info"], "likely": BADGE_COLORS["history"], "consistent": BADGE_COLORS["you"]}

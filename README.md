@@ -71,6 +71,7 @@ But nothing this app does touches the game itself.
   it reads in a lobby, the players and matches you open, and your own match history (for "met before");
   hero and rank pictures come from
   `assets-bucket.deadlock-api.com`, profile pictures from Steam (`avatars.steamstatic.com`);
+- Steam's public news for Deadlock (`api.steampowered.com`), at most once an hour, for the Patches page;
 - GitHub (`api.github.com`), at most every 6 hours, to see whether there's a new version, and, only when you
   click **Update now**, GitHub's file servers (`github.com`, `*.githubusercontent.com`) for the installer.
   Nothing about you is sent.
@@ -111,6 +112,7 @@ The app has pages, with a **Back** button (or Alt+Left) and the title as a link 
 | **Settings** | What happens when the scoreboard opens in game (bring the app to the front without taking focus from the game, a sound, open the review when a match ends) and what the lobby cards show |
 | **Heroes** | Every hero's win rate, pick rate, ban share, games and KDA, by mode and rank, with a 12-week trend line per hero |
 | **Items** | Every shop item: how often it's bought, win rate, tier, cost and typical purchase time, with a 14-day trend |
+| **Patches** | Deadlock's update notes and announcements in full, newest first, from Steam. Pick a hero to see only the updates that changed them, and only those lines |
 | **Hero** | **Stats**: win rate over 12 weeks, best and toughest matchups, most-bought items and win rate at every rank. **Guide**: what kind of hero it is, what its abilities do and what players build |
 | **My Stats** | Your own player page, with **your form**: your last 20 matches against the 20 before (souls per minute, KDA, win rate), overall and per hero, calling out only changes bigger than luck |
 | **Coach** | Patterns in your last 30 normal matches (or only those on one hero). **Summary**: your biggest weakness and biggest improvement, what else stands out, your stats on your hero against players at your rank, and your laning and where your souls come from against your lobbies. **Deaths**: a map of where you die (red: no teammate near), how you die against the other players in your lobbies, and the patterns in it (when, alone or not, a hero that kills you more than chance would). Every finding says how sure it is: *early sign*, *likely* or *consistent*, from how many matches it rests on and how big the gap is, so a 3-game streak never reads as a habit. Matches count once the stats site has stored them, usually a few hours after the game |
@@ -216,6 +218,7 @@ matchups.py          your hero vs the enemy heroes, and popular items against th
 profiles.py          player pages (per-hero stats, recent matches, modes) and the hero tier list
 match_review.py      post-game review: condenses a match's data, saved on disk
 updater.py           one-click updates: download, check the SHA-256, run the installer
+patches.py           the Patches page: Deadlock's update notes from Steam, as text
 coach.py             the Coach tab: patterns across your recent matches, and tips
 end_screen.py        spots the end-of-match screen and reads its scoreboard and match ID
 postgame.py          waits for a finished match's data without wasting Steam fetches
