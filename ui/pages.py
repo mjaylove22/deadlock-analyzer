@@ -25,7 +25,7 @@ from item_trends import item_trends
 from matchups import hero_breakdown, matchup_details
 from player_lookup import search_player
 from postgame import last_session, load_end_screens, recent_matches
-from profiles import (API_GAME_MODES, LOW_SAMPLE_GAMES, MATCH_TYPES, RANK_BANDS, hero_rank_curve, hero_tier_list, hero_trends,
+from profiles import (API_GAME_MODES, LOW_SAMPLE_GAMES, MATCH_TYPES, RANK_BANDS, filter_matches, hero_rank_curve, hero_tier_list, hero_trends,
                       PROGRESS_GAMES, party_games, player_profile, teammates, when)
 import history
 from report import TEAM_TITLES, history_text, progress_texts, team_summary, threats
@@ -1417,7 +1417,10 @@ class PlayerPage(Page):
         row.pack(fill="x", pady=(12, 8))
         label(row, "Hero stats", size=14, heading=True).pack(side="left")
         segmented(row, list(MATCH_TYPES), self.mode, self.switch_mode).pack(side="left", padx=14)
-        label(row, "Recent matches", size=14, heading=True).pack(side="right")
+        segmented(row, ["All", "Wins", "Losses"], "All", self.set_result).pack(side="right")
+        self.filters = tk.Frame(row, bg=COLORS["bg"])  # the hero filter chip and how many matches are shown
+        self.filters.pack(side="right", padx=10)
+        label(row, "Matches", size=14, heading=True).pack(side="right", padx=(12, 0))
 
         tables = tk.Frame(self.frame, bg=COLORS["bg"])
         tables.pack(fill="both", expand=True)
@@ -1434,25 +1437,49 @@ class PlayerPage(Page):
                 ("kda", "KDA", 55, lambda v: f"{v:.1f}", "center"),
                 ("damage_per_min", "Dmg/min", 70, lambda v: f"{v:,.0f}", "center"),
                 ("last_played", "Last played", 85, when, "center"),
-            ], list(p["heroes"]), height=rows, hero_key="hero")
+            ], list(p["heroes"]), height=rows, hero_key="hero", on_click=lambda r: self.set_hero(r["hero"]))
         else:
             kind = "" if self.mode == "All" else self.mode.lower() + " "
             self.message(f"No recorded {kind}matches.", left)
 
-        if p["recent"]:
-            for m in p["recent"]:
-                m["kda_text"] = f"{m['kills']}/{m['deaths']}/{m['assists']}"
-                m["result"] = "Win" if m["won"] else "Loss"
-            data_table(right, [
+        for m in p["history"]:
+            m["kda_text"] = f"{m['kills']}/{m['deaths']}/{m['assists']}"
+            m["result"] = "Win" if m["won"] else "Loss"
+        self.history, self.matches_box, self.rows = p["history"], right, rows
+        self.hero_filter, self.result_filter = None, "All"
+        self.show_matches()
+        self.app.set_status(f"{p['name']} · click a hero to see only their matches, or a match for its post-game review")
+
+    def set_hero(self, hero):
+        self.hero_filter = hero
+        self.show_matches()
+
+    def set_result(self, result):
+        self.result_filter = result
+        self.show_matches()
+
+    def show_matches(self):
+        """The match list under the page's filters: the mode switch (shared with the hero table), the hero
+        picked in the hero table and the result switch. Covers every recorded match, not only the newest."""
+        self.clear(self.matches_box)
+        self.clear(self.filters)
+        shown = filter_matches(self.history, self.mode, self.hero_filter, self.result_filter)
+        if self.hero_filter:
+            chip = pill(self.filters, f"✕  {self.hero_filter}", COLORS["button"], size=10, text_color=COLORS["text"])
+            chip.pack(side="left", padx=(0, 8))
+            bind_click(chip, lambda: self.set_hero(None))
+            tooltip(chip, "Show every hero's matches again")
+        label(self.filters, f"{len(shown):,} of {len(self.history):,}", color="dim").pack(side="left")
+        if shown:
+            data_table(self.matches_box, [
                 ("start_time", "When", 70, when, "center"),
                 ("result", "Result", 55, str, "center"),
                 ("kda_text", "K/D/A", 70, str, "center"),
                 ("type", "Type", 90, str, "center"),
-            ], list(p["recent"]), height=rows, tag=lambda m: "win" if m["won"] else "loss", hero_key="hero",
+            ], shown, height=self.rows, tag=lambda m: "win" if m["won"] else "loss", hero_key="hero",
                 on_click=lambda m: self.app.open_match(m["match_id"]))
         else:
-            self.message("No recorded matches.", right)
-        self.app.set_status(f"{p['name']} · click a match for its post-game review")
+            self.message("No matches with these filters.", self.matches_box)
 
     def progress_card(self, progress: Dict[str, Any]):
         """Your last 20 normal matches against the 20 before, and any change bigger than chance."""
