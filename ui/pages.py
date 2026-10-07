@@ -10,12 +10,14 @@ import os
 import time
 import tkinter as tk
 import webbrowser
+from collections import Counter
 from typing import Any, Dict
 
 import customtkinter as ctk
 
 import assets
 import deadlock_api
+from coach import ALONE_UNITS, COACH_MATCHES, PHASES, QUICK_DEATH_S, coach_report, load_map, load_matches
 from match_review import REVIEW_STATS, MatchUnavailable, match_review, rate_match, story
 from performance import compared_text
 from guides import hero_guide
@@ -34,7 +36,7 @@ from ui import images
 from ui.theme import (BADGE_COLORS, COLORS, FONT, ITEM_SLOT_COLORS, MATCHUP_COLORS, PARTY_COLORS, button, card, dropdown,
                       label, pill, segmented, switch)
 from version import DOWNLOAD_URL, __version__
-from ui.charts import (ITEM_DAYS, ITEM_TREND_SPAN, ChartTable, Column, advantage_bar, change_text, change_tip, hero_cell, item_cell,
+from ui.charts import (ITEM_DAYS, ITEM_TREND_SPAN, ChartTable, Column, advantage_bar, change_text, change_tip, death_map, hero_cell, item_cell,
                        percentile_bar, score_color, trend_cell, trend_chart, trend_color, trend_tip, verdict)
 from ui.widgets import item_tile, item_tooltip_text, tooltip
 from utils.logger import LOG_DIR
@@ -1539,6 +1541,154 @@ class PlayerPage(Page):
         save_settings({"me": {"name": p["name"], "account_id": p["account_id"]}})
         self.app.set_status(f"Saved: you are {p['name']}. You'll be identified exactly in every lobby.")
         self.app.open_player(p["account_id"], mode=self.mode, nav=self.nav, push=False)
+
+
+class CoachPage(Page):
+    """Patterns across your recent matches (coach.py): what to work on, where and how you die, your stats
+    on your hero against players at your rank, and your laning and souls against your lobbies."""
+    nav = "coach"
+    FRESH_S = 15 * 60  # reuse a loaded report this long; newer matches show up after that
+
+    def build(self, hero: str = None):
+        self.hero = hero
+        self.head = self.heading("Coach", f"patterns in your last {COACH_MATCHES} normal matches")
+        me = get_me()
+        if not me:
+            self.message("The Coach looks at your own matches, so it needs your account.\n\n"
+                         "Search your Steam name, open your page and click \"Set as my account\".")
+            return
+        self.body = tk.Frame(self.frame, bg=COLORS["bg"])
+        self.body.pack(fill="both", expand=True)
+        key = ("coach", me["account_id"])
+        loaded_at, data = self.app.cache.get(key, (0, None))
+        if data and time.time() - loaded_at < self.FRESH_S:
+            self.show(data)
+            return
+        self.message(f"Reading your last {COACH_MATCHES} matches... the first time takes a few seconds.", self.body)
+
+        def work():
+            data, game_map = deadlock_api.parallel(lambda: load_matches(me["account_id"], self.app.hero_names_by_id()), load_map)
+            return dict(data, map=game_map)
+
+        def done(data):
+            self.app.cache[key] = (time.time(), data)
+            self.show(data)
+
+        def failed(error):
+            self.clear(self.body)
+            self.unavailable(self.body, "your matches", bg="bg")
+        self.app.run_task(work, done, failed)
+
+    def show(self, data):
+        self.clear(self.body)
+        matches = data["matches"]
+        if not matches:
+            self.message("None of your recent normal matches are stored by the stats site yet.\n"
+                         "Matches usually show up a few hours after they're played.", self.body)
+            return
+        heroes = [h for h, n in Counter(e["me"]["hero"] for e in matches).most_common() if n >= 2]
+        choices = ["All heroes"] + heroes
+        dropdown(self.head, choices, self.hero if self.hero in heroes else "All heroes",
+                 lambda h: self.app.navigate(CoachPage, push=False, hero=None if h == "All heroes" else h)).pack(side="right")
+        report = coach_report(matches, self.hero if self.hero in heroes else None)
+        waiting = f" · {data['waiting']} newer not stored yet" if data["waiting"] else ""
+        label(self.head, f"{report['games']} matches{' on ' + report['hero'] if report['hero'] else ''}{waiting}",
+              color="dim").pack(side="right", padx=12)
+
+        # What to work on
+        outer, box = section(self.body, "What to work on")
+        outer.pack(fill="x")
+        calm = {"kind": "good", "text": "Nothing stands out: your numbers are in line with players on your heroes and in your lobbies."}
+        for tip in report["tips"][:3] or [calm]:  # the 3 that matter most: more would push the page past the window
+            row = tk.Frame(box, bg=COLORS["card"])
+            row.pack(fill="x", pady=2)
+            pill(row, "WORK ON" if tip["kind"] == "work" else "GOING WELL",
+                 BADGE_COLORS["warn"] if tip["kind"] == "work" else BADGE_COLORS["good"], size=10).pack(side="left", anchor="n", padx=(0, 10))
+            label(row, tip["text"], bg="card", justify="left", anchor="w", wraplength=980).pack(side="left", fill="x")
+
+        middle = tk.Frame(self.body, bg=COLORS["bg"])
+        middle.pack(fill="x", pady=(10, 0))
+        d = report["deaths"]
+        if data.get("map"):
+            outer, box = section(middle, "Where you die")
+            outer.pack(side="left", fill="y", padx=(0, 10))
+            death_map(box, data["map"]["image"], data["map"]["radius"], d["points"], size=230).pack()
+            legend = tk.Frame(box, bg=COLORS["card"])
+            legend.pack(anchor="w", pady=(6, 0))
+            label(legend, "●", color=COLORS["loss"], bg="card").pack(side="left")
+            label(legend, f" no teammate within {ALONE_UNITS:,} units   ", size=9, color="dim", bg="card").pack(side="left")
+            label(legend, "●", color="#f5b942", bg="card").pack(side="left")
+            label(legend, " with your team", size=9, color="dim", bg="card").pack(side="left")
+        outer, box = section(middle, "How you die")
+        outer.pack(side="left", fill="both", expand=True)
+        tiles = tk.Frame(box, bg=COLORS["card"])
+        tiles.pack(fill="x")
+        lobby_per_game = sum(d["lobby_phases"].values())
+        for value, title, versus in (
+                (f"{d['per_game']:.1f}", "deaths a game", f"{lobby_per_game:.1f} in your lobbies"),
+                (pct(d["alone_share"]), "with no teammate near", f"{pct(d['lobby_alone_share'])} in your lobbies"),
+                (pct(d["quick_share"]), f"over in {QUICK_DEATH_S} s or less", f"{pct(d['lobby_quick_share'])} in your lobbies"),
+                (f"{d['souls_lost_per_game']:,.0f}", "souls lost a game", "")):
+            tile = tk.Frame(tiles, bg=COLORS["card"])
+            tile.pack(side="left", expand=True, fill="x")
+            label(tile, value, size=18, bold=True, bg="card").pack(anchor="w")
+            label(tile, title, size=10, bg="card").pack(anchor="w")
+            label(tile, versus, size=9, color="dim", bg="card").pack(anchor="w")
+        when = tk.Frame(box, bg=COLORS["card"])
+        when.pack(fill="x", pady=(12, 0))
+        label(when, "WHEN (deaths a game: you · lobbies)", size=9, color="dim", bold=True, bg="card").grid(row=0, column=0, columnspan=3, sticky="w")
+        for n, (_, name) in enumerate(PHASES):
+            mine, theirs = d["phases"][name], d["lobby_phases"][name]
+            cell = tk.Frame(when, bg=COLORS["card"])
+            cell.grid(row=1, column=n, sticky="w", padx=(0, 40), pady=(2, 0))
+            label(cell, name.capitalize(), size=10, color="dim", bg="card").pack(side="left", padx=(0, 8))
+            label(cell, f"{mine:.1f}", size=11, bold=True, bg="card", color="loss" if mine > theirs * 1.3 else "text").pack(side="left")
+            label(cell, f" · {theirs:.1f}", size=10, color="dim", bg="card").pack(side="left")
+        if d["killers"]:
+            killers = tk.Frame(box, bg=COLORS["card"])
+            killers.pack(fill="x", pady=(12, 0))
+            label(killers, "KILLED MOST BY", size=9, color="dim", bold=True, bg="card").pack(anchor="w", pady=(0, 4))
+            row = tk.Frame(killers, bg=COLORS["card"])
+            row.pack(anchor="w")
+            for hero, times in d["killers"]:
+                hero_label(row, hero, "card", size=22, font_size=11).pack(side="left")
+                label(row, f" {times}×", size=10, color="dim", bg="card").pack(side="left", padx=(0, 18))
+
+        bottom = tk.Frame(self.body, bg=COLORS["bg"])
+        bottom.pack(fill="x", pady=(10, 0))
+        bottom.columnconfigure((0, 1), weight=1, uniform="coach")
+        outer, box = section(bottom, "Your stats on your hero")
+        outer.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
+        if report["stats"]:
+            label(box, f"average of {report['rated']} matches against players on the same hero, rank and match length",
+                  size=9, color="dim", bg="card").pack(anchor="w", pady=(0, 6))
+            for s in report["stats"]:
+                row = tk.Frame(box, bg=COLORS["card"])
+                row.pack(fill="x")
+                label(row, s["label"].replace(" (self and allies)", ""), size=10, bg="card", width=26, anchor="w").pack(side="left")
+                percentile_bar(row, s["good"], s["good"], width=150).pack(side="left", padx=(0, 8))
+                label(row, compared_text({"good": s["good"]}), size=10, color=score_color(s["good"]), bg="card").pack(side="left")
+        else:
+            label(box, "The comparison numbers didn't load this time.", size=10, color="dim", bg="card").pack(anchor="w")
+        outer, box = section(bottom, "Laning and souls")
+        outer.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
+        lane = report.get("laning")
+        if lane:
+            label(box, f"Last hits by minute {lane['minute']}: {lane['rate']:.0%} of the creeps you could have taken",
+                  size=10, bg="card").pack(anchor="w")
+            label(box, f"better than {lane['better_than']:.0%} of the players in your lobbies · {lane['denies']:.1f} denies · "
+                       f"{lane['net_worth']:,.0f} souls at minute {lane['minute']}", size=10, color="dim", bg="card").pack(anchor="w", pady=(0, 10))
+        label(box, "SOULS FROM (you · lobbies)", size=9, color="dim", bold=True, bg="card").pack(anchor="w", pady=(0, 4))
+        sources = tk.Frame(box, bg=COLORS["card"])
+        sources.pack(anchor="w")
+        names = {"lane": "Lane creeps", "jungle": "Jungle camps", "kills": "Killing heroes", "objectives": "Objectives",
+                 "other": "Other (treasure, denies)"}
+        for n, (key, title) in enumerate(names.items()):
+            mine, theirs = report["sources"].get(key, (None, None))
+            label(sources, title, size=10, bg="card", width=22, anchor="w").grid(row=n, column=0, sticky="w")
+            label(sources, pct(mine), size=10, bold=True, bg="card", width=5, anchor="e").grid(row=n, column=1)
+            label(sources, f"  ·  {pct(theirs)}", size=10, color="dim", bg="card").grid(row=n, column=2, sticky="w")
+        self.app.set_status(f"Coach · {report['games']} matches · tips appear only when the numbers clearly say so")
 
 
 class SettingsPage(Page):

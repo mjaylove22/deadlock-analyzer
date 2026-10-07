@@ -8,6 +8,7 @@ fetched from Steam, which allows only 3 requests an hour.
 """
 
 import json
+import math
 import os
 import time
 import urllib.error
@@ -73,6 +74,7 @@ def summarize(metadata: Dict[str, Any], hero_names_by_id: Dict[int, str],
             "items": [{"id": i["item_id"], "name": items_by_id[i["item_id"]]["name"], "slot": items_by_id[i["item_id"]].get("slot")}
                       for i in sorted(p.get("items", []), key=lambda i: i["game_time_s"])
                       if i["item_id"] in items_by_id and not i.get("sold_time_s")],
+            **coach_facts(info, p, hero_names_by_id),
         })
     return {
         "match_id": info["match_id"], "start_time": info["start_time"],
@@ -81,6 +83,52 @@ def summarize(metadata: Dict[str, Any], hero_names_by_id: Dict[int, str],
         "team_badges": [info.get("average_badge_team0", 0), info.get("average_badge_team1", 0)],
         "players": players,
         "networth_lead": networth_lead(info["players"]),
+    }
+
+
+LANE_END_S = 540  # laning is judged at the 9-minute snapshot (snapshots: 3, 6, 9, 12, 15 min, then every 5)
+PATH_CLOCK_LEAD_S = 15  # match_paths runs a few seconds ahead of game time (3-8 s seen; pauses?)
+
+
+def coach_facts(info: Dict[str, Any], p: Dict[str, Any], hero_names_by_id: Dict[int, str]) -> Dict[str, Any]:
+    """What the Coach tab needs from one player's raw data: each death (when, where, by whom, how long the
+    fight took, how far the nearest living teammate was), laning at 9 minutes, and where their souls came from."""
+    players = {q.get("player_slot"): q for q in info["players"]}
+    mp = info.get("match_paths") or {}
+    paths_by_slot = {path["player_slot"]: path for path in mp.get("paths", [])}
+
+    def position(slot, i):
+        path = paths_by_slot[slot]
+        i = min(i, len(path["x_pos"]) - 1)
+        return (path["x_min"] + path["x_pos"][i] / mp["x_resolution"] * (path["x_max"] - path["x_min"]),
+                path["y_min"] + path["y_pos"][i] / mp["y_resolution"] * (path["y_max"] - path["y_min"]))
+
+    def dead_at(slot, t):
+        return any(d["game_time_s"] <= t < d["game_time_s"] + d["death_duration_s"] for d in players[slot].get("death_details", []))
+
+    deaths = []
+    for d in p.get("death_details", []):
+        t, spot = d["game_time_s"], (d["death_pos"]["x"], d["death_pos"]["y"])
+        mate = None
+        if p.get("player_slot") in paths_by_slot and mp.get("interval_s") == 1:
+            # The path sample where they died: the path clock runs ahead of game time, so search just after t
+            at = min(range(t, t + PATH_CLOCK_LEAD_S + 1), key=lambda i: math.dist(position(p["player_slot"], i), spot))
+            alive = [s for s, q in players.items() if q["team"] == p["team"] and s != p["player_slot"]
+                     and s in paths_by_slot and not dead_at(s, t)]
+            mate = round(min(math.dist(spot, position(s, at)) for s in alive)) if alive else None
+        killer = players.get(d.get("killer_player_slot"))
+        deaths.append({"t": t, "x": round(spot[0]), "y": round(spot[1]), "fight_s": round(d.get("time_to_kill_s", 0), 1),
+                       "killer": hero_names_by_id.get(killer["hero_id"]) if killer else None, "mate": mate})
+    lane = next((s for s in p.get("stats", []) if s["time_stamp_s"] >= LANE_END_S), None)
+    final = p["stats"][-1] if p.get("stats") else {}
+    both = lambda key: final.get(key, 0) + final.get(key + "_orbs", 0)  # noqa: E731 (souls picked up as orbs count too)
+    return {
+        "death_list": deaths,
+        "lane": {"minute": lane["time_stamp_s"] // 60, "last_hits": lane.get("creep_kills", 0), "possible": lane.get("possible_creeps", 0),
+                 "denies": lane.get("denies", 0), "net_worth": lane.get("net_worth", 0)} if lane else None,
+        "sources": {"kills": both("gold_player"), "lane": both("gold_lane_creep"), "jungle": both("gold_neutral_creep"),
+                    "objectives": both("gold_boss"), "other": final.get("gold_treasure", 0) + final.get("gold_denied", 0)},
+        "souls_lost": final.get("gold_death_loss", 0),
     }
 
 
@@ -165,10 +213,12 @@ def fetch_metadata(match_id: int, allow_steam: bool = True) -> Dict[str, Any]:
 def get_summary(match_id: int, hero_names_by_id: Dict[int, str], allow_steam: bool = True) -> Dict[str, Any]:
     """The match's summary: saved on disk, or fetched, condensed and saved. Raises MatchUnavailable."""
     summary = load_saved(match_id)
-    if summary is None:
+    if summary is None or "death_list" not in summary["players"][0]:  # saved before the Coach tab: fetch again once
         try:
             metadata = fetch_metadata(match_id, allow_steam)
         except OSError as e:  # HTTP errors and network problems
+            if summary:
+                return summary  # the old summary still serves the review
             raise MatchUnavailable(explain(e)) from e
         summary = summarize(metadata, hero_names_by_id, deadlock_api.fetch_items())
         save(summary)

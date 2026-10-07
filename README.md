@@ -110,6 +110,7 @@ The app has pages, with a **Back** button (or Alt+Left) and the title as a link 
 | **Items** | Every shop item: how often it's bought, win rate, tier, cost and typical purchase time, with a 14-day trend |
 | **Hero** | **Stats**: win rate over 12 weeks, best and toughest matchups, most-bought items and win rate at every rank. **Guide**: what kind of hero it is, what its abilities do and what players build |
 | **My Stats** | Your own player page, with **your form**: your last 20 matches against the 20 before (souls per minute, KDA, win rate), overall and per hero, calling out only changes bigger than luck |
+| **Coach** | Patterns in your last 15 normal matches (or only those on one hero): up to 3 things to work on or that are going well, a map of where you die (red: no teammate near), how you die against the other players in your lobbies (alone, within 5 seconds, early or late, who kills you), your stats on your hero against players at your rank, and your laning and where your souls come from. A tip only appears when the numbers clearly say so. Matches count once the stats site has stored them, usually a few hours after the game |
 | **Player** | Rank, games and win rate for ranked, unranked and Street Brawl, your record with them, a note box (kept only on your PC), who they play with most, per-hero stats and recent matches |
 | **Match review** | **Overview**: victory or defeat, your K/D/A, net worth, damage, healing and last hits against your usual on that hero, your build, the net-worth lead over time and both scoreboards, with a few lines on how the match went (when the lead changed hands for good, the biggest swing). **Performance**: every stat against other players on the same hero, at the same rank, in matches of a similar length ("better than 82% of Kelvin players"), and a score for every player |
 | **Search** | Type any Steam name in the top bar to see every account with that name, or a **match ID** to open its review |
@@ -211,6 +212,7 @@ player_lookup.py     whole-lobby lookup and command-line report
 matchups.py          your hero vs the enemy heroes, and popular items against them
 profiles.py          player pages (per-hero stats, recent matches, modes) and the hero tier list
 match_review.py      post-game review: condenses a match's data, saved on disk
+coach.py             the Coach tab: patterns across your recent matches, and tips
 end_screen.py        spots the end-of-match screen and reads its scoreboard and match ID
 postgame.py          waits for a finished match's data without wasting Steam fetches
 settings.py          settings.json: window layout and which account is you (stays on your PC)

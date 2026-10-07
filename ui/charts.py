@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from tkinter import ttk
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
+from PIL import Image, ImageChops, ImageDraw, ImageTk
+
 from ui import images
 from ui.theme import COLORS, FONT, card
 from ui.widgets import hide_tooltip, show_tooltip
@@ -342,6 +344,28 @@ def percentile_bar(parent, good: Optional[float], percentile: float, bg: str = "
     canvas.create_rectangle(0, 2, max(2, position / 100 * width), height - 2, fill=score_color(good), outline="")
     canvas.create_line(width / 2, 0, width / 2, height, fill=COLORS["text"])
     return canvas
+
+
+MAP_STREETS = "#323b4d"  # the minimap's walkable area, a shade lighter than a card
+
+
+def death_map(parent, image, radius: float, points: List[Tuple[float, float, bool]], size: int = 280,
+              bg: str = "card") -> tk.Label:
+    """The minimap recoloured for the dark theme (its grey streets on a card, buildings left out), with a
+    dot per death: red when no teammate was near, amber when one was. points: (world x, world y, alone)."""
+    shade, alpha = image.convert("LA").split()
+    streets = ImageChops.multiply(shade.point(lambda v: 255 if v < 150 else 0), alpha)  # dark and not transparent
+    picture = Image.new("RGB", image.size, COLORS[bg])
+    picture.paste(Image.new("RGB", image.size, MAP_STREETS), mask=streets)
+    picture = picture.resize((size, size), Image.LANCZOS)
+    draw = ImageDraw.Draw(picture)
+    for x, y, alone in sorted(points, key=lambda p: p[2]):  # alone last, so red dots stay on top
+        px, py = (x + radius) / (2 * radius) * size, (1 - (y + radius) / (2 * radius)) * size
+        draw.ellipse((px - 4, py - 4, px + 4, py + 4), fill=COLORS["loss"] if alone else "#f5b942", outline=COLORS[bg])
+    photo = ImageTk.PhotoImage(picture)
+    widget = tk.Label(parent, image=photo, bg=COLORS[bg])
+    widget.image = photo  # tkinter forgets images nobody holds
+    return widget
 
 
 # --- the hero page's chart

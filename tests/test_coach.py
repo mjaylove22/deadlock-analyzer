@@ -1,0 +1,74 @@
+"""Tests for the Coach tab's facts (match_review.coach_facts) and analysis (coach.coach_report), on made-up data."""
+
+import unittest
+
+from coach import coach_report
+from match_review import coach_facts
+
+NAMES = {7: "Haze", 8: "Vyper"}
+
+
+def path(slot, x_at, length=130):
+    """A path on a 10,000-unit square (x from 0, y from -5,000): x_at(i) gives the x in units at second i; y is 0."""
+    return {"player_slot": slot, "x_min": 0, "x_max": 10000, "y_min": -5000, "y_max": 5000,
+            "x_pos": [x_at(i) // 100 for i in range(length)], "y_pos": [50] * length}
+
+
+class CoachFactsTests(unittest.TestCase):
+    def test_death_is_matched_to_the_path_and_dead_teammates_are_skipped(self):
+        me = {"player_slot": 1, "team": 0, "hero_id": 7,
+              "death_details": [{"game_time_s": 100, "death_pos": {"x": 1000, "y": 0}, "killer_player_slot": 3,
+                                 "time_to_kill_s": 4.04, "death_duration_s": 10}],
+              "stats": [{"time_stamp_s": 540, "creep_kills": 30, "possible_creeps": 40, "denies": 2, "net_worth": 7000,
+                         "gold_player": 900, "gold_player_orbs": 100, "gold_lane_creep": 3000, "gold_death_loss": 450}]}
+        mate = {"player_slot": 2, "team": 0, "hero_id": 8, "death_details": []}
+        dead_mate = {"player_slot": 4, "team": 0, "hero_id": 8,
+                     "death_details": [{"game_time_s": 95, "death_pos": {"x": 1000, "y": 0}, "death_duration_s": 20}]}
+        enemy = {"player_slot": 3, "team": 1, "hero_id": 8, "death_details": []}
+        info = {"players": [me, mate, dead_mate, enemy], "match_paths": {
+            "interval_s": 1, "x_resolution": 100, "y_resolution": 100, "paths": [
+                # The path clock runs 5 s ahead: you're at the death spot at sample 105, not 100
+                path(1, lambda i: 1000 if i == 105 else 0),
+                # Your teammate was beside the death spot at sample 100 but 4,000 units away at 105
+                path(2, lambda i: 1000 if i < 105 else 5000),
+                path(4, lambda i: 1000),  # right there, but dead: doesn't count
+                path(3, lambda i: 1000)]}}
+        facts = coach_facts(info, me, NAMES)
+        self.assertEqual(facts["death_list"], [{"t": 100, "x": 1000, "y": 0, "fight_s": 4.0, "killer": "Vyper", "mate": 4000}])
+        self.assertEqual(facts["lane"], {"minute": 9, "last_hits": 30, "possible": 40, "denies": 2, "net_worth": 7000})
+        self.assertEqual(facts["sources"]["kills"], 1000)  # souls from heroes, picked up as orbs or not
+        self.assertEqual(facts["souls_lost"], 450)
+
+
+def player(account_id, mates, killer="Haze"):
+    """A player who died once per entry in mates (the nearest teammate's distance at each death)."""
+    return {"account_id": account_id, "hero": "Haze", "deaths": len(mates), "net_worth": 30000,
+            "death_list": [{"t": 1600, "x": 0, "y": 0, "fight_s": 10.0, "killer": killer, "mate": m} for m in mates],
+            "lane": {"minute": 9, "last_hits": 30, "possible": 40, "denies": 1, "net_worth": 7000},
+            "sources": {"kills": 20, "lane": 50, "jungle": 15, "objectives": 8, "other": 7}, "souls_lost": 500}
+
+
+def matches(my_mates):
+    me = player(1, my_mates, killer="Vyper")
+    others = [player(n, [500] * 6) for n in range(2, 13)]  # everyone else dies beside a teammate
+    return [{"summary": {"minutes": 30, "players": [me] + others}, "me": me, "rating": None}]
+
+
+class CoachReportTests(unittest.TestCase):
+    def test_dying_alone_far_more_than_the_lobby_is_a_tip(self):
+        report = coach_report(matches([5000, 5000, 5000, 5000, 500, 500]))
+        self.assertEqual((report["deaths"]["alone"], report["deaths"]["count"]), (4, 6))
+        texts = [t["text"] for t in report["tips"]]
+        self.assertTrue(any(t.startswith("4 of your 6 deaths came with no teammate nearby") for t in texts))
+        self.assertTrue(any(t.startswith("Vyper killed you 6 times") for t in texts))
+
+    def test_dying_alone_as_often_as_the_lobby_is_not(self):
+        report = coach_report(matches([500] * 6))
+        self.assertFalse(any("no teammate nearby" in t["text"] for t in report["tips"]))
+
+    def test_hero_filter_with_no_matches_gives_nothing(self):
+        self.assertIsNone(coach_report(matches([500]), hero="Vyper"))
+
+
+if __name__ == "__main__":
+    unittest.main()

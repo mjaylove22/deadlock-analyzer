@@ -142,14 +142,16 @@ PROGRESS_STATS = {  # stat -> its value in one match
 }
 
 
-def compare_windows(matches: List[Dict[str, Any]], games: int = PROGRESS_GAMES) -> Optional[Dict[str, Dict[str, Any]]]:
+def compare_windows(matches: List[Dict[str, Any]], games: int = PROGRESS_GAMES,
+                    stats: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Dict[str, Any]]]:
     """The newest `games` matches (newest first) against the `games` before them, per stat:
     {"before", "recent", "change" (recent - before), "clear"}. A change is clear when it's more than twice
-    its standard error, i.e. bigger than game-to-game variation usually makes. None without enough games."""
+    its standard error, i.e. bigger than game-to-game variation usually makes. None without enough games.
+    stats: stat -> its value in one match (default PROGRESS_STATS, for match-history entries)."""
     if len(matches) < 2 * games:
         return None
     result = {}
-    for stat, value in PROGRESS_STATS.items():
+    for stat, value in (stats or PROGRESS_STATS).items():
         recent = [value(m) for m in matches[:games]]
         before = [value(m) for m in matches[games:2 * games]]
         change = statistics.fmean(recent) - statistics.fmean(before)
