@@ -1889,7 +1889,8 @@ class SettingsPage(Page):
     ]
     CARD_PARTS = [
         ("show_rank", "Rank", ""),
-        ("show_hero_stats", "Stats on their current hero", "Games, win rate, KDA and damage on the hero they're playing."),
+        ("show_hero_stats", "Stats on their current hero", "Games and win rate on the hero they're playing."),
+        ("show_kda", "KDA and damage", "A second stat line on their hero."),
         ("show_badges", "Badges", "ON MAIN (their most-played hero), COMFORT PICK (2nd or 3rd), HIGH WR, NEW ON HERO... "
                                   "Hover one for what it means. ID UNSURE and NAME FIXED always show."),
         ("show_history", "Your history with them",
@@ -1897,6 +1898,10 @@ class SettingsPage(Page):
          "written on their player page. Needs your account set."),
         ("show_matchup", "Your matchup", "Your hero against each enemy hero, and popular items against them."),
     ]
+    # Presets only set the switches above. WATCH and party pills show either way.
+    PRESETS = {"Simple": {"show_rank": True, "show_hero_stats": True, "show_kda": False, "show_badges": False,
+                          "show_history": False, "show_matchup": False},
+               "Full": {key: True for key, _, _ in CARD_PARTS}}
 
     def build(self):
         self.heading("Settings", "saved on this PC · changes apply right away")
@@ -1911,10 +1916,16 @@ class SettingsPage(Page):
         self.option(when, "Watch for the scoreboard (auto-detect)",
                     f"Same as the switch at the top. Off: press {HOTKEY_TEXT} in game to capture instead.",
                     self.app.auto_detect, self.app.apply_auto_detect)
+        presets = tk.Frame(cards, bg=COLORS["card"])
+        presets.pack(fill="x", pady=(0, 12))
+        for name in self.PRESETS:
+            button(presets, name, lambda n=name: self.apply_preset(n), width=80).pack(side="left", padx=(0, 8))
+        label(presets, "Simple: name, hero, rank, games and win rate", size=9, color="dim", bg="card").pack(side="left")
         prefs = get_preferences()
+        self.switches = {}
         for parent, options in ((when, self.WHEN_OPEN), (cards, self.CARD_PARTS)):
             for key, title, note in options:
-                variable = tk.BooleanVar(value=prefs[key])
+                variable = self.switches[key] = tk.BooleanVar(value=prefs[key])
                 self.variables.append(variable)
                 self.option(parent, title, note, variable, lambda k=key, v=variable: set_preference(k, v.get()))
         help_outer, help_box = section(grid, "Something went wrong?")
@@ -1924,6 +1935,11 @@ class SettingsPage(Page):
               wraplength=900).pack(anchor="w", pady=(0, 8))
         button(help_box, "Open log folder", lambda: os.startfile(LOG_DIR)).pack(anchor="w")
         self.app.set_status("Settings")
+
+    def apply_preset(self, name: str):
+        for key, value in self.PRESETS[name].items():
+            set_preference(key, value)
+            self.switches[key].set(value)
 
     def option(self, parent, title: str, note: str, variable, command):
         row = tk.Frame(parent, bg=COLORS["card"])

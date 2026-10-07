@@ -269,7 +269,10 @@ def player_tile(parent, r: Dict[str, Any], accent: str, avatars: AvatarCache, wi
         hero_label(body, r["hero"], "card", size=20, font_size=11).pack(anchor="w", pady=(2, 0))
     if shown("show_hero_stats"):
         parts = hero_stats_text(r).split(" · ")
-        text = f"{' · '.join(parts[:2])}\n{' · '.join(parts[2:])}" if len(parts) == 4 else " · ".join(parts)
+        if len(parts) == 4:  # games · WR, then KDA · damage on a second line
+            text = f"{' · '.join(parts[:2])}\n{' · '.join(parts[2:])}" if shown("show_kda") else " · ".join(parts[:2])
+        else:
+            text = " · ".join(parts)
         label(body, text, size=10, bg="card", anchor="w", justify="left", wraplength=width).pack(anchor="w", pady=(2, 0))
 
     font = tkfont.Font(family=FONT, size=-10, weight="bold")  # CustomTkinter sizes are pixels, hence negative

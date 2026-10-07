@@ -46,6 +46,7 @@ PREFERENCES = {
     "post_game_review": True,    # the end-of-match screen opens that match's review
     "show_rank": True,
     "show_hero_stats": True,
+    "show_kda": True,            # the second stat line: KDA and damage on their hero
     "show_badges": True,
     "show_matchup": True,
     "show_history": True,        # your record with each player, and your notes on them

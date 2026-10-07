@@ -402,6 +402,11 @@ From the author's next list (export/share was dropped: Win+Shift+S already captu
 - **Changes to one hero:** hero changes are written "Haze: Bullet Dance damage reduced...", so picking a hero keeps only the updates and lines that mention them (whole word), each under its heading, with the name highlighted. On the author's heroes: Kelvin changed in 2 of the 15, Haze in 4.
 - **Not done, on purpose:** no claims that a patch changed a hero's win rate ("patch impact" was on the skip list); the notes are shown as written.
 
+### 4.47 Simple and Full lobby cards
+- **Presets set the existing switches, nothing hidden:** Simple turns on rank and hero stats and turns off badges, history, the matchup strip and a new "KDA and damage" switch (the tile's second stat line), so a Simple tile is name, hero, rank and "577 games · 53% WR". Full turns every card switch on. Changing a switch afterwards is just a custom mix.
+- **WATCH stays in Simple** (the author's call): it never depended on the Badges switch, so it needed no code. Party pills and the trust pills (ID UNSURE, ID VIA FRIENDS, YOU) stay too, for the same reason as before: they're about who the player is, not how good.
+- **Checked on the real 6v6 lobby:** Simple tiles are about a third shorter, and the Settings page with the new row fits the same 1196×999 window.
+
 ## 5. Testing
 
 `python -m unittest discover -s tests -v` runs 256 tests in a few seconds:
