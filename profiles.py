@@ -157,7 +157,7 @@ def compare_windows(matches: List[Dict[str, Any]], games: int = PROGRESS_GAMES,
         change = statistics.fmean(recent) - statistics.fmean(before)
         error = math.sqrt((statistics.variance(recent) + statistics.variance(before)) / games)
         result[stat] = {"before": statistics.fmean(before), "recent": statistics.fmean(recent), "change": change,
-                        "clear": abs(change) > 2 * error}
+                        "clear": abs(change) > 2 * error, "z": change / error if error else 0.0}
     return result
 
 

@@ -48,23 +48,33 @@ def player(account_id, mates, killer="Haze"):
             "sources": {"kills": 20, "lane": 50, "jungle": 15, "objectives": 8, "other": 7}, "souls_lost": 500}
 
 
-def matches(my_mates):
-    me = player(1, my_mates, killer="Vyper")
-    others = [player(n, [500] * 6) for n in range(2, 13)]  # everyone else dies beside a teammate
-    return [{"summary": {"minutes": 30, "players": [me] + others}, "me": me, "rating": None}]
+def matches(my_mates, games=10):
+    """games matches in which you died once per entry in my_mates, Vyper killing you every time; everyone else
+    dies beside a teammate, and Vyper is one of 6 enemies (so 1 in 6 of your deaths would be "fair")."""
+    found = []
+    for _ in range(games):
+        me = player(1, my_mates, killer="Vyper")
+        me["team"] = 0
+        others = [dict(player(n, [500] * 6), team=0 if n < 7 else 1, hero="Vyper" if n == 7 else "Haze") for n in range(2, 13)]
+        found.append({"summary": {"minutes": 30, "players": [me] + others}, "me": me, "rating": None})
+    return found
 
 
 class CoachReportTests(unittest.TestCase):
-    def test_dying_alone_far_more_than_the_lobby_is_a_tip(self):
+    def test_dying_alone_far_more_than_the_lobby_is_a_finding(self):
         report = coach_report(matches([5000, 5000, 5000, 5000, 500, 500]))
-        self.assertEqual((report["deaths"]["alone"], report["deaths"]["count"]), (4, 6))
-        texts = [t["text"] for t in report["tips"]]
-        self.assertTrue(any(t.startswith("4 of your 6 deaths came with no teammate nearby") for t in texts))
-        self.assertTrue(any(t.startswith("Vyper killed you 6 times") for t in texts))
+        alone = next(f for f in report["findings"] if f["title"] == "Dying away from your team")
+        self.assertTrue(alone["text"].startswith("40 of your 60 deaths came with no teammate within 3,000 units"))
+        self.assertEqual(alone["level"], "likely")  # 10 matches: never "consistent", however clear
+        self.assertTrue(any(f["title"] == "Vyper kills you a lot" for f in report["findings"]))
 
     def test_dying_alone_as_often_as_the_lobby_is_not(self):
         report = coach_report(matches([500] * 6))
-        self.assertFalse(any("no teammate nearby" in t["text"] for t in report["tips"]))
+        self.assertFalse(any(f["title"] == "Dying away from your team" for f in report["findings"]))
+
+    def test_a_few_matches_are_never_a_finding(self):
+        report = coach_report(matches([5000] * 6, games=3))
+        self.assertEqual([f for f in report["findings"] if f["title"] == "Dying away from your team"], [])
 
     def test_hero_filter_with_no_matches_gives_nothing(self):
         self.assertIsNone(coach_report(matches([500]), hero="Vyper"))
