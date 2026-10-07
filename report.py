@@ -6,6 +6,8 @@ for the wording, so the two always say the same thing.
 
 from typing import Any, Dict, List, Optional, Tuple
 
+import insights
+
 Line = Tuple[str, str]  # (text, style): style is one of team, party, player, note, link, hero, blank
 
 TEAM_TITLES = {"friendly": "YOUR TEAM", "enemy": "ENEMY TEAM"}
@@ -60,6 +62,38 @@ def badge_labels(r: Dict[str, Any]) -> List[Tuple[str, str]]:
         elif r["note"].startswith("friends with"):
             labels.append(("ID VIA FRIENDS", "info"))
     return labels
+
+
+def badge_tip(label: str, r: Dict[str, Any]) -> str:
+    """What a pill on a player's card means, for its hover text, with their numbers where they help."""
+    hero, s = r.get("hero") or "this hero", r.get("hero_stats") or {}
+    games = f" ({s['games']} games)" if s else ""
+    if label.startswith(("FACED", "ALLY")):
+        return history_text(r.get("history")) + "."
+    if label.startswith("PARTY"):
+        return "Queued together as a party: their avatars have the same ring colour."
+    if label in ("NAME FIXED", "ID UNSURE", "ID VIA FRIENDS"):
+        why = {"NAME FIXED": "The name was misread from the screen and corrected.",
+               "ID UNSURE": "Several accounts have this name, so these stats may be someone else's.",
+               "ID VIA FRIENDS": "Several accounts have this name; this one is a Steam friend of others in the lobby."}[label]
+        return f"{why}\n{identity_text(r)}".strip()
+    return {
+        "YOU": "This is you.",
+        "ONE-TRICK": f"{hero} is most of what they play: {insights.ONE_TRICK_MIN_GAMES}+ games and "
+                     f"{insights.ONE_TRICK_MIN_SHARE:.0%}+ of all their matches{games}.",
+        "ON MAIN": f"{hero} is their most-played hero{games}.",
+        "COMFORT PICK": f"{hero} is their 2nd or 3rd most-played hero{games}.",
+        "NEW ON HERO": f"Fewer than {insights.NEW_ON_HERO_MAX_GAMES} recorded games on {hero}{games}: still learning it.",
+        "FIRST GAME ON HERO": f"No recorded games on {hero}: probably their first time on it.",
+        "NO RECENT DATA": f"The public stats have nothing from them in the last {insights.STALE_AFTER_S // 86400} days, "
+                          f"so their newest games (maybe on {hero}) are missing.",
+        "HIGH WR": f"{insights.HIGH_WIN_RATE:.0%}+ win rate on {hero} over {insights.WIN_RATE_MIN_GAMES}+ games"
+                   + (f": {s['win_rate']:.0%} in {s['games']}." if s else "."),
+        "LOW WR": f"{insights.LOW_WIN_RATE:.0%} or lower win rate on {hero} over {insights.WIN_RATE_MIN_GAMES}+ games"
+                  + (f": {s['win_rate']:.0%} in {s['games']}." if s else "."),
+        "VETERAN": f"{insights.VETERAN_GAMES:,}+ recorded matches.",
+        "FEW RECORDED GAMES": f"Under {insights.FEW_GAMES_TOTAL} recorded matches: too few to say much about them.",
+    }.get(label, "")
 
 
 def history_labels(record: Dict[str, int]) -> List[str]:

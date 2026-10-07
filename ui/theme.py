@@ -21,17 +21,22 @@ COLORS = {
     "win": "#5fd38d", "loss": "#ff6b6b", "selected": "#26324a", "note": "#d9c27a",
 }
 BADGE_COLORS = {"strong": "#f5b942", "good": "#3fbf74", "warn": "#f0803c", "info": "#3d4a5c", "you": "#5ec8ff",
-                "history": "#4b3f72", "watch": "#d64545"}
+                "history": "#4b3f72", "watch": "#c23535"}
 PARTY_COLORS = ["#b36bff", "#2ec4b6", "#ffb347", "#6c8cff"]
-MATCHUP_COLORS = {"good": "#2f9e5b", "bad": "#d64545", "even": "#3d4a5c"}
+MATCHUP_COLORS = {"good": "#2f9e5b", "bad": "#c23535", "even": "#3d4a5c"}
 ITEM_SLOT_COLORS = {"weapon": "#ec981a", "vitality": "#6aa11a", "spirit": "#a977d2"}  # the shop's three categories, sampled from the game
 
 
 def text_color_for(background: str) -> str:
-    """Black or white text, whichever reads better on the given hex colour."""
-    r, g, b = (int(background[i:i + 2], 16) for i in (1, 3, 5))
-    brightness = 0.299 * r + 0.587 * g + 0.114 * b  # standard perceived-brightness weights
-    return "#0b0d12" if brightness > 150 else "#ffffff"
+    """Black or white text, whichever has the higher WCAG contrast on the given hex colour. (A plain
+    brightness cutoff put white on mid-bright greens and teals at ~2:1, hard to read.)"""
+    def luminance(color: str) -> float:
+        channels = [int(color[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+        r, g, b = (c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in channels)
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    dark, light = "#0b0d12", "#ffffff"
+    fill = luminance(background)
+    return dark if (fill + 0.05) / (luminance(dark) + 0.05) >= (1.05 / (fill + 0.05)) else light
 
 
 def resolve(name: str) -> str:

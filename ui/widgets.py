@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 import customtkinter as ctk
 
-from report import (THREAT_HERO_GAMES, badge_labels, hero_stats_text, history_labels, matchup_kind, matchup_text,
+from report import (THREAT_HERO_GAMES, badge_labels, badge_tip,hero_stats_text, history_labels, matchup_kind, matchup_text,
                     most_played_text)
 from ui import images
 from ui.theme import BADGE_COLORS, COLORS, FONT, ITEM_SLOT_COLORS, MATCHUP_COLORS, card, label, pill
@@ -212,6 +212,8 @@ def player_card(parent, r: Dict[str, Any], accent: str, avatars: AvatarCache,
                 tooltip(badge, "Worth watching: " + " · ".join(r["watch"]) + f"\n\nShown for enemies with 2 or more of: "
                         f"main hero or one-trick, a high win rate on their hero, {THREAT_HERO_GAMES}+ games on it, "
                         "the lobby's top rank, a party.")
+            elif badge_tip(text, r):
+                tooltip(badge, badge_tip(text, r))
 
     details = most_played_text(r) if shown("show_most_played") else ""
     if details:

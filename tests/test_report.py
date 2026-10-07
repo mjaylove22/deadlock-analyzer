@@ -2,7 +2,7 @@
 
 import unittest
 
-from report import badge_labels, build_report, hero_stats_text, matchup_kind, matchup_text, team_summary, threats
+from report import badge_labels, badge_tip, build_report, hero_stats_text, matchup_kind, matchup_text, team_summary, threats
 
 
 def result(player, hero, team, status="found", note="unique name", url=None, top=(), stats=None,
@@ -110,6 +110,21 @@ class ThreatTests(unittest.TestCase):
             (0, ["main hero", "62% WR on Haze", "1,200 games on Haze", "top rank here (Oracle 6)"]),
             (1, ["140 games on Seven", "party of 2"]),
         ])
+
+
+class BadgeTipTests(unittest.TestCase):
+    def test_every_pill_explains_itself(self):
+        # Every label insights.compute_badges and badge_labels can produce, plus the party and history pills
+        labels = ["YOU", "ONE-TRICK", "ON MAIN", "COMFORT PICK", "NO RECENT DATA", "FIRST GAME ON HERO", "NEW ON HERO",
+                  "HIGH WR", "LOW WR", "VETERAN", "FEW RECORDED GAMES", "NAME FIXED", "ID UNSURE", "ID VIA FRIENDS",
+                  "PARTY A", "FACED 2× · 1-1", "ALLY 1× · 0-1"]
+        r = dict(result("moondog", "Haze", "enemy", note="friends with Grey Mirage",
+                        stats={"games": 120, "win_rate": 0.61, "kda": 3.0, "damage_per_min": 900}),
+                 history={"faced": 2, "won_against": 1, "teamed": 1, "won_with": 0})
+        for label in labels:
+            with self.subTest(label=label):
+                self.assertTrue(badge_tip(label, r))
+        self.assertEqual(badge_tip("HIGH WR", r), "60%+ win rate on Haze over 20+ games: 61% in 120.")
 
 
 if __name__ == "__main__":

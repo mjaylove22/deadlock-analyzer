@@ -26,7 +26,7 @@ from postgame import last_session, load_end_screens, recent_matches
 from profiles import (API_GAME_MODES, LOW_SAMPLE_GAMES, MATCH_TYPES, RANK_BANDS, hero_rank_curve, hero_tier_list, hero_trends,
                       PROGRESS_GAMES, party_games, player_profile, teammates, when)
 import history
-from report import TEAM_TITLES, history_text, progress_texts, team_summary, threats
+from report import TEAM_TITLES, badge_tip, history_text, progress_texts, team_summary, threats
 from scoreboard_ocr import find_tesseract
 from screenshot_manager import get_screenshot_path
 from settings import get_me, get_preferences, save_settings, set_preference
@@ -473,7 +473,9 @@ class MatchupPage(Page):
                 watch.pack(side="left", padx=(6, 0))
                 tooltip(watch, "Worth watching: " + " · ".join(player["watch"]))
             for text, kind in player["badges"][:1 if player.get("watch") else 2]:  # a third pill overflows the card
-                pill(threat, text, BADGE_COLORS[kind], size=8).pack(side="left", padx=(6, 0))
+                badge = pill(threat, text, BADGE_COLORS[kind], size=8)
+                badge.pack(side="left", padx=(6, 0))
+                tooltip(badge, badge_tip(text, player))
         if player and player["status"] == "found" and player["top_heroes"]:
             main = player["top_heroes"][0]
             label(box, f"Main: {main['hero']} · {main['matches']} games ({main['win_rate']:.0%})",
