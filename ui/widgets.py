@@ -153,7 +153,7 @@ def rank_pill(parent, rank: Optional[Dict[str, Any]], size: int = 9) -> Optional
         return None
     tier, subrank = divmod(rank.get("badge", 0), 10)
     emblem = images.rank_emblem(tier, subrank, 18)
-    text_color = images.readable_on_dark(rank["color"]) if tier else COLORS["dim"]
+    text_color = images.readable(rank["color"]) if tier else COLORS["dim"]
     return pill(parent, rank["name"], COLORS["surface"], size=size, image=emblem, text_color=text_color)
 
 
@@ -161,7 +161,7 @@ def hero_label(parent, hero: str, bg: str, size: int = 22, font_size: int = 10, 
     """The hero's badge followed by their name."""
     badge = images.hero_badge(hero, size)
     return tk.Label(parent, text=f"  {hero}" if badge else hero, image=badge, compound="left", bg=COLORS.get(bg, bg),
-                    fg=color or images.readable_on_dark(images.hero_color(hero)), font=(FONT, font_size, "bold"))
+                    fg=color or images.readable(images.hero_color(hero)), font=(FONT, font_size, "bold"))
 
 
 def card_badges(r: Dict[str, Any], party_label: Optional[str], shown: Callable[[str], bool]) -> List[Tuple[str, str]]:

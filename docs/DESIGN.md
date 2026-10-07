@@ -412,6 +412,12 @@ From the author's next list (export/share was dropped: Win+Shift+S already captu
 - **One line in the player page header**, which had spare height beside the avatar and portrait, so the tables keep their 13 rows: "Placed Seeker 2 (Aug 8) → Seeker 2 after 20 ranked matches · peak Seeker 3", green when higher than the placement and red when lower; hover for each change with its date. Every player page gets it, since it's the same history; with no ranked rank yet (placements) there's no line.
 - **Badge to name** is now one helper (`deadlock_api.badge_name`), also used by the match page's team ranks.
 
+### 4.49 Light theme
+- **Cheap because colours were already names:** every widget takes its colours from `COLORS` in ui/theme.py, and only six hex values lived anywhere else. Light mode is a second palette with the same names (`LIGHT_COLORS`), swapped in at start-up before any widget exists, plus CustomTkinter's own light mode. A test checks it sets every name, so a colour added later can't stay dark by accident.
+- **Applies after a restart, on purpose:** each widget reads its colours when it's made, and the top bar and status line are made once at start-up, so switching live would mean rebuilding the whole window. Settings says so next to the switch.
+- **Readable by numbers:** every text colour is at least 4.5:1 (WCAG's minimum for small text) on a card in both themes, checked by a test. Hero, item and rank colours were lightened for the dark background; `images.readable` now darkens them on light instead (tested on bright yellow, dark purple and light blue).
+- **Found in the test windows:** off switches were invisible on the light top bar (track and bar nearly the same grey) and the white knob blended into white cards, because CustomTkinter draws the knob bigger than the track. Light mode now has its own switch colours and a full-height track. Lobby, My Stats, Coach (map included), Heroes, a match review and Settings were checked in light at the usual 1196×999 window.
+
 ## 5. Testing
 
 `python -m unittest discover -s tests -v` runs the tests in a few seconds (the smoke test only in CI or with `SMOKE=1`):

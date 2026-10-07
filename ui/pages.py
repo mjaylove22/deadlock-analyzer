@@ -37,7 +37,7 @@ from screenshot_manager import get_screenshot_path
 from settings import get_me, get_preferences, save_settings, set_preference
 from ui import images
 from ui.theme import (BADGE_COLORS, COLORS, FONT, HEADING_FONT, ITEM_SLOT_COLORS, MATCHUP_COLORS, PARTY_COLORS, button, card, dropdown,
-                      label, pill, segmented, switch)
+                      is_light, label, pill, segmented, switch)
 from version import DOWNLOAD_URL, __version__
 from ui.charts import (ITEM_DAYS, ITEM_TREND_SPAN, ChartTable, Column, advantage_bar, change_text, change_tip, death_map, hero_cell, item_cell,
                        percentile_bar, score_color, trend_cell, trend_chart, trend_color, trend_tip, verdict)
@@ -406,7 +406,7 @@ class MatchupPage(Page):
         summary.pack(side="left", fill="y")
         label(summary, "YOUR MATCHUP", size=10, color="dim", bold=True, bg="card").pack(anchor="w")
         label(summary, f"{hero} vs this team", size=20, heading=True, bg="card",
-              color=images.readable_on_dark(images.hero_color(hero))).pack(anchor="w")
+              color=images.readable(images.hero_color(hero))).pack(anchor="w")
         line = tk.Frame(summary, bg=COLORS["card"])
         line.pack(anchor="w", pady=(4, 4))
         label(line, f"≈ {d['expected']:.1%}", size=18, bold=True, bg="card",
@@ -700,7 +700,7 @@ class ItemsPage(Page):
             r["position"] = n  # by how often it's bought, kept when re-sorting
         days = len(data["days"])
         by_change = lambda r: r["trend"].get("change")  # noqa: E731
-        item_color = lambda r: images.readable_on_dark(ITEM_SLOT_COLORS.get(r.get("slot"), COLORS["text"]))  # noqa: E731
+        item_color = lambda r: images.readable(ITEM_SLOT_COLORS.get(r.get("slot"), COLORS["text"]))  # noqa: E731
         ChartTable(self.body, [
             Column("position", "#", 36),
             Column("name", "Item", 190, draw=item_cell(), align="w"),
@@ -771,7 +771,7 @@ class HeroPage(Page):
             tk.Label(header, image=portrait, bg=COLORS["card"]).pack(side="left", padx=(0, 18))
         info = tk.Frame(header, bg=COLORS["card"])
         info.pack(side="left", fill="y")
-        label(info, self.hero, size=24, heading=True, bg="card", color=images.readable_on_dark(images.hero_color(self.hero))).pack(anchor="w")
+        label(info, self.hero, size=24, heading=True, bg="card", color=images.readable(images.hero_color(self.hero))).pack(anchor="w")
         label(info, f"{self.mode} · {self.band}", color="dim", bg="card").pack(anchor="w", pady=(0, 10))
         chips = tk.Frame(info, bg=COLORS["card"])
         chips.pack(anchor="w")
@@ -871,7 +871,7 @@ class HeroPage(Page):
             head = tk.Frame(text, bg=COLORS["card"])
             head.pack(anchor="w")
             label(head, f"{n + 1}  {a['name']}", size=11, bold=True, bg="card",
-                  color=images.readable_on_dark(color)).pack(side="left")
+                  color=images.readable(color)).pack(side="left")
             chips = (["ULTIMATE"] if n == 3 else []) + ([f"{a['cooldown']:.0f}s cooldown"] if a["cooldown"] else []) \
                 + ([f"{a['charges']:.0f} charges"] if a["charges"] and a["charges"] > 1 else [])
             for chip in chips:
@@ -1907,7 +1907,11 @@ class SettingsPage(Page):
                "Full": {key: True for key, _, _ in CARD_PARTS}}
 
     def build(self):
-        self.heading("Settings", "saved on this PC · changes apply right away")
+        top = self.heading("Settings", "saved on this PC · changes apply right away")
+        theme = "Light" if is_light() else "Dark"
+        segmented(top, ["Dark", "Light"], theme, self.choose_theme).pack(side="right")
+        self.theme_note = label(top, "Theme", color="dim")
+        self.theme_note.pack(side="right", padx=10)
         self.variables = []  # tkinter forgets variables nobody holds
         grid = tk.Frame(self.frame, bg=COLORS["bg"])
         grid.pack(fill="x")
@@ -1938,6 +1942,12 @@ class SettingsPage(Page):
               wraplength=900).pack(anchor="w", pady=(0, 8))
         button(help_box, "Open log folder", lambda: os.startfile(LOG_DIR)).pack(anchor="w")
         self.app.set_status("Settings")
+
+    def choose_theme(self, name: str):
+        save_settings({"theme": name.lower()})
+        now = "Light" if is_light() else "Dark"
+        self.theme_note.config(text="Theme" if name == now else f"Theme · {name} from the next time you open the app",
+                               fg=COLORS["dim"] if name == now else COLORS["accent"])
 
     def apply_preset(self, name: str):
         for key, value in self.PRESETS[name].items():

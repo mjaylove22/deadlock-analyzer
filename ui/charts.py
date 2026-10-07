@@ -346,17 +346,14 @@ def percentile_bar(parent, good: Optional[float], percentile: float, bg: str = "
     return canvas
 
 
-MAP_STREETS = "#323b4d"  # the minimap's walkable area, a shade lighter than a card
-
-
 def death_map(parent, image, radius: float, points: List[Tuple[float, float, bool]], size: int = 280,
               bg: str = "card") -> tk.Label:
-    """The minimap recoloured for the dark theme (its grey streets on a card, buildings left out), with a
+    """The minimap recoloured for the app's theme (its grey streets on a card, buildings left out), with a
     dot per death: red when no teammate was near, amber when one was. points: (world x, world y, alone)."""
     shade, alpha = image.convert("LA").split()
     streets = ImageChops.multiply(shade.point(lambda v: 255 if v < 150 else 0), alpha)  # dark and not transparent
     picture = Image.new("RGB", image.size, COLORS[bg])
-    picture.paste(Image.new("RGB", image.size, MAP_STREETS), mask=streets)
+    picture.paste(Image.new("RGB", image.size, COLORS["map_streets"]), mask=streets)
     picture = picture.resize((size, size), Image.LANCZOS)
     draw = ImageDraw.Draw(picture)
     for x, y, alone in sorted(points, key=lambda p: p[2]):  # alone last, so red dots stay on top

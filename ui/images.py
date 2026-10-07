@@ -11,7 +11,7 @@ import customtkinter as ctk
 from PIL import Image, ImageDraw, ImageTk
 
 import assets
-from ui.theme import ITEM_SLOT_COLORS
+from ui.theme import ITEM_SLOT_COLORS, is_light
 
 _cache: Dict[Tuple, object] = {}
 _hero_art: Dict[str, Dict[str, str]] = {}
@@ -39,10 +39,12 @@ def shade(hex_color: str, factor: float) -> str:
     return f"#{min(r, 255):02x}{min(g, 255):02x}{min(b, 255):02x}"
 
 
-def readable_on_dark(hex_color: str) -> str:
-    """The colour, lightened until it's readable as text on a dark background."""
+def readable(hex_color: str) -> str:
+    """The colour, adjusted until it's readable as text on the theme's cards: lightened on dark, darkened on light."""
     r, g, b = (int(hex_color[i:i + 2], 16) for i in (1, 3, 5))
     brightness = 0.299 * r + 0.587 * g + 0.114 * b
+    if is_light():
+        return hex_color if brightness <= 110 else shade(hex_color, 110 / brightness)
     return hex_color if brightness >= 140 else shade(hex_color, 1 + (140 - brightness) / 255 * 1.6)
 
 

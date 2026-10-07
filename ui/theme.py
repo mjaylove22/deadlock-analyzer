@@ -19,6 +19,18 @@ COLORS = {
     "friendly": "#5ec8ff", "enemy": "#ff7a45", "accent": "#5ec8ff", "accent_dark": "#3a9fd1",
     "button": "#232a37", "button_hover": "#2d3646", "link": "#7ab8ff",
     "win": "#5fd38d", "loss": "#ff6b6b", "selected": "#26324a", "note": "#d9c27a",
+    "map_streets": "#323b4d",  # the minimap's walkable area, a shade lighter than a card
+    "switch_off": "#232a37", "switch_knob": "#e6e9ef",
+}
+# Settings' light theme: the same names, each text colour at least 4.5:1 on a card (tests/test_theme.py)
+LIGHT_COLORS = {
+    "bg": "#eef1f5", "surface": "#e3e8ef", "card": "#ffffff", "card_border": "#d3dae4", "hover_border": "#1574b8",
+    "text": "#161b24", "dim": "#5a6475", "faint": "#7d8696",
+    "friendly": "#1574b8", "enemy": "#c94a12", "accent": "#1574b8", "accent_dark": "#105d94",
+    "button": "#e3e8ef", "button_hover": "#d4dbe5", "link": "#1a62c4",
+    "win": "#1b7f45", "loss": "#cc3333", "selected": "#d5e5fa", "note": "#7d6210",
+    "map_streets": "#d6dce6",
+    "switch_off": "#b4bdca", "switch_knob": "#ffffff",
 }
 BADGE_COLORS = {"strong": "#f5b942", "good": "#3fbf74", "warn": "#f0803c", "info": "#3d4a5c", "you": "#5ec8ff",
                 "history": "#4b3f72", "watch": "#c23535"}
@@ -118,13 +130,25 @@ def dropdown(parent, values: Sequence[str], selected: str, command: Callable[[st
 
 def switch(parent, text: str, variable: tk.BooleanVar, command: Callable[[], None]) -> ctk.CTkSwitch:
     return ctk.CTkSwitch(parent, text=text, variable=variable, command=command, font=(FONT, 11),
-                         text_color=COLORS["text"], progress_color=COLORS["accent"], button_color="#e6e9ef",
-                         fg_color=COLORS["button"], switch_width=36, switch_height=18)
+                         text_color=COLORS["text"], progress_color=COLORS["accent"], button_color=COLORS["switch_knob"],
+                         fg_color=COLORS["switch_off"], switch_width=36, switch_height=18,
+                         border_width=0 if is_light() else 3)  # light: a white knob inside the track, not over the card
+
+
+def choose_theme(name: str) -> None:
+    """"light" or "dark" (the default). Call before any widget is built: every widget reads COLORS when
+    it's made, so a change shows after a restart."""
+    if name == "light":
+        COLORS.update(LIGHT_COLORS)
+    ctk.set_appearance_mode("light" if name == "light" else "dark")
+
+
+def is_light() -> bool:
+    return COLORS["card"] == LIGHT_COLORS["card"]
 
 
 def setup_styles(root) -> None:
-    """CustomTkinter dark mode, plus dark styling for ttk tables (which follow neither)."""
-    ctk.set_appearance_mode("dark")
+    """Styling for ttk tables, which don't follow CustomTkinter's theme."""
     style = ttk.Style(root)
     style.theme_use("clam")  # the default Windows theme ignores most colour settings
     style.configure("Treeview", background=COLORS["card"], fieldbackground=COLORS["card"],

@@ -48,7 +48,7 @@ from settings import get_me, get_preferences, load_settings, save_settings
 from ui.pages import (CoachPage, HeroesPage, PatchesPage, HeroPage, HomePage, ItemsPage, LobbyPage, MatchPage, MatchupPage, PlayerPage,
                       SearchPage, SettingsPage, SetupPage)
 from ui import images
-from ui.theme import COLORS, FONT, HEADING_FONT, label, setup_styles, switch
+from ui.theme import COLORS, FONT, HEADING_FONT, choose_theme, label, setup_styles, switch
 from ui.widgets import AvatarCache, hide_tooltip
 from utils.logger import setup_logger
 
@@ -92,7 +92,8 @@ class AnalyzerApp:
         self.update_release = None   # its {"tag", "url", "sha256"} for Update now (updater.py)
 
         settings = load_settings()
-        self.overlay = tk.BooleanVar(value=settings.get("overlay", False))
+        choose_theme(settings.get("theme", "dark"))
+        self.overlay =tk.BooleanVar(value=settings.get("overlay", False))
         self.auto_detect = tk.BooleanVar(value=settings.get("auto_detect", True))
         self.watching = self.auto_detect.get()  # plain copy for the watcher thread (tk variables are main-thread only)
 
