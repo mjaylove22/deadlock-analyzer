@@ -21,7 +21,8 @@ jobs:
 
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.13"
+          # Pinned: the 3.13.16 build of 0.2.5 opened maximised on a 6v6 lobby, the same code on 3.13.15 didn't
+          python-version: "3.13.15"
           cache: pip
 
       - name: Install Python packages
