@@ -113,6 +113,12 @@ def drive(data_dir):
         step()
         settle(name)
     a.close()
+    # Skip Python's own clean-up: it deletes leftover tk variables after Tk is gone and prints "main thread is
+    # not in main loop" tracebacks (seen on the CI runner) that would look like a page failing
+    import logging
+    logging.shutdown()
+    sys.stdout.flush()
+    os._exit(0)
 
 
 if __name__ == "__main__" and sys.argv[1:2] == ["--run"]:
