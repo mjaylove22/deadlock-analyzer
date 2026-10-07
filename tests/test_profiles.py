@@ -1,13 +1,14 @@
 """Tests for player-page and tier-list data (pure functions, no network)."""
 
 import calendar
+from datetime import datetime
 import unittest
 from unittest.mock import patch
 
 import deadlock_api
 import profiles
 import report
-from profiles import RANK_BANDS, describe_match, hero_rows, match_type, mode_breakdown, tier_rows, top_mates, when
+from profiles import RANK_BANDS, describe_match, filter_matches, hero_rows, match_type, mode_breakdown, tier_rows, top_mates, when
 
 NAMES = {1: "Haze", 2: "Rem", 3: "Newbie"}
 
@@ -65,6 +66,9 @@ class ProfilesTests(unittest.TestCase):
         self.assertEqual(when(now - 3 * 3600, now), "3h ago")
         self.assertEqual(when(now - 2 * 86400, now), "2d ago")
         self.assertEqual(when(None, now), "")
+        august = datetime(2026, 8, 25, 12).timestamp()
+        self.assertEqual(when(august, datetime(2026, 10, 7, 12).timestamp()), "Aug 25")  # this year: no year
+        self.assertEqual(when(datetime(2025, 10, 14, 12).timestamp(), august), "Oct 14 '25")
 
 
     def test_ban_share_is_each_heros_part_of_all_bans(self):
@@ -161,6 +165,17 @@ class TrendTests(unittest.TestCase):
         self.assertEqual(params["max_unix_timestamp"], sunday - 1)
         self.assertEqual(weekly["weeks"], [sunday - 14 * 86400, sunday - 7 * 86400])
         self.assertEqual(weekly["heroes"]["5"], [[0, 0], [60, 100]])
+
+
+class FilterTests(unittest.TestCase):
+    MATCHES = [{"hero": "Haze", "type": "Ranked", "won": True}, {"hero": "Haze", "type": "Street Brawl", "won": False},
+               {"hero": "Kelvin", "type": "Unranked", "won": False}, {"hero": "Kelvin", "type": "Ranked", "won": False}]
+
+    def test_filters_combine(self):
+        self.assertEqual(len(filter_matches(self.MATCHES)), 4)  # "All" keeps Street Brawl too
+        self.assertEqual(filter_matches(self.MATCHES, "Ranked", "Kelvin", "Losses"), [self.MATCHES[3]])
+        self.assertEqual(filter_matches(self.MATCHES, hero="Haze", result="Wins"), [self.MATCHES[0]])
+        self.assertEqual(filter_matches(self.MATCHES, "Street Brawl", "Kelvin"), [])
 
 
 if __name__ == "__main__":

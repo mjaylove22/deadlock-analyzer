@@ -72,6 +72,16 @@ def describe_match(match: Dict[str, Any], hero_names_by_id: Dict[int, str]) -> D
     }
 
 
+def filter_matches(matches: List[Dict[str, Any]], match_type_name: str = "All", hero: Optional[str] = None,
+                   result: str = "All") -> List[Dict[str, Any]]:
+    """describe_match() entries matching the player page's filters: a MATCH_TYPES name ("All" keeps every
+    type, Street Brawl included), a hero name (None: any) and "All", "Wins" or "Losses"."""
+    return [m for m in matches
+            if (match_type_name == "All" or m["type"] == match_type_name)
+            and (hero is None or m["hero"] == hero)
+            and (result == "All" or m["won"] == (result == "Wins"))]
+
+
 def mode_breakdown(matches: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Games and win rate per match type (Ranked / Unranked / Street Brawl), most played first."""
     modes = {}
@@ -183,6 +193,7 @@ def player_profile(account_id: int, hero_names_by_id: Dict[int, str], match_type
         lambda: fetch_ranks([account_id]))
     profile = profiles[0] if profiles else {}
     matches = sorted(history, key=lambda m: m["start_time"], reverse=True)
+    described = [describe_match(m, hero_names_by_id) for m in matches]
     return {
         "account_id": account_id,
         "name": profile.get("personaname", f"Account {account_id}"),
@@ -193,7 +204,8 @@ def player_profile(account_id: int, hero_names_by_id: Dict[int, str], match_type
         "rank": ranks.get(account_id),
         "heroes": hero_rows(heroes, hero_names_by_id),
         "modes": mode_breakdown(matches),
-        "recent": [describe_match(m, hero_names_by_id) for m in matches[:RECENT_MATCHES_SHOWN]],
+        "recent": described[:RECENT_MATCHES_SHOWN],
+        "history": described,  # every recorded match, newest first, for the filters on the player page
         "total_matches": len(matches),
         "progress": progress(matches, hero_names_by_id),
     }
@@ -294,14 +306,18 @@ def teammates(account_id: int) -> List[Dict[str, Any]]:
 
 
 def when(unix_time: Optional[int], now: Optional[float] = None) -> str:
-    """'3h ago', '2d ago', or a date for anything older than a week."""
+    """'3h ago', '2d ago', or a date for anything older than a week, with the year when it isn't this
+    year ('Oct 14 '25'): a history spans years, and without it last October sorts after this August."""
     if not unix_time:
         return ""
-    seconds = (now or time.time()) - unix_time
+    now = now or time.time()
+    seconds = now - unix_time
     if seconds < 3600:
         return f"{max(int(seconds // 60), 1)}m ago"
     if seconds < 86400:
         return f"{int(seconds // 3600)}h ago"
     if seconds < 7 * 86400:
         return f"{int(seconds // 86400)}d ago"
-    return datetime.fromtimestamp(unix_time).strftime("%b %d").replace(" 0", " ")
+    date = datetime.fromtimestamp(unix_time)
+    year = "" if date.year == datetime.fromtimestamp(now).year else date.strftime(" '%y")
+    return date.strftime("%b %d").replace(" 0", " ") + year
