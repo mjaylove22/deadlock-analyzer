@@ -276,11 +276,15 @@ class AnalyzerApp:
 
     def poll(self):
         """Run everything other threads have queued for the main thread, then check again shortly."""
-        try:
-            while True:
-                self.events.get_nowait()()
-        except queue.Empty:
-            pass
+        while True:
+            try:
+                event = self.events.get_nowait()
+            except queue.Empty:
+                break
+            try:
+                event()
+            except Exception:  # one page failing to draw mustn't stop every later result from arriving
+                logger.exception("Showing a result failed")
         self.root.after(POLL_MS, self.poll)
 
     def _preload_images(self):

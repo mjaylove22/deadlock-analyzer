@@ -414,12 +414,13 @@ From the author's next list (export/share was dropped: Win+Shift+S already captu
 
 ## 5. Testing
 
-`python -m unittest discover -s tests -v` runs 256 tests in a few seconds:
+`python -m unittest discover -s tests -v` runs the tests in a few seconds (the smoke test only in CI or with `SMOKE=1`):
 - **Parser tests** use OCR output actually produced from real screenshots, including a noisy version, plus edge cases: headers, noise-only lines, duplicate player names, multi-word heroes, hero lines with nothing above them.
 - **Identity tests** use plain data to cover settling by unique name, friend links (including links listed by only one side and chains of settled players), ties falling back to hero history, and party grouping.
 - **Insights tests** cover each badge rule and its thresholds.
 - **Lookup tests** mock the API (a guard makes any unmocked call fail, so unit tests can never quietly use the network) to cover rejecting fuzzy matches, bot skipping, one stats request per lobby, favourite heroes, and network errors being reported instead of crashing the report.
 
+- **Smoke test** (`tests/test_smoke.py`, in CI or with `SMOKE=1`; ~30 s): starts the real app in a hidden window in a child process whose data folder is a new temp folder (your settings, cache and notes are never touched), pretends to be a player picked at run time from a public live match (so no real ID is written in the repo), and opens every page and view with live data: Home, Heroes, Items, a hero page and guide, Patches, Settings and both presets, My Stats with its filters, both Coach views, and a match review. Any error in the log or traceback on stderr fails it, except network errors. Checked by planting a crash in the Patches page: the test failed and named the line. Writing it found a real bug: one result that failed to draw stopped the app's event loop, so every later page stayed on "Loading..."; each queued result now runs on its own and a failure is logged.
 - **Screenshot regression tests** run the full OCR pipeline on real screenshots and compare against hand-checked `.expected.json` answers. Screenshots contain other players' names, so they stay in the gitignored `screenshots/` folder and the test skips on machines without them. This test exists because the unit tests alone missed an OCR failure on a new screenshot; with the fix disabled, it fails.
 
 `python scoreboard_ocr.py <screenshot>` prints the raw OCR lines next to the parsed rows, for debugging a new screenshot.
