@@ -3,7 +3,8 @@
 import os
 import tempfile
 import unittest
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 import match_review
 import postgame
@@ -50,6 +51,21 @@ class ScheduleTests(unittest.TestCase):
         game = PostGame(42, ended_at=0)
         self.assertFalse(game.expired(GIVE_UP_AFTER_S - 1))
         self.assertTrue(game.expired(GIVE_UP_AFTER_S + 1))
+
+    def test_a_finished_matchs_scheduled_check_leaves_the_next_match_alone(self):
+        # Seen in the log: the old match's timer checked the new match too, so it was checked (and its
+        # page redrawn) twice a minute
+        import app
+        old, new = PostGame(111203456), PostGame(111203457)
+        scheduled = []
+        fake = SimpleNamespace(post_game=old, root=SimpleNamespace(after=lambda ms, f: scheduled.append(f)),
+                               refresh_post_game_page=Mock(), hero_names_by_id=Mock(return_value={}))
+        fake.check_post_game = lambda *game: app.AnalyzerApp.check_post_game(fake, *game)
+        app.AnalyzerApp.post_game_checked(fake, old, None)  # not ready: the next check is scheduled
+        fake.post_game = new  # then another match ends (its own chain of checks starts)
+        with patch.object(app.threading, "Thread") as thread:
+            scheduled[0]()
+        thread.assert_not_called()
 
 
 class IsOurMatchTests(unittest.TestCase):

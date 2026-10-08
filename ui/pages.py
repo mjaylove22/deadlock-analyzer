@@ -945,6 +945,7 @@ class MatchPage(Page):
 
     def build(self, match_id: int, view: str = "Overview"):
         self.match_id, self.view = match_id, view
+        self.progress = None  # while waiting for the data: (the label saying how it's going, its text)
         game = self.app.post_game
         just_ended = game is not None and (game.match_id or 0) == match_id
         if just_ended and game.screen and not game.ready:
@@ -996,19 +997,36 @@ class MatchPage(Page):
         label(header, " · ".join(facts), color="dim", bg="card").pack(side="left", padx=(6, 0))
         if self.match_id:
             label(header, f"match {self.match_id}", size=9, color="faint", bg="card").pack(side="right")
-        if not game.match_id:
-            note = "The match ID couldn't be read, so this is what the end screen shows."
-        elif not game.done:
-            note = (f"Your build, the net-worth chart and accuracy are added here when the full match data is ready "
-                    f"(checked {game.checks} time{'s' if game.checks != 1 else ''}).")
-        else:
-            note = "The full match data isn't available yet: try Review this match later."
-        label(self.frame, note, size=9, color="faint").pack(anchor="w", pady=(8, 0))
+        note = label(self.frame, self.screen_note(game), size=9, color="faint")
+        note.pack(anchor="w", pady=(8, 0))
+        self.progress = note, self.screen_note
         self.body = tk.Frame(self.frame, bg=COLORS["bg"])
         self.body.pack(fill="both", expand=True)
         self.message("Comparing everyone's stats with other players on the same heroes...", self.body)
         self.load_ratings()
         self.app.set_status("Match over · how everyone played, from the end screen")
+
+    @staticmethod
+    def screen_note(game) -> str:
+        if not game.match_id:
+            return "The match ID couldn't be read, so this is what the end screen shows."
+        if not game.done:
+            return (f"Your build, the net-worth chart and accuracy are added here when the full match data is ready "
+                    f"(checked {game.checks} time{'s' if game.checks != 1 else ''}).")
+        return "The full match data isn't available yet: try Review this match later."
+
+    @staticmethod
+    def waiting_progress(game) -> str:
+        minutes = int((time.time() - game.ended_at) // 60)
+        since = "just now" if minutes < 1 else f"{minutes} min ago"
+        progress = f"Match ended {since} · checked {game.checks} time{'s' if game.checks != 1 else ''}"
+        return progress + (f" · {game.last_error}" if game.last_error else "")
+
+    def show_progress(self, game):
+        """Another check came back "not ready": only the progress line changes, so only it is redrawn."""
+        if self.progress:
+            widget, text = self.progress
+            widget.configure(text=text(game))
 
     def show_waiting(self, game):
         """Just after a match: its data isn't ready yet. Shows the lobby from the scoreboard meanwhile."""
@@ -1016,18 +1034,15 @@ class MatchPage(Page):
         outer.pack(fill="x")
         label(header, "MATCH OVER", size=24, heading=True, bg="card").pack(side="left")
         label(header, f"match {self.match_id}", size=9, color="faint", bg="card").pack(side="right")
-        minutes = int((time.time() - game.ended_at) // 60)
-        since = "just now" if minutes < 1 else f"{minutes} min ago"
         body_outer, body = card(self.frame, padding=16)
         body_outer.pack(fill="x", pady=(10, 0))
         label(body, "Getting the match data...", size=14, heading=True, bg="card").pack(anchor="w")
         label(body, "A match's full data appears a few minutes after it ends. This page fills in by itself "
                     "when it's ready, with how you played on your hero.", color="dim", bg="card",
               justify="left", wraplength=900).pack(anchor="w", pady=(4, 8))
-        progress = f"Match ended {since} · checked {game.checks} time{'s' if game.checks != 1 else ''}"
-        if game.last_error:
-            progress += f" · {game.last_error}"
-        label(body, progress, size=9, color="faint", bg="card", justify="left", wraplength=900).pack(anchor="w")
+        progress = label(body, self.waiting_progress(game), size=9, color="faint", bg="card", justify="left", wraplength=900)
+        progress.pack(anchor="w")
+        self.progress = progress, self.waiting_progress
 
         lobby = self.app.lobby
         if lobby and lobby.get("match_id") == self.match_id and lobby["results"]:

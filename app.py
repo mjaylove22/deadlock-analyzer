@@ -683,12 +683,12 @@ class AnalyzerApp:
         self.open_match(match_id or 0, "Performance")  # 0: the screen's numbers only
         if get_preferences()["pop_up"]:
             self.pop_up()
-        self.check_post_game()
+        self.check_post_game(self.post_game)
 
-    def check_post_game(self):
-        """One check for the finished match's data; repeats every minute until it's ready."""
-        game = self.post_game
-        if not game or game.done or not game.match_id:
+    def check_post_game(self, game):
+        """One check for the finished match's data; repeats every minute until it's ready. Each chain
+        of checks belongs to one match and ends when a newer match ends."""
+        if game is not self.post_game or game.done or not game.match_id:
             return
         if game.expired(time.time()):
             game.done = True
@@ -709,7 +709,7 @@ class AnalyzerApp:
         if summary is None:
             logger.info(f"Match {game.match_id} not ready (check {game.checks}): {game.last_error}")
             self.refresh_post_game_page(game)
-            self.root.after(CHECK_EVERY_S * 1000, self.check_post_game)
+            self.root.after(CHECK_EVERY_S * 1000, lambda: self.check_post_game(game))
             return
         lobby = self.lobby
         lobby_heroes = [r["hero"] for r in lobby["records"]] if lobby and lobby.get("match_id") == game.match_id else []
@@ -722,9 +722,13 @@ class AnalyzerApp:
         self.refresh_post_game_page(game)
 
     def refresh_post_game_page(self, game):
-        """Redraw the waiting match page, if that's where the user is."""
+        """Update the waiting match page, if that's where the user is: the whole page once the data is
+        ready (or the app gave up), else just its progress line (a full redraw every check flashes)."""
         if isinstance(self.page, MatchPage) and self.page.match_id == game.match_id:
-            self.page.reload()
+            if game.done:
+                self.page.reload()
+            else:
+                self.page.show_progress(game)
 
     def analysis_failed(self, error: str):
         self.busy = False
