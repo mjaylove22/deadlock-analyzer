@@ -35,7 +35,7 @@ from report import TEAM_TITLES, history_text, progress_texts, team_summary, thre
 from scoreboard_ocr import find_tesseract
 from screenshot_manager import get_screenshot_path
 from settings import get_me, get_preferences, guessed_me, load_settings, save_settings, set_me, set_preference
-from ui import images
+from ui import images, theme
 from ui.theme import (BADGE_COLORS, COLORS, FONT, HEADING_FONT, ITEM_SLOT_COLORS, MATCHUP_COLORS, PARTY_COLORS, button, card, dropdown,
                       is_light, label, pill, segmented, switch)
 from version import DOWNLOAD_URL, __version__
@@ -1839,7 +1839,8 @@ class CoachPage(Page):
                       "No stat has moved more than luck would explain between your newer and older matches.").grid(
             row=0, column=1, sticky="nsew", padx=(5, 0))
         shown = {id(report["weakness"]), id(report["improvement"])}
-        others = [f for f in report["findings"] if id(f) not in shown][:3]  # 3: more would push the page past the window
+        # 3 (2 with Large text: 3 left only 3 px, and a finding that wraps would overflow): more would push the page past the window
+        others = [f for f in report["findings"] if id(f) not in shown][:3 if theme.text_scale == 1 else 2]
         if others:
             outer, box = section(self.body, "What else stands out")
             outer.pack(fill="x", pady=(10, 0))
@@ -1976,10 +1977,15 @@ class SettingsPage(Page):
 
     def build(self):
         top = self.heading("Settings", "saved on this PC · changes apply right away")
-        theme = "Light" if is_light() else "Dark"
-        segmented(top, ["Dark", "Light"], theme, self.choose_theme).pack(side="right")
-        self.theme_note = label(top, "Theme", color="dim")
-        self.theme_note.pack(side="right", padx=10)
+        # Theme and text size apply at start-up (every widget reads them when it's made): one shared note says so
+        self.running = {"theme": "Light" if is_light() else "Dark", "text_size": "Large" if theme.text_scale != 1 else "Normal"}
+        self.chosen = dict(self.running)
+        segmented(top, ["Normal", "Large"], self.running["text_size"], lambda v: self.choose_look("text_size", v)).pack(side="right")
+        label(top, "Text", color="dim").pack(side="right", padx=(16, 8))
+        segmented(top, ["Dark", "Light"], self.running["theme"], lambda v: self.choose_look("theme", v)).pack(side="right")
+        label(top, "Theme", color="dim").pack(side="right", padx=8)
+        self.restart_note = label(top, "", color="accent")
+        self.restart_note.pack(side="right", padx=8)
         self.variables = []  # tkinter forgets variables nobody holds
         grid = tk.Frame(self.frame, bg=COLORS["bg"])
         grid.pack(fill="x")
@@ -2011,11 +2017,10 @@ class SettingsPage(Page):
         button(help_box, "Open log folder", lambda: os.startfile(LOG_DIR)).pack(anchor="w")
         self.app.set_status("Settings")
 
-    def choose_theme(self, name: str):
-        save_settings({"theme": name.lower()})
-        now = "Light" if is_light() else "Dark"
-        self.theme_note.config(text="Theme" if name == now else f"Theme · {name} from the next time you open the app",
-                               fg=COLORS["dim"] if name == now else COLORS["accent"])
+    def choose_look(self, key: str, value: str):
+        save_settings({key: value.lower()})
+        self.chosen[key] = value
+        self.restart_note.config(text="" if self.chosen == self.running else "from the next time you open the app")
 
     def apply_preset(self, name: str):
         for key, value in self.PRESETS[name].items():

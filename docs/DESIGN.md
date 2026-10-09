@@ -429,6 +429,11 @@ From the author's next list (export/share was dropped: Win+Shift+S already captu
 - **Corner cut:** an account found under a different ID in every lobby (a shared name the lookup was unsure of each time) never adds up. The search still works, and the question offers it.
 - **Height:** the worst case (three candidates and an update notice) first pushed Home 60 px past the 960 px window; the card's own search box went (the top bar has one, and "Not you? Search your name" jumps to it), leaving 953 px, checked in both themes.
 
+### 4.52 Text size: Normal or Large
+- **One switch at start-up, like the theme:** the app's own text is sized in points, which follow tk scaling, and CustomTkinter's widgets are sized in pixels times its widget scaling. Large multiplies both by 1.15, so every font grows together and no page needed its own change. Pixel sizes (images, gaps, wrap widths) stay, so large text wraps a little sooner.
+- **Measured on every page, against the 960 px window** (requested height, Normal → Large): the real 6v6 lobby 814 → 914, Home 801, Heroes and Items 858, Patches 882 → 896, Settings 882, My Stats 923 → 949, a match review 876 → 930, Coach Summary 865 → 902, Coach Deaths 714.
+- **What the first Large run found, fixed at the cause:** lobby pills were clipped (the tile measured them at 10 px plus 14, while CustomTkinter draws them scaled: the same bug a friend with Windows display scaling at 125% would hit, so it now measures with CustomTkinter's own scaling for that window); six matchup pills ran past the window (the enemies now have their own row, +28 px at Normal); the top bar squeezed its search box to nothing (the bar keeps its normal size: Large is for the pages); scaling the tables' row height pushed Patches and My Stats past the window (34 px rows hold Large text fine, so they stay 34); Coach Summary fitted by 3 px with one-line findings (Large shows 2 "what else" findings instead of 3).
+
 ## 5. Testing
 
 `python -m unittest discover -s tests -v` runs the tests in a few seconds (the smoke test only in CI or with `SMOKE=1`):

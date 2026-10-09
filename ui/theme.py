@@ -147,12 +147,27 @@ def is_light() -> bool:
     return COLORS["card"] == LIGHT_COLORS["card"]
 
 
+TEXT_SIZES = {"normal": 1.0, "large": 1.15}
+text_scale = 1.0  # set once at start-up by choose_text_size
+
+
+def choose_text_size(root, name: str) -> None:
+    """"normal" (the default) or "large": every font grows by the same factor, tk's (sized in points, so they
+    follow tk scaling) and CustomTkinter's (sized in pixels, following its widget scaling). Like the theme,
+    only at start-up. Pixel sizes (images, gaps, wrap widths) stay, so large text wraps a little sooner."""
+    global text_scale
+    text_scale = TEXT_SIZES.get(name, 1.0)
+    if text_scale != 1.0:
+        root.tk.call("tk", "scaling", float(root.tk.call("tk", "scaling")) * text_scale)
+        ctk.set_widget_scaling(text_scale)
+
+
 def setup_styles(root) -> None:
     """Styling for ttk tables, which don't follow CustomTkinter's theme."""
     style = ttk.Style(root)
     style.theme_use("clam")  # the default Windows theme ignores most colour settings
     style.configure("Treeview", background=COLORS["card"], fieldbackground=COLORS["card"],
-                    foreground=COLORS["text"], rowheight=34, borderwidth=0, font=(FONT, 10),
+                    foreground=COLORS["text"], rowheight=34, borderwidth=0, font=(FONT, 10),  # roomy enough for Large text
                     bordercolor=COLORS["card"], lightcolor=COLORS["card"], darkcolor=COLORS["card"])  # no light outline
     style.map("Treeview", background=[("selected", COLORS["selected"])], foreground=[("selected", COLORS["text"])])
     style.configure("Treeview.Heading", background=COLORS["surface"], foreground=COLORS["dim"], relief="flat",

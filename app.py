@@ -47,8 +47,8 @@ from screenshot_manager import (SCREENSHOT_DIR, capture_and_save_screenshot, del
 from settings import get_me, get_preferences, guessed_me, load_settings, save_settings, update_me_guess
 from ui.pages import (CoachPage, HeroesPage, PatchesPage, HeroPage, HomePage, ItemsPage, LobbyPage, MatchPage, MatchupPage, PlayerPage,
                       SearchPage, SettingsPage, SetupPage)
-from ui import images
-from ui.theme import COLORS, FONT, HEADING_FONT, choose_theme, label, setup_styles, switch
+from ui import images, theme
+from ui.theme import COLORS, FONT, HEADING_FONT, choose_text_size, choose_theme, label, setup_styles, switch
 from ui.widgets import AvatarCache, hide_tooltip
 from utils.logger import setup_logger
 
@@ -93,6 +93,7 @@ class AnalyzerApp:
 
         settings = load_settings()
         choose_theme(settings.get("theme", "dark"))
+        choose_text_size(root, settings.get("text_size", "normal"))
         self.overlay =tk.BooleanVar(value=settings.get("overlay", False))
         self.auto_detect = tk.BooleanVar(value=settings.get("auto_detect", True))
         self.watching = self.auto_detect.get()  # plain copy for the watcher thread (tk variables are main-thread only)
@@ -144,10 +145,13 @@ class AnalyzerApp:
                                          font=(FONT, 15), fg_color=COLORS["button"], hover_color=COLORS["button_hover"],
                                          text_color=COLORS["text"], text_color_disabled=COLORS["faint"])
         self.back_button.pack(side="left")
+        # The bar keeps its normal size with Large text (it was already full; the search box gave way): these
+        # sizes are divided here and multiplied back by the Large scaling
+        bar_size = lambda points: round(points / theme.text_scale)  # noqa: E731
         title = tk.Frame(bar, bg=COLORS["surface"], cursor="hand2")
         title.pack(side="left", padx=(12, 6))
-        label(title, "DEADLOCK", size=14, heading=True, bg="surface", cursor="hand2").pack(side="left")
-        label(title, " ANALYZER", size=14, heading=True, color="accent", bg="surface", cursor="hand2").pack(side="left")
+        label(title, "DEADLOCK", size=bar_size(14), heading=True, bg="surface", cursor="hand2").pack(side="left")
+        label(title, " ANALYZER", size=bar_size(14), heading=True, color="accent", bg="surface", cursor="hand2").pack(side="left")
         for widget in (title, *title.winfo_children()):
             widget.bind("<Button-1>", lambda event: self.navigate(HomePage))
 
@@ -155,7 +159,7 @@ class AnalyzerApp:
         for key, text in NAV_TABS:
             holder = tk.Frame(bar, bg=COLORS["surface"])
             holder.pack(side="left", padx=(14 if key == "lobby" else 2, 0))
-            tab = label(holder, text, size=11, color="dim", bg="surface", cursor="hand2", padx=10, pady=4)
+            tab = label(holder, text, size=bar_size(11), color="dim", bg="surface", cursor="hand2", padx=10, pady=4)
             tab.pack()
             underline = tk.Frame(holder, bg=COLORS["surface"], height=2)
             underline.pack(fill="x", padx=8)
@@ -186,7 +190,8 @@ class AnalyzerApp:
         self.back_button.configure(state="normal" if self.history else "disabled")
         for key, (tab, underline) in self.tabs.items():
             active = key == self.page.nav
-            tab.config(fg=COLORS["text"] if active else COLORS["dim"], font=(HEADING_FONT if active else FONT, 11))
+            tab.config(fg=COLORS["text"] if active else COLORS["dim"],
+                       font=(HEADING_FONT if active else FONT, round(11 / theme.text_scale)))  # the bar keeps its size
             underline.config(bg=COLORS["accent"] if active else COLORS["surface"])
         self.fit_window()
 
