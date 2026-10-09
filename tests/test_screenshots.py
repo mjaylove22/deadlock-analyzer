@@ -38,5 +38,29 @@ class ScreenshotRegressionTests(unittest.TestCase):
                                     f"OCR read {got['player']!r}, screen says {want['player']!r}")
 
 
+KNOWN = [path for path in CASES if '"account_id"' in open(path, encoding="utf-8").read()]
+
+
+@unittest.skipUnless(KNOWN and (os.environ.get("SMOKE") or os.environ.get("IDENTITY")),
+                     "uses the live API: set IDENTITY=1 (or SMOKE=1), on a machine with screenshots/*.expected.json")
+class IdentityRegressionTests(unittest.TestCase):
+    """Records whose real account is known ("account_id", e.g. the author's own row) are looked up as on a fresh
+    install (no account set). The live data changes, so the rule checked is the one that must always hold: the
+    right account, or an unsure one (the card says ID UNSURE). Never the wrong account shown as certain: it
+    once was, picked from "2 matches on this hero (next best: 1)" among 8 accounts with the same name."""
+
+    def test_a_known_player_is_never_the_wrong_account_shown_as_sure(self):
+        from player_lookup import analyze_records
+        for path in KNOWN:
+            with open(path, encoding="utf-8") as f:
+                expected = json.load(f)
+            results, _ = analyze_records([{k: r[k] for k in ("player", "hero", "team")} for r in expected], me=None)
+            for want, got in zip(expected, results):
+                if "account_id" in want:
+                    with self.subTest(lobby=os.path.basename(path)):
+                        self.assertTrue(got.get("account_id") == want["account_id"] or not got.get("confident"),
+                                        f"{os.path.basename(path)}: the wrong account was shown as certain")
+
+
 if __name__ == "__main__":
     unittest.main()
