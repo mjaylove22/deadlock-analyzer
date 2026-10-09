@@ -61,6 +61,10 @@ def drive(data_dir):
     app_module.setup_logger()
     root = ctk.CTk()
     root.withdraw()
+    # This loop runs on root.update(), not mainloop(), so tkinter would refuse a call from a worker thread
+    # ("main thread is not in main loop"), e.g. a closed page's tk variables freed there by the garbage
+    # collector. This makes such calls wait for the next update(), as they do in the app's mainloop.
+    root.tk.willdispatch()
     a = app_module.AnalyzerApp(root)
     pending = [0]
     run_task = a.run_task
