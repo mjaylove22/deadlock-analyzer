@@ -71,6 +71,16 @@ class ResponseCacheTests(unittest.TestCase):
         self.assertIs(first, second)
         self.assertNotEqual(first, other)
 
+    def test_an_older_answer_is_used_when_the_api_fails(self):
+        # The log had pages failing on timeouts although the same answer had arrived minutes earlier
+        calls, urlopen = self.fake_urlopen()
+        with patch.object(deadlock_api.urllib.request, "urlopen", side_effect=urlopen):
+            first = deadlock_api.get_json("/v1/x")
+        with patch.object(deadlock_api.urllib.request, "urlopen", side_effect=TimeoutError("timed out")):
+            self.assertIs(deadlock_api.get_json("/v1/x", max_age=1e-9), first)  # expired, but better than nothing
+            with self.assertRaises(TimeoutError):
+                deadlock_api.get_json("/v1/never-fetched")  # nothing to fall back on: the page says so
+
     def test_max_age_zero_always_fetches(self):
         calls, urlopen = self.fake_urlopen()
         with patch.object(deadlock_api.urllib.request, "urlopen", side_effect=urlopen):

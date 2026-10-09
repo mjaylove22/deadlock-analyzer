@@ -79,7 +79,13 @@ def get_json(path: str, params: Dict[str, Any] = None, max_age: float = CACHE_SE
         if hit and now - hit[0] < max_age:
             _memory.move_to_end(url)
             return hit[1]
-    data = _download(url, ANALYTICS_TIMEOUT_SECONDS if path.startswith("/v1/analytics/") else TIMEOUT_SECONDS)
+    try:
+        data = _download(url, ANALYTICS_TIMEOUT_SECONDS if path.startswith("/v1/analytics/") else TIMEOUT_SECONDS)
+    except OSError as e:  # offline, timed out or a server error: an older answer beats a page that can't load
+        if hit:
+            logger.info(f"Using a {(now - hit[0]) / 60:.0f}-minute-old answer for {path}: {e}")
+            return hit[1]
+        raise
     if max_age <= 0:
         return data  # asked not to reuse it, so don't hold on to it either (e.g. 1.5 MB match data)
     with _lock:
