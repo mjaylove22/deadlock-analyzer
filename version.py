@@ -1,6 +1,6 @@
 """The app's version, shown in the app and used by the installer."""
 
-__version__ = "0.2.8"
+__version__ = "0.2.9"
 
 LATEST_RELEASE_API = "https://api.github.com/repos/mjaylove22/deadlock-analyzer/releases/latest"
 # Each release also carries the installer under this fixed name, so the link never changes
