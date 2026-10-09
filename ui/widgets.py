@@ -275,10 +275,12 @@ def player_tile(parent, r: Dict[str, Any], accent: str, avatars: AvatarCache, wi
             text = " · ".join(parts)
         label(body, text, size=10, bg="card", anchor="w", justify="left", wraplength=width).pack(anchor="w", pady=(2, 0))
 
-    font = tkfont.Font(family=FONT, size=-10, weight="bold")  # CustomTkinter sizes are pixels, hence negative
+    # Pills are CustomTkinter labels: pixel sizes, times its scaling (Windows display scale and the Large text size)
+    scale = ctk.ScalingTracker.get_widget_scaling(parent)
+    font = tkfont.Font(family=FONT, size=-round(10 * scale), weight="bold")
     row, used = None, width
     for text, kind in card_badges(r, party_label, shown):
-        need = font.measure(f" {text} ") + 14 + 4  # measured: a pill is its text + 14 px; then the gap
+        need = font.measure(f" {text} ") + round(14 * scale) + 4  # measured: a pill is its text + 14 px; then the gap
         if used + need > width + 4:  # wrap onto a new line of pills (the last one needs no gap)
             row, used = tk.Frame(body, bg=COLORS["card"]), 0
             row.pack(anchor="w", pady=(4, 0))
@@ -370,13 +372,16 @@ def matchup_strip(parent, matchup: Dict[str, Any], on_open: Optional[Callable[[]
     label(top, f"  YOUR MATCHUP", color="dim", bg="surface").pack(side="left")
     pill(top, f"{word} {shift * 100:+.1f}", MATCHUP_COLORS["good" if shift >= 0.01 else "bad" if shift <= -0.01 else "even"],
          size=10).pack(side="left", padx=(8, 10))
-    label(top, "vs", color="dim", bg="surface").pack(side="left", padx=(0, 6))
-    for m in matchup["matchups"]:  # toughest first
-        pill(top, matchup_text(m), MATCHUP_COLORS[matchup_kind(m["vs_average"])], size=10,
-             image=images.hero_badge(m["enemy_hero"], 18, kind="ctk")).pack(side="left", padx=(0, 5))
     if on_open:
         label(top, "Full matchup  >", size=10, bold=True, color="link", bg="surface", cursor="hand2").pack(side="right")
         outer.after_idle(lambda: bind_click(outer, on_open))
+    # The enemies get their own row: beside the header, six of them ran past the window with Large text
+    enemies = tk.Frame(inner, bg=COLORS["surface"])
+    enemies.pack(fill="x", pady=(5, 0))
+    label(enemies, "vs", color="dim", bg="surface").pack(side="left", padx=(0, 6))
+    for m in matchup["matchups"]:  # toughest first
+        pill(enemies, matchup_text(m), MATCHUP_COLORS[matchup_kind(m["vs_average"])], size=10,
+             image=images.hero_badge(m["enemy_hero"], 18, kind="ctk")).pack(side="left", padx=(0, 5))
     if matchup["items"]:
         row = tk.Frame(inner, bg=COLORS["surface"])
         row.pack(fill="x", pady=(5, 0))
