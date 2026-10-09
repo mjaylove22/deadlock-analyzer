@@ -423,6 +423,12 @@ From the author's next list (export/share was dropped: Win+Shift+S already captu
 - **A death on the map opens its match:** the map is one picture, so a click goes to the top dot within 6 px of the mouse; hovering shows the date, hero, killer and game time. The map label has no border or padding, so mouse positions are picture pixels.
 - **No new height:** the rows themselves are clickable (hand cursor) and the hint is in the status line, so both views still fit the 1196×999 window. Checked in a test window with Tk's own events (never the real mouse): the dot's tooltip, the cursor, and the right match opening, from both views.
 
+### 4.51 "Is this you?"
+- **You're the one player in every lobby you capture:** a stranger almost never is twice, and a friend drops out at the first lobby without them. So, while no account is set, each lobby captured in game (not one opened from a file: that could be anyone's) narrows a running set: the accounts found in every lobby so far. After two different matches, Home asks about the one to three left, with each avatar (accounts can share a name: the author's is shared by seven) and a click-through to their page to check.
+- **Tiny and self-clearing:** only that set and a count are kept, in settings.json (a few hundred bytes), and setting the account by any route deletes it. A lobby that has nobody in common with the set (your name misread, say) starts the count again; the same lobby read twice (more than a full party in common, or the same match ID) doesn't count twice. More than three left means a group that always plays together, so it waits for a lobby without some of them.
+- **Corner cut:** an account found under a different ID in every lobby (a shared name the lookup was unsure of each time) never adds up. The search still works, and the question offers it.
+- **Height:** the worst case (three candidates and an update notice) first pushed Home 60 px past the 960 px window; the card's own search box went (the top bar has one, and "Not you? Search your name" jumps to it), leaving 953 px, checked in both themes.
+
 ## 5. Testing
 
 `python -m unittest discover -s tests -v` runs the tests in a few seconds (the smoke test only in CI or with `SMOKE=1`):

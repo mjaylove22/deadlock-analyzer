@@ -44,7 +44,7 @@ import game_window
 import layout as layout_module
 from screenshot_manager import (SCREENSHOT_DIR, capture_and_save_screenshot, delete_old_screenshots, get_screenshot_path,
                                 save_end_screen)
-from settings import get_me, get_preferences, load_settings, save_settings
+from settings import get_me, get_preferences, guessed_me, load_settings, save_settings, update_me_guess
 from ui.pages import (CoachPage, HeroesPage, PatchesPage, HeroPage, HomePage, ItemsPage, LobbyPage, MatchPage, MatchupPage, PlayerPage,
                       SearchPage, SettingsPage, SetupPage)
 from ui import images
@@ -579,6 +579,11 @@ class AnalyzerApp:
         self.navigate(LobbyPage, push=not isinstance(self.page, LobbyPage))
         watching = "watching for the scoreboard" if self.watching else f"{HOTKEY.upper()} for a new screenshot"
         self.set_status(f"{len(lobby['results'])} players  ·  {watching}")
+        if lobby["from_game"] and not get_me():  # a screenshot opened from a file could be anyone's lobby
+            guess = update_me_guess(load_settings().get("me_guess"), lobby["results"], lobby.get("match_id"))
+            save_settings({"me_guess": guess})
+            if guessed_me(guess):
+                self.set_status(f"{len(lobby['results'])} players  ·  the Home page asks which player is you")
         prefs = get_preferences()
         # Only for a lobby captured in game: an opened screenshot is someone wanting to look at that lobby.
         # Any navigation (a click, a new lobby) cancels it.

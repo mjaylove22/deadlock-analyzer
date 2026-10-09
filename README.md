@@ -36,7 +36,8 @@ can't be turned back on without resetting Windows.
 
 1. **Find your account.** On the app's Home page, type your Steam name and click **Find me**. Open the
    account that's yours (check the picture and the number of games), then click **Set as my account**.
-   The app then recognises you in every lobby and shows your matchup.
+   The app then recognises you in every lobby and shows your matchup. (Skipped this? After two matches Home
+   asks **Is this you?** about the player who was in every lobby: check the picture and click **That's me**.)
 2. **Play.** Leave the app open (a second monitor is ideal). During a match, press **Esc** and open the
    **PLAYERS** tab. The app notices, reads the scoreboard and shows the lobby a few seconds later, with a sound.
    You can close the menu straight away.

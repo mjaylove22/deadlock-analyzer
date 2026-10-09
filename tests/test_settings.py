@@ -43,5 +43,25 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(settings.load_settings(), {})
 
 
+def lobby(*account_ids):
+    return [{"status": "found", "account_id": a, "player": f"player{a}", "avatar_url": None} for a in account_ids] + \
+           [{"status": "not found", "account_id": None, "player": "unreadname"}]
+
+
+class IsThisYouTests(unittest.TestCase):
+    def test_the_player_in_every_lobby_is_asked_about_and_friends_drop_out(self):
+        update, asked = settings.update_me_guess, lambda g: sorted(c["account_id"] for c in settings.guessed_me(g))
+        guess = update(None, lobby(1, 2, *range(10, 20)), 111203456)  # you (1), a friend (2) and strangers
+        self.assertEqual(asked(guess), [])  # one lobby: too early to ask
+        guess = update(guess, lobby(1, 2, *range(10, 19)), None)  # the same lobby read again, its ID unread
+        self.assertEqual(guess["lobbies"], 1)
+        guess = update(guess, lobby(1, 2, *range(20, 30)), 111203457)
+        self.assertEqual(asked(guess), [1, 2])  # "Is one of these you?"
+        guess = update(guess, lobby(1, *range(30, 41)), 111203458)  # the friend wasn't there
+        self.assertEqual(asked(guess), [1])
+        guess = update(guess, lobby(*range(50, 61)), 111203459)  # your name misread: nobody in common
+        self.assertEqual((guess["lobbies"], asked(guess)), (1, []))  # the count starts again
+
+
 if __name__ == "__main__":
     unittest.main()

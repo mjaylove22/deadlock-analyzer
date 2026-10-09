@@ -34,7 +34,7 @@ import history
 from report import TEAM_TITLES, history_text, progress_texts, team_summary, threats
 from scoreboard_ocr import find_tesseract
 from screenshot_manager import get_screenshot_path
-from settings import get_me, get_preferences, save_settings, set_preference
+from settings import get_me, get_preferences, guessed_me, load_settings, save_settings, set_me, set_preference
 from ui import images
 from ui.theme import (BADGE_COLORS, COLORS, FONT, HEADING_FONT, ITEM_SLOT_COLORS, MATCHUP_COLORS, PARTY_COLORS, button, card, dropdown,
                       is_light, label, pill, segmented, switch)
@@ -171,6 +171,10 @@ class HomePage(Page):
     def account_section(self, parent):
         outer, inner = section(parent, "Your account")
         me = get_me()
+        guesses = [] if me else guessed_me(load_settings().get("me_guess"))
+        if guesses:
+            self.ask_is_this_you(inner, guesses)
+            return outer, inner
         if not me:
             label(inner, "Start here: find your Steam account, so the app\nknows you in every lobby and shows your matchup.",
                   color="dim", bg="card", justify="left").pack(anchor="w")
@@ -182,6 +186,37 @@ class HomePage(Page):
         button(row, "My stats", self.app.open_my_stats, primary=True).pack(side="left")
         button(row, "Change account", self.app.focus_search).pack(side="left", padx=8)
         return outer, inner
+
+    def ask_is_this_you(self, inner, guesses):
+        """Before the account is set: the player(s) found in every lobby captured so far. The avatar tells
+        accounts with the same name apart; clicking the name opens their page to check."""
+        label(inner, "Is this you?" if len(guesses) == 1 else "Is one of these you?", size=14, heading=True,
+              bg="card").pack(anchor="w")
+        # No search box of its own (the top bar has one): with an update notice too, it pushed Home past the window
+        hint = label(inner, "In every lobby so far. Not you? Search your name", size=9, color="dim", bg="card")
+        hint.pack(anchor="w")
+        bind_click(hint, self.app.focus_search)
+        missing = [g["avatar_url"] for g in guesses if g["avatar_url"] and g["avatar_url"] not in self.app.avatars.data]
+        if missing:  # after a restart: fetch them, then draw the page again (once: a failed fetch returns nothing)
+            self.app.run_task(lambda: self.app.avatars.download(missing),
+                              lambda got: (self.app.avatars.store(got), self.reload()) if got else None)
+        for g in guesses:
+            row = tk.Frame(inner, bg=COLORS["card"])
+            row.pack(fill="x", pady=(6, 0))
+            who = tk.Frame(row, bg=COLORS["card"])
+            who.pack(side="left")
+            tk.Label(who, image=self.app.avatars.get(g["avatar_url"], 28), bg=COLORS["card"]).pack(side="left")
+            name = g["name"] if len(g["name"]) <= 18 else g["name"][:17] + "…"
+            label(who, f" {name}", size=11, bold=True, bg="card").pack(side="left")
+            bind_click(who, lambda g=g: self.app.open_player(g["account_id"]))
+            tooltip(who, "Open their page to check it's you")
+            button(row, "That's me", lambda g=g: self.confirm_me(g), primary=True).pack(side="right")
+
+    def confirm_me(self, g):
+        set_me(g["name"], g["account_id"])
+        logger.info("Account set from the Is this you? question")
+        self.app.set_status(f"Saved: you are {g['name']}. You'll be identified exactly in every lobby.")
+        self.reload()
 
     def lobby_section(self, parent):
         outer, inner = section(parent, "Last lobby")
@@ -1593,7 +1628,7 @@ class PlayerPage(Page):
         self.app.open_player(self.account_id, mode=mode, nav=self.nav, push=False)
 
     def set_as_me(self, p):
-        save_settings({"me": {"name": p["name"], "account_id": p["account_id"]}})
+        set_me(p["name"], p["account_id"])
         self.app.set_status(f"Saved: you are {p['name']}. You'll be identified exactly in every lobby.")
         self.app.open_player(p["account_id"], mode=self.mode, nav=self.nav, push=False)
 
