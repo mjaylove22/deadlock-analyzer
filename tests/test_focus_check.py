@@ -18,6 +18,7 @@ def check(at_capture, focused, game_box, stage="while showing the result", last=
     fake = SimpleNamespace(focus_at_capture=at_capture)
     with mock.patch.object(app.game_window, "focused_window_title", return_value=focused), \
             mock.patch.object(app.game_window, "find_window", return_value=game_box), \
+            mock.patch.object(app.game_window, "window_under_mouse", return_value="Deadlock Analyzer"), \
             mock.patch.object(app.logger, "warning") as warning:
         app.AnalyzerApp.check_focus_kept(fake, stage, last)
     return [c.args[0] for c in warning.call_args_list], fake.focus_at_capture
@@ -27,9 +28,14 @@ class FocusCheckTest(unittest.TestCase):
     def test_nothing_logged_when_the_game_keeps_focus(self):
         self.assertEqual(check(("Deadlock", True), "Deadlock", GAME_BOX), ([], None))
 
-    def test_focus_moving_to_the_app_is_logged_with_its_stage(self):
+    def test_focus_moving_to_the_app_is_logged_with_its_stage_and_the_pointer(self):
+        # The pointer over the app means a click there probably moved focus, not the app itself
         warnings, _ = check(("Deadlock", True), "Deadlock Analyzer", GAME_BOX, "while reading the screenshot")
-        self.assertEqual(warnings, ["Keyboard focus moved while reading the screenshot: 'Deadlock' -> 'Deadlock Analyzer'"])
+        self.assertEqual(warnings, ["Keyboard focus moved while reading the screenshot: 'Deadlock' -> 'Deadlock Analyzer'"
+                                    "; mouse pointer over 'Deadlock Analyzer'"])
+
+    def test_the_window_under_the_pointer_can_be_read(self):
+        self.assertIsInstance(app.game_window.window_under_mouse(), str)  # real Windows calls, no window needed
 
     def test_a_minimised_game_is_logged_even_if_the_title_matches(self):
         warnings, _ = check(("Deadlock", True), "Deadlock", None)

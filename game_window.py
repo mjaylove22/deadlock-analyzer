@@ -11,6 +11,7 @@ from typing import Optional, Tuple
 
 GAME_EXE = "deadlock.exe"
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+GA_ROOT = 2  # GetAncestor: the top-level window
 
 Box = Tuple[int, int, int, int]  # left, top, right, bottom in screen pixels
 
@@ -44,12 +45,22 @@ def client_area(hwnd) -> Box:
     return corner.x, corner.y, corner.x + rect.right, corner.y + rect.bottom
 
 
-def focused_window_title() -> str:
-    """The title of the window that has keyboard focus (for the log: did a capture move focus?)."""
-    hwnd = _user32.GetForegroundWindow()
+def _title(hwnd) -> str:
     buffer = ctypes.create_unicode_buffer(256)
     _user32.GetWindowTextW(hwnd, buffer, 256)
     return buffer.value
+
+
+def focused_window_title() -> str:
+    """The title of the window that has keyboard focus (for the log: did a capture move focus?)."""
+    return _title(_user32.GetForegroundWindow())
+
+
+def window_under_mouse() -> str:
+    """The title of the top-level window under the mouse pointer (for the log: was it a click?)."""
+    point = wintypes.POINT()
+    _user32.GetCursorPos(ctypes.byref(point))
+    return _title(_user32.GetAncestor(_user32.WindowFromPoint(point), GA_ROOT))
 
 
 def find_window(exe: str = GAME_EXE) -> Optional[Box]:

@@ -564,8 +564,11 @@ class AnalyzerApp:
         after = game_window.focused_window_title()
         minimised = game_was_up and game_window.find_window() is None
         if after != before or minimised:
+            # The Esc menu frees the pointer, so a click on another window moves focus too: where the
+            # pointer is tells that apart from a program taking focus
             logger.warning(f"Keyboard focus moved {stage}: {before!r} -> {after!r}"
-                           + (" (the game window is minimised)" if minimised else ""))
+                           + (" (the game window is minimised)" if minimised else "")
+                           + f"; mouse pointer over {game_window.window_under_mouse()!r}")
             last = True
         if last:
             self.focus_at_capture = None
