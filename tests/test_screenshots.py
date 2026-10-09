@@ -59,7 +59,8 @@ class IdentityRegressionTests(unittest.TestCase):
                 if "account_id" in want:
                     with self.subTest(lobby=os.path.basename(path)):
                         self.assertTrue(got.get("account_id") == want["account_id"] or not got.get("confident"),
-                                        f"{os.path.basename(path)}: the wrong account was shown as certain")
+                                        f"{os.path.basename(path)}: the wrong account was shown as certain "
+                                        f"(status {got.get('status')!r}, why: {got.get('note')!r})")
 
 
 if __name__ == "__main__":

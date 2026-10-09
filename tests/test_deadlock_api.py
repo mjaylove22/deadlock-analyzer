@@ -43,6 +43,10 @@ class FetchHeroesTests(unittest.TestCase):
                dict(hero, id=88, name="Baba", in_development=True),       # in matches while still flagged
                dict(hero, id=2, name="Bot", player_selectable=False),
                dict(hero, id=3, name="Gone", disabled=True)]
+        # fetch_hero_assets is memoised for the session: without clearing it, these 2 fake heroes stayed the hero
+        # list for every later test in the run (the identity regression check then matched a random live match)
+        deadlock_api.fetch_hero_assets.cache_clear()
+        self.addCleanup(deadlock_api.fetch_hero_assets.cache_clear)
         with patch.object(deadlock_api, "get_json", return_value=raw), \
                 patch.object(deadlock_api, "disk_cached", lambda name, build, max_age=0: build()):
             self.assertEqual([h["name"] for h in deadlock_api.fetch_heroes()], ["Haze", "Baba"])

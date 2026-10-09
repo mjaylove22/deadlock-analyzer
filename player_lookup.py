@@ -326,9 +326,13 @@ def live_match_candidates(results: List[Dict[str, Any]], candidates_by_player: D
         logger.info(f"Live match check failed ({e})")
         return {}
     lobby_heroes = {hero_ids_by_name.get(r["hero"]) for r in results} - {None}
+    players = sum(r["status"] != "skipped" for r in results)
     for match in matches:
         by_hero = {p["hero_id"]: p["account_id"] for p in match.get("players", [])}
-        if len(lobby_heroes & set(by_hero)) < max(len(lobby_heroes) - 1, 1):
+        # All the lobby's players' heroes but one, counted against the players, not the heroes we know the IDs
+        # of: with a short hero list (stale after new heroes), "all known but one" could be a single hero, and
+        # any live match with that hero was taken as this one. Unknown heroes can only make it skip the match.
+        if len(lobby_heroes & set(by_hero)) < max(players - 1, 1):
             continue  # a different match one of these accounts is in
         wanted = {i: by_hero[hero_ids_by_name[r["hero"]]] for i, r in enumerate(results)
                   if r["status"] != "skipped" and hero_ids_by_name.get(r["hero"]) in by_hero

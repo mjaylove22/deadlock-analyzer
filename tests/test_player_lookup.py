@@ -191,6 +191,17 @@ class LookupLobbyTests(unittest.TestCase):
         self.assertEqual(results[0]["account_id"], 1)  # decided by hero history as before
         self.assertNotIn("live match", results[0]["note"])
 
+    def test_heroes_missing_from_the_hero_list_dont_lower_the_bar(self):
+        # Two of four players are on heroes the (stale) hero list doesn't have: a live match sharing only the
+        # two known heroes is not this lobby. Before, "all known heroes but one" was just one hero here.
+        profiles = {"Twin": [profile(1, "Twin"), profile(2, "Twin")], "Solo": [profile(5, "Solo")]}
+        live = [{"match_id": 77, "players": [{"account_id": 2, "hero_id": PARADOX}, {"account_id": 5, "hero_id": GRAVES}]}]
+        lobby = [record("Twin", "Paradox"), record("Solo", "Graves"), record("Newbie", "Brand New Hero"),
+                 record("Other", "Another New Hero")]
+        results, _, _ = self.run_lookup(lobby, profiles, stats=[stat(1, PARADOX, 30)], live=live, live_profiles=[profile(2, "Twin")])
+        self.assertNotIn("live match", results[0]["note"])
+        self.assertEqual(results[0]["account_id"], 1)
+
     ME = {"name": "Me", "account_id": 100}
 
     @staticmethod
