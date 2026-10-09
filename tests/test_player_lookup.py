@@ -149,6 +149,15 @@ class LookupLobbyTests(unittest.TestCase):
         results, _, _ = self.run_lookup([record("Twin", "Paradox")], profiles, stats)
         self.assertFalse(results[0]["confident"])
 
+    def test_a_few_games_each_is_unsure_even_at_twice_as_many(self):
+        # Found by the identity regression check: "2 matches on this hero (next best: 1)" was called sure,
+        # and it was the wrong account of the 8 that share the author's name
+        profiles = {"Twin": [profile(1, "Twin"), profile(2, "Twin")]}
+        results, _, _ = self.run_lookup([record("Twin", "Paradox")], profiles, [stat(1, PARADOX, 2), stat(2, PARADOX, 1)])
+        self.assertFalse(results[0]["confident"])
+        results, _, _ = self.run_lookup([record("Twin", "Paradox")], profiles, [stat(1, PARADOX, 25), stat(2, PARADOX, 7)])
+        self.assertTrue(results[0]["confident"])  # a real lead (the same lobby, the right account)
+
     def test_a_misread_found_by_searching_its_lookalike_spelling(self):
         # Real case: "plerix" read as "pierix". Searching "pierix" put the real account 54th of
         # its results, beyond what the app asks for; searching "plerix" puts it first.

@@ -387,14 +387,18 @@ def my_candidate(me: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 def is_confident(candidates: List[Dict[str, Any]], reason: str) -> bool:
-    """Unique names and friend links are strong evidence. Hero history counts only when the
-    winner has at least twice the runner-up's games on this hero (55 vs 7 yes, 8 vs 5 no)."""
+    """Unique names and friend links are strong evidence. Hero history counts only when the winner has
+    at least twice the runner-up's games on this hero and HERO_LEAD_GAMES more (55 vs 7 yes, 8 vs 5 no,
+    2 vs 1 no: on a few games each, twice as many is luck, and it once picked the wrong account)."""
     if "corrected_name" in candidates[0]:
         return False  # the name itself was a guess at an OCR misread
     if len(candidates) == 1 or reason.startswith("friends with"):
         return True
     games = sorted((c["current_hero_matches"] for c in candidates), reverse=True)
-    return games[0] > 0 and games[0] >= 2 * games[1]
+    return games[0] >= 2 * games[1] and games[0] - games[1] >= HERO_LEAD_GAMES
+
+
+HERO_LEAD_GAMES = 5  # the real calls seen: 25 vs 7 and 74 vs 12 right and sure; 2 vs 1 wrong
 
 
 def fetch_ranks(account_ids: List[int]) -> Dict[int, Dict[str, Any]]:
