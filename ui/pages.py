@@ -15,9 +15,12 @@ from collections import Counter
 from typing import Any, Dict
 
 import customtkinter as ctk
+import pytesseract
 
 import assets
 import deadlock_api
+import diagnostics
+import game_window
 import paths
 from patches import lines_about, news
 from coach import ALONE_UNITS, COACH_MATCHES, LEVEL_WORDS, PHASES, QUICK_DEATH_S, coach_report, load_map, load_matches
@@ -2011,11 +2014,48 @@ class SettingsPage(Page):
                 self.option(parent, title, note, variable, lambda k=key, v=variable: set_preference(k, v.get()))
         help_outer, help_box = section(grid, "Something went wrong?")
         help_outer.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(16, 0))
-        label(help_box, "app.log records what the app read from your screen and looked up, including the player names "
-              "in your matches. Send it to whoever gave you the app.", size=9, color="dim", bg="card", justify="left",
-              wraplength=900).pack(anchor="w", pady=(0, 8))
-        button(help_box, "Open log folder", lambda: os.startfile(LOG_DIR)).pack(anchor="w")
+        label(help_box, "Copy a diagnostic report and paste it to whoever gave you the app: how it's set up and which "
+              "problems it ran into, with no player names. app.log has the full story, including the names in your matches.",
+              size=9, color="dim", bg="card", justify="left", wraplength=900).pack(anchor="w", pady=(0, 8))
+        buttons = tk.Frame(help_box, bg=COLORS["card"])
+        buttons.pack(anchor="w")
+        button(buttons, "Copy diagnostic report", self.copy_report, primary=True).pack(side="left", padx=(0, 8))
+        button(buttons, "Open log folder", lambda: os.startfile(LOG_DIR)).pack(side="left")
         self.app.set_status("Settings")
+
+    def copy_report(self):
+        """Gather the app's own facts here (tk is main-thread only), check the servers on a worker thread, then
+        put the report on the clipboard."""
+        root = self.app.root
+        dpi = ctk.ScalingTracker.get_window_dpi_scaling(root)
+        game = game_window.find_window()
+        prefs = get_preferences()
+        setup = {
+            "Screen": f"{root.winfo_screenwidth()}x{root.winfo_screenheight()}, work area {theme.work_area_height()} px tall, "
+                      f"Windows display scaling {dpi:.0%}",
+            "Window": f"{root.winfo_width()}x{root.winfo_height()}, text {self.running['text_size']}"
+                      + (f", shrunk to {theme.fit_scale:.0%} to fit the screen" if theme.fit_scale < 1 else "")
+                      + f", theme {self.running['theme']}",
+            "Deadlock": f"running, window {game[2] - game[0]}x{game[3] - game[1]}" if game else "not running",
+            "Account set": "yes" if get_me() else "no",
+            "Switches": f"auto-detect {'on' if self.app.watching else 'off'}, overlay {'on' if self.app.overlay.get() else 'off'}, "
+                        + ", ".join(f"{k} {'on' if v else 'off'}" for k, v in prefs.items()),
+        }
+        self.app.set_status("Checking the servers for the diagnostic report...")
+
+        def work():
+            path = find_tesseract()
+            try:
+                version = f"{pytesseract.get_tesseract_version(cached=True)} at {path}" if path else "not found"
+            except Exception as e:  # say what's wrong instead of failing the report
+                version = f"at {path}, but it didn't run ({type(e).__name__})"
+            return diagnostics.report(dict(setup, Tesseract=version), os.path.join(LOG_DIR, "app.log"))
+
+        def done(text):
+            root.clipboard_clear()
+            root.clipboard_append(text)
+            self.app.set_status("Diagnostic report copied: paste it into a message (Ctrl+V). It has no player names.")
+        self.app.run_task(work, done)
 
     def choose_look(self, key: str, value: str):
         save_settings({key: value.lower()})

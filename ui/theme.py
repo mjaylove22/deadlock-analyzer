@@ -151,6 +151,7 @@ def is_light() -> bool:
 
 TEXT_SIZES = {"normal": 1.0, "large": 1.15}
 text_scale = 1.0  # set once at start-up by choose_text_size: the chosen size, Normal or Large
+fit_scale = 1.0   # and how much everything shrank to fit the screen (below 1 only when it didn't)
 DESIGN_HEIGHT = 1000  # the window's outer height at 100% display scaling: every page is made to fit it
 
 
@@ -174,12 +175,13 @@ def choose_text_size(root, name: str) -> None:
     only at start-up. Pixel sizes (images, gaps, wrap widths) stay, so large text wraps a little sooner.
     And on a screen too short for the window at its display scaling (a 1080p laptop at 150%: the window
     was 1,179 px tall, its bottom under the taskbar), everything, window included, shrinks until it fits."""
-    global text_scale
+    global text_scale, fit_scale
     text_scale = TEXT_SIZES.get(name, 1.0)
     try:
         fit = fit_factor(work_area_height(), ctk.ScalingTracker.get_window_dpi_scaling(root))
     except (OSError, AttributeError, ValueError):  # not on Windows, or no answer: leave it as it is
         fit = 1.0
+    fit_scale = fit
     if text_scale * fit != 1.0:
         root.tk.call("tk", "scaling", float(root.tk.call("tk", "scaling")) * text_scale * fit)
         ctk.set_widget_scaling(text_scale * fit)

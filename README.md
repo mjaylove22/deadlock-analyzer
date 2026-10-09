@@ -48,7 +48,7 @@ Good to know:
 - It works in **fullscreen** and in windowed modes. The **Overlay** switch (the app floating over the
   game) only works in **borderless windowed** mode.
 - **Ctrl+Shift+D** captures the scoreboard by hand, if it's ever missed.
-- **Something went wrong?** Settings, **Open log folder**, and send `app.log` with a note of what happened.
+- **Something went wrong?** Settings, **Copy diagnostic report**, and paste it in a message with a note of what happened: it has the app's setup and the kinds of problems it hit, without player names. For the full story, **Open log folder** and send `app.log` (it does include the names in your matches).
 
 **Updating:** when there's a new version, the app's Home page says so. Click **Update now**: the app downloads
 the installer, checks it's the exact file published on GitHub (its SHA-256), installs it and opens again a few
@@ -235,6 +235,7 @@ report.py            wording shared by the terminal and the app
 tests/               unit tests (API calls are mocked)
 tools/privacy_scan.py  pre-commit hook: blocks commits containing real player names or IDs (--install)
 docs/DESIGN.md       design decisions and technology choices
+diagnostics.py       the Settings diagnostic report: setup, servers, problem kinds (no names)
 utils/logger.py      logging to logs/app.log and the console
 ```
 
