@@ -42,7 +42,7 @@ from ui import images, theme
 from ui.theme import (BADGE_COLORS, COLORS, FONT, HEADING_FONT, ITEM_SLOT_COLORS, MATCHUP_COLORS, PARTY_COLORS, button, card, dropdown,
                       is_light, label, pill, segmented, switch)
 from version import DOWNLOAD_URL, __version__
-from ui.charts import (ITEM_DAYS, ITEM_TREND_SPAN, ChartTable, Column, advantage_bar, change_text, change_tip, death_map, hero_cell, item_cell,
+from ui.charts import (ITEM_DAYS, ITEM_TREND_SPAN, ChartTable, Column, advantage_bar, change_text, change_tip, death_map, form_chart, hero_cell, item_cell,
                        percentile_bar, score_color, trend_cell, trend_chart, trend_color, trend_tip, verdict)
 from ui.widgets import item_tile, item_tooltip_text, tooltip
 from utils.logger import LOG_DIR
@@ -1551,10 +1551,13 @@ class PlayerPage(Page):
         """Your last 20 normal matches against the 20 before, and any change bigger than chance."""
         outer, box = card(self.frame, padding=10)
         outer.pack(fill="x", pady=(10, 0))
+        summary, changes = progress_texts(progress)
+        if summary and progress.get("series"):  # packed first, on the right: beside both lines, so no taller
+            form_chart(box, progress["series"], PROGRESS_GAMES,
+                       lambda s: self.app.open_match(s["match_id"])).pack(side="right", padx=(12, 0))
         top = tk.Frame(box, bg=COLORS["card"])
         top.pack(fill="x")
         label(top, "Your form", size=10, color="dim", bold=True, bg="card").pack(side="left", padx=(0, 10))
-        summary, changes = progress_texts(progress)
         if not summary:
             label(top, f"Shows once you have {2 * PROGRESS_GAMES} recorded normal matches.", color="faint", bg="card").pack(side="left")
             return

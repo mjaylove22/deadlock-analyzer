@@ -444,6 +444,10 @@ From the author's next list (export/share was dropped: Win+Shift+S already captu
 - **The rule:** every page is made to fit a 1,000 px window at 100%, so at start-up, when the display scaling would make that taller than the screen's work area, everything (text, CustomTkinter widgets and the window itself) shrinks by the same factor until it fits: 1,032 / (1,000 × 1.5) = 0.69 on a 150% laptop, which draws the app at the size it has on a 100% 1080p screen. Nothing changes where it already fits (the author's 1080p screens at 100%, a 1440p screen at 125%). Measured: the 6v6 lobby window is 1234×1030 at both 125% and 150%, within the 1,032 px work area, content 832–836 of 991 px.
 - **Corner cut:** the primary screen's work area is used; a second screen of a different size would need MonitorFromWindow.
 
+### 4.55 A chart beside Your form
+- **What the text compares, drawn:** souls per minute in the 40 normal matches Your form compares, oldest left: a dot per match (green win, red loss), the older and newer 20's averages as two lines, a divider between them. Hover a dot for its date, hero, result and souls/min; click to open the match. The numbers stay in the text; the chart shows whether a change is steady or one or two outliers.
+- **No new height:** it's packed first on the right of the card, beside both text lines (My Stats stays 923 px at Normal and 949 at Large). Built from the match history already loaded for the page, so no extra request.
+
 ## 5. Testing
 
 `python -m unittest discover -s tests -v` runs the tests in a few seconds (the smoke test only in CI or with `SMOKE=1`):

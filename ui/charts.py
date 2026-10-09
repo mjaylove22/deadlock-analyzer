@@ -391,6 +391,40 @@ def death_map(parent, image, radius: float, deaths: List[Dict[str, Any]], size: 
     return widget
 
 
+def form_chart(parent, series: List[Dict[str, Any]], recent: int, on_open: Callable[[Dict[str, Any]], None],
+               bg: str = "card", width: int = 300, height: int = 44) -> tk.Canvas:
+    """Souls per minute in the matches Your form compares, oldest left: a dot per match (green win, red loss),
+    the average of the older and the newer `recent` as two lines (what the text compares) and a divider
+    between them. Hovering a dot shows its match; clicking opens it."""
+    canvas = tk.Canvas(parent, width=width, height=height, bg=COLORS[bg], highlightthickness=0, cursor="hand2")
+    values = [s["souls_per_min"] for s in series]
+    low, high, pad = min(values), max(values), 5
+    x_of = lambda n: pad + n * (width - 2 * pad) / max(len(series) - 1, 1)  # noqa: E731
+    y_of = lambda v: pad + (high - v) / ((high - low) or 1) * (height - 2 * pad)  # noqa: E731
+    split = len(series) - recent
+    canvas.create_line(x_of(split - 0.5), 0, x_of(split - 0.5), height, fill=COLORS["faint"], dash=(2, 3))
+    for start, end, color in ((0, split, COLORS["dim"]), (split, len(series), COLORS["accent"])):
+        y = y_of(sum(values[start:end]) / (end - start))
+        canvas.create_line(x_of(start), y, x_of(end - 1), y, fill=color, width=2)
+    for n, s in enumerate(series):
+        x, y = x_of(n), y_of(s["souls_per_min"])
+        canvas.create_oval(x - 2.5, y - 2.5, x + 2.5, y + 2.5, outline="", fill=COLORS["win"] if s["won"] else COLORS["loss"])
+
+    def under(event) -> Dict[str, Any]:
+        return series[min(range(len(series)), key=lambda n: abs(x_of(n) - event.x))]
+
+    def motion(event):
+        s = under(event)
+        show_tooltip(canvas, f"{time.strftime('%b %d', time.localtime(s['start_time'])).replace(' 0', ' ')} · {s['hero']} · "
+                             f"{'win' if s['won'] else 'loss'}\n{s['souls_per_min']:,.0f} souls/min · click to open the match",
+                     event.x_root, event.y_root)
+
+    canvas.bind("<Motion>", motion)
+    canvas.bind("<Leave>", lambda event: hide_tooltip())
+    canvas.bind("<Button-1>", lambda event: (hide_tooltip(now=True), on_open(under(event))))
+    return canvas
+
+
 # --- the hero page's chart
 def trend_chart(parent, hero: str, trend: Dict[str, Any], total_weeks: int, bg: str = "card",
                 height: int = 92) -> tk.Canvas:

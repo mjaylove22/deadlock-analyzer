@@ -173,13 +173,18 @@ def compare_windows(matches: List[Dict[str, Any]], games: int = PROGRESS_GAMES,
 
 def progress(matches: List[Dict[str, Any]], hero_names_by_id: Dict[int, str]) -> Dict[str, Any]:
     """Your recent form in normal matches (Street Brawl's souls/min isn't comparable), overall and on each
-    hero with enough games: {"overall": compare_windows or None, "heroes": {hero name: compare_windows}}."""
+    hero with enough games: {"overall": compare_windows or None, "heroes": {hero name: compare_windows},
+    "series": the compared matches, oldest first, for the chart: [{"match_id", "start_time", "hero", "won",
+    "souls_per_min"}]}."""
     normal = [m for m in matches if m["game_mode"] == 1 and m["match_duration_s"] > 0]  # newest first
     by_hero: Dict[int, List[Dict[str, Any]]] = {}
     for m in normal:
         by_hero.setdefault(m["hero_id"], []).append(m)
     heroes = {hero_names_by_id.get(hero_id, f"hero #{hero_id}"): compare_windows(ms) for hero_id, ms in by_hero.items()}
-    return {"overall": compare_windows(normal), "heroes": {name: c for name, c in heroes.items() if c}}
+    series = [{"match_id": m["match_id"], "start_time": m["start_time"], "won": match_won(m),
+               "hero": hero_names_by_id.get(m["hero_id"], f"hero #{m['hero_id']}"),
+               "souls_per_min": PROGRESS_STATS["souls_per_min"](m)} for m in reversed(normal[:2 * PROGRESS_GAMES])]
+    return {"overall": compare_windows(normal), "heroes": {name: c for name, c in heroes.items() if c}, "series": series}
 
 
 def rank_progress(matches: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:

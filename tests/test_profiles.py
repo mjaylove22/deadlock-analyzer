@@ -108,6 +108,10 @@ class ProgressTests(unittest.TestCase):
         # averages 30,500 -> 36,475 souls a game (+20%); the Rem games are older, so overall = these 40 Haze games
         self.assertEqual(changes, [("Overall souls/min up 20%", True), ("Haze souls/min up 20%", True)])
         self.assertIsNone(profiles.progress(haze[:39], NAMES)["overall"])  # needs 40 games
+        # The chart gets the same 40 normal matches, oldest first (the brawls and older Rem games left out)
+        series = p["series"]
+        self.assertEqual([s["match_id"] for s in series], [haze[n]["match_id"] for n in range(39, -1, -1)])
+        self.assertEqual((series[-1]["hero"], series[-1]["won"], round(series[-1]["souls_per_min"])), ("Haze", True, 1180))
 
 
 class RankProgressTests(unittest.TestCase):
