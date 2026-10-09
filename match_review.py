@@ -106,11 +106,17 @@ def coach_facts(info: Dict[str, Any], p: Dict[str, Any], hero_names_by_id: Dict[
                 path["y_min"] + path["y_pos"][i] / mp["y_resolution"] * (path["y_max"] - path["y_min"]))
 
     def dead_at(slot, t):
-        return any(d["game_time_s"] <= t < d["game_time_s"] + d["death_duration_s"] for d in players[slot].get("death_details", []))
+        return any(d.get("game_time_s") is not None and d["game_time_s"] <= t < d["game_time_s"] + (d.get("death_duration_s") or 0)
+                   for d in players[slot].get("death_details", []))
 
     deaths = []
     for d in p.get("death_details", []):
-        t, spot = d["game_time_s"], (d["death_pos"]["x"], d["death_pos"]["y"])
+        # Fields can come back null (a null time_to_kill_s once broke a whole match review): a death without a
+        # time or place can't be placed, so it's skipped; a missing fight length counts as 0
+        pos = d.get("death_pos") or {}
+        if d.get("game_time_s") is None or pos.get("x") is None or pos.get("y") is None:
+            continue
+        t, spot = d["game_time_s"], (pos["x"], pos["y"])
         mate = None
         if p.get("player_slot") in paths_by_slot and mp.get("interval_s") == 1:
             # The path sample where they died: the path clock runs ahead of game time, so search just after t
@@ -119,7 +125,7 @@ def coach_facts(info: Dict[str, Any], p: Dict[str, Any], hero_names_by_id: Dict[
                      and s in paths_by_slot and not dead_at(s, t)]
             mate = round(min(math.dist(spot, position(s, at)) for s in alive)) if alive else None
         killer = players.get(d.get("killer_player_slot"))
-        deaths.append({"t": t, "x": round(spot[0]), "y": round(spot[1]), "fight_s": round(d.get("time_to_kill_s", 0), 1),
+        deaths.append({"t": t, "x": round(spot[0]), "y": round(spot[1]), "fight_s": round(d.get("time_to_kill_s") or 0, 1),
                        "killer": hero_names_by_id.get(killer["hero_id"]) if killer else None, "mate": mate})
     lane = next((s for s in p.get("stats", []) if s["time_stamp_s"] >= LANE_END_S), None)
     final = p["stats"][-1] if p.get("stats") else {}

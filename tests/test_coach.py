@@ -39,6 +39,14 @@ class CoachFactsTests(unittest.TestCase):
         self.assertEqual(facts["sources"]["kills"], 1000)  # souls from heroes, picked up as orbs or not
         self.assertEqual(facts["souls_lost"], 450)
 
+    def test_null_fields_dont_break_the_match(self):
+        # Seen in the log: a null time_to_kill_s made the whole match review fail to load
+        me = {"player_slot": 1, "team": 0, "hero_id": 7, "death_details": [
+            {"game_time_s": 100, "death_pos": {"x": 1000, "y": 0}, "time_to_kill_s": None, "death_duration_s": None},
+            {"game_time_s": 200, "death_pos": None}]}  # nowhere to put it: skipped
+        facts = coach_facts({"players": [me]}, me, NAMES)
+        self.assertEqual(facts["death_list"], [{"t": 100, "x": 1000, "y": 0, "fight_s": 0, "killer": None, "mate": None}])
+
 
 def player(account_id, mates, killer="Haze"):
     """A player who died once per entry in mates (the nearest teammate's distance at each death)."""
