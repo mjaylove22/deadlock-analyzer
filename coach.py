@@ -94,14 +94,21 @@ def mean_z(values: List[float], expected: float = 0.0, floor: float = 0.0) -> fl
     return (fmean(values) - expected) / error if error else 0.0
 
 
-def finding(kind: str, z: float, matches: int, topic: str, title: str, text: str, tip: str = "") -> Optional[Dict[str, Any]]:
+def example(e: Dict[str, Any]) -> Dict[str, Any]:
+    """The match a finding or a death links to: the Coach page opens its review."""
+    return {"match_id": e["summary"]["match_id"], "start_time": e["summary"].get("start_time"), "hero": e["me"]["hero"]}
+
+
+def finding(kind: str, z: float, matches: int, topic: str, title: str, text: str, tip: str = "",
+            shown_in: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
     """A finding worth showing, or None when the evidence is too thin. kind: "work" or "good"; title: a few
-    words for the summary; text: the observation with its numbers; tip: what to do about it."""
+    words for the summary; text: the observation with its numbers; tip: what to do about it; shown_in: the
+    match where it showed most (example()), to open and see it happen."""
     strength = level(z, matches)
     if not strength:
         return None
     return {"kind": kind, "z": abs(z), "matches": matches, "level": strength, "topic": topic, "title": title,
-            "text": text, "tip": tip}
+            "text": text, "tip": tip, "example": shown_in}
 
 
 PHASE_TIPS = {
@@ -127,13 +134,15 @@ def death_findings(mine: List[Dict[str, Any]], everyone: List[Dict[str, Any]]) -
         when = Counter(phase(d["t"]) for d in alone).most_common(1)
         text = (f"{len(alone)} of your {len(deaths)} deaths came with no teammate within {ALONE_UNITS:,} units "
                 f"({share(len(alone), len(deaths)):.0%}, against {lobby_alone:.0%} for everyone in your lobbies)")
+        by_alone = sorted(with_deaths, key=lambda e: sum(map(is_alone, e["me"]["death_list"])))
         if z > 0:
             found.append(finding("work", z, len(with_deaths), "deaths", "Dying away from your team",
                                  text + (f", mostly in {PHASE_NAMES[when[0][0]]}." if when else "."),
                                  "Before farming or pushing on your own, check the map for enemies you can't see, and head "
-                                 "back toward your team when two or more are missing."))
+                                 "back toward your team when two or more are missing.", example(by_alone[-1])))
         else:
-            found.append(finding("good", z, len(with_deaths), "deaths", "Staying near your team", text + "."))
+            found.append(finding("good", z, len(with_deaths), "deaths", "Staying near your team", text + ".",
+                                 shown_in=example(by_alone[0])))
 
     lobby_rate = {name: sum(phase(d["t"]) == name for p in everyone for d in p["death_list"]) / max(len(everyone), 1)
                   for _, name in PHASES}
@@ -141,10 +150,11 @@ def death_findings(mine: List[Dict[str, Any]], everyone: List[Dict[str, Any]]) -
                for _, name in PHASES}
     worst = max(phase_z, key=phase_z.get)
     if phase_z[worst] > 0:
-        mine_rate = sum(phase(d["t"]) == worst for e in mine for d in e["me"]["death_list"]) / n
+        in_phase = lambda e: sum(phase(d["t"]) == worst for d in e["me"]["death_list"])  # noqa: E731
+        mine_rate = sum(map(in_phase, mine)) / n
         found.append(finding("work", phase_z[worst], n, "deaths", f"Deaths in {PHASE_NAMES[worst]}",
                              f"You die most in {PHASE_NAMES[worst]}: {mine_rate:.1f} times a game, against {lobby_rate[worst]:.1f} "
-                             "for the players in your lobbies.", PHASE_TIPS[worst]))
+                             "for the players in your lobbies.", PHASE_TIPS[worst], example(max(mine, key=in_phase))))
     # Killers, fairly: deaths to a hero against what you'd expect if every enemy were equally likely to kill you
     killers = []
     for hero in {p["hero"] for e in mine for p in e["summary"]["players"] if p["team"] != e["me"]["team"]}:
@@ -155,16 +165,16 @@ def death_findings(mine: List[Dict[str, Any]], everyone: List[Dict[str, Any]]) -
         by_hero = [sum(d["killer"] == hero for d in e["me"]["death_list"]) for e in games]
         expected = [len(e["me"]["death_list"]) / max(enemies(e), 1) for e in games]
         z = mean_z([b - x for b, x in zip(by_hero, expected)], 0.0, floor=0.5)
-        killers.append((z, hero, len(games), sum(by_hero), sum(expected)))
+        killers.append((z, hero, len(games), sum(by_hero), sum(expected), example(games[by_hero.index(max(by_hero))])))
     if killers:
-        z, hero, games, kills, expected = max(killers)
+        z, hero, games, kills, expected, worst_game = max(killers, key=lambda k: k[:5])
         if z > 0:
             found.append(finding("work", z, games, "deaths", f"{hero} kills you a lot",
                                  f"{hero} killed you {kills} times in the {games} games they were against you; about "
                                  f"{expected:.0f} would be expected if every enemy were equally likely to kill you (an "
                                  "assumption: some heroes are built to get kills).",
                                  f"{hero}'s page under Heroes shows their abilities and how players build them: knowing "
-                                 "what's coming is half the counter."))
+                                 "what's coming is half the counter.", worst_game))
 
     lobby_quick = share(sum(d["fight_s"] <= QUICK_DEATH_S for p in everyone for d in p["death_list"]),
                         sum(len(p["death_list"]) for p in everyone))
@@ -172,13 +182,15 @@ def death_findings(mine: List[Dict[str, Any]], everyone: List[Dict[str, Any]]) -
     if lobby_quick is not None and died:
         z = mean_z([share(sum(d["fight_s"] <= QUICK_DEATH_S for d in e["me"]["death_list"]), len(e["me"]["death_list"]))
                     for e in died], lobby_quick, floor=0.15)
-        quick = sum(d["fight_s"] <= QUICK_DEATH_S for e in died for d in e["me"]["death_list"])
+        caught = lambda e: sum(d["fight_s"] <= QUICK_DEATH_S for d in e["me"]["death_list"])  # noqa: E731
+        quick = sum(map(caught, died))
         total = sum(len(e["me"]["death_list"]) for e in died)
         if z > 0:
             found.append(finding("work", z, len(died), "deaths", "Getting caught",
                                  f"{quick} of your {total} deaths took {QUICK_DEATH_S} seconds or less, so you were caught or "
                                  f"burst down ({share(quick, total):.0%}, against {lobby_quick:.0%} in your lobbies).",
-                                 "Keep an escape ready when you walk into the open, and consider more health or a defensive item."))
+                                 "Keep an escape ready when you walk into the open, and consider more health or a defensive item.",
+                                 example(max(died, key=caught))))
     return [f for f in found if f]
 
 
@@ -200,35 +212,37 @@ def play_findings(mine: List[Dict[str, Any]], labels: Dict[str, str]) -> List[Di
     """Your stats on your hero (against players on the same hero, rank and length) and your laning and
     objectives (against the rest of the same lobbies)."""
     found = []
-    by_stat: Dict[str, List[float]] = {}
+    by_stat: Dict[str, List[tuple]] = {}  # key -> [(percentile, match)]
     for e in mine:
         for row in (e.get("rating") or {}).get("rows", []):
             if row["good"] is not None:
-                by_stat.setdefault(row["key"], []).append(row["good"])
-    for key, values in by_stat.items():
+                by_stat.setdefault(row["key"], []).append((row["good"], e))
+    for key, rated in by_stat.items():
         if key == "kda":  # made of kills, deaths and assists, which are judged on their own
             continue
+        values = [v for v, _ in rated]
         z, average = mean_z(values, 50, floor=10), fmean(values)
         if z < 0 and key in STAT_TIPS:  # a weak spot with nothing to act on (e.g. healing, mostly the build) isn't a finding
             found.append(finding("work", z, len(values), "stats", f"{labels[key]}",
                                  f"{labels[key]}: on average behind {100 - average:.0f}% of players on the same hero, rank "
-                                 "and match length.", STAT_TIPS.get(key, "")))
+                                 "and match length.", STAT_TIPS.get(key, ""), example(min(rated, key=lambda r: r[0])[1])))
         elif z > 0:
             found.append(finding("good", z, len(values), "stats", f"{labels[key]}",
                                  f"{labels[key]}: on average ahead of {average:.0f}% of players on the same hero, rank and "
-                                 "match length."))
+                                 "match length.", shown_in=example(max(rated, key=lambda r: r[0])[1])))
     for title, value, floor, words, tip in (
             ("Last-hitting in lane", lane_rate, 0.05, "of the creeps you could have by minute 9", STAT_TIPS["last_hits"]),
             ("Souls from objectives", objective_share, 0.03, "of your souls from objectives", STAT_TIPS["objectives"])):
-        pairs = [(value(e["me"]), lobby_share(e, value)) for e in mine]
-        pairs = [(a, b) for a, b in pairs if a is not None and b is not None]
+        pairs = [(value(e["me"]), lobby_share(e, value), e) for e in mine]
+        pairs = [(a, b, e) for a, b, e in pairs if a is not None and b is not None]
         if len(pairs) < 2:
             continue
-        z = mean_z([a - b for a, b in pairs], 0.0, floor=floor)
-        mine_avg, theirs = fmean(a for a, _ in pairs), fmean(b for _, b in pairs)
+        z = mean_z([a - b for a, b, _ in pairs], 0.0, floor=floor)
+        mine_avg, theirs = fmean(a for a, _, _ in pairs), fmean(b for _, b, _ in pairs)
         text = f"{title}: {mine_avg:.0%} {words}, against {theirs:.0%} for the rest of your lobbies."
-        found.append(finding("work", z, len(pairs), "play", title, text, tip) if z < 0 else
-                     finding("good", z, len(pairs), "play", title, text))
+        gap = lambda p: p[0] - p[1]  # noqa: E731
+        found.append(finding("work", z, len(pairs), "play", title, text, tip, example(min(pairs, key=gap)[2])) if z < 0 else
+                     finding("good", z, len(pairs), "play", title, text, shown_in=example(max(pairs, key=gap)[2])))
     return [f for f in found if f]
 
 
@@ -275,7 +289,7 @@ def coach_report(matches: List[Dict[str, Any]], hero: Optional[str] = None) -> O
     everyone = [p for e in matches for p in e["summary"]["players"]]
     labels = {s.key: s.label.replace(" (self and allies)", "") for s in STATS if s.better is not None}
 
-    deaths = [dict(d, alone=is_alone(d)) for e in mine for d in e["me"]["death_list"]]
+    deaths = [dict(d, alone=is_alone(d), match=example(e)) for e in mine for d in e["me"]["death_list"]]
     measured = [d for d in deaths if d["mate"] is not None]
     lobby_measured = [d for p in everyone for d in p["death_list"] if d["mate"] is not None]
     lobby_deaths = [d for p in everyone for d in p["death_list"]]
@@ -291,7 +305,7 @@ def coach_report(matches: List[Dict[str, Any]], hero: Optional[str] = None) -> O
             "lobby_phases": {name: sum(phase(d["t"]) == name for d in lobby_deaths) / len(everyone) for _, name in PHASES},
             "killers": Counter(d["killer"] for d in deaths if d["killer"]).most_common(3),
             "souls_lost_per_game": fmean(e["me"]["souls_lost"] for e in mine),
-            "points": [(d["x"], d["y"], d["alone"]) for d in deaths],
+            "points": deaths,  # each with x, y, alone, and the match it happened in
         },
     }
     lanes = [e["me"]["lane"] for e in mine if lane_rate(e["me"]) is not None]

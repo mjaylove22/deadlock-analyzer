@@ -52,11 +52,11 @@ def matches(my_mates, games=10):
     """games matches in which you died once per entry in my_mates, Vyper killing you every time; everyone else
     dies beside a teammate, and Vyper is one of 6 enemies (so 1 in 6 of your deaths would be "fair")."""
     found = []
-    for _ in range(games):
+    for n in range(games):
         me = player(1, my_mates, killer="Vyper")
         me["team"] = 0
         others = [dict(player(n, [500] * 6), team=0 if n < 7 else 1, hero="Vyper" if n == 7 else "Haze") for n in range(2, 13)]
-        found.append({"summary": {"minutes": 30, "players": [me] + others}, "me": me, "rating": None})
+        found.append({"summary": {"match_id": 111203450 + n, "minutes": 30, "players": [me] + others}, "me": me, "rating": None})
     return found
 
 
@@ -67,6 +67,15 @@ class CoachReportTests(unittest.TestCase):
         self.assertTrue(alone["text"].startswith("40 of your 60 deaths came with no teammate within 3,000 units"))
         self.assertEqual(alone["level"], "likely")  # 10 matches: never "consistent", however clear
         self.assertTrue(any(f["title"] == "Vyper kills you a lot" for f in report["findings"]))
+
+    def test_a_finding_and_each_death_link_to_their_match(self):
+        games = matches([5000, 5000, 5000, 500, 500, 500])
+        for d in games[3]["me"]["death_list"]:
+            d["mate"] = 5000  # all six deaths away from the team in this one
+        report = coach_report(games)
+        alone = next(f for f in report["findings"] if f["title"] == "Dying away from your team")
+        self.assertEqual(alone["example"]["match_id"], 111203453)  # the match where it showed most
+        self.assertEqual({d["match"]["match_id"] for d in report["deaths"]["points"]}, {111203450 + n for n in range(10)})
 
     def test_dying_alone_as_often_as_the_lobby_is_not(self):
         report = coach_report(matches([500] * 6))

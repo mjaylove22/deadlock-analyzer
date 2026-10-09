@@ -418,6 +418,11 @@ From the author's next list (export/share was dropped: Win+Shift+S already captu
 - **Readable by numbers:** every text colour is at least 4.5:1 (WCAG's minimum for small text) on a card in both themes, checked by a test. Hero, item and rank colours were lightened for the dark background; `images.readable` now darkens them on light instead (tested on bright yellow, dark purple and light blue).
 - **Found in the test windows:** off switches were invisible on the light top bar (track and bar nearly the same grey) and the white knob blended into white cards, because CustomTkinter draws the knob bigger than the track. Light mode now has its own switch colours and a full-height track. Lobby, My Stats, Coach (map included), Heroes, a match review and Settings were checked in light at the usual 1196×999 window.
 
+### 4.50 Coach click-through
+- **A finding opens the match where it showed most**, to see it happen: each check already worked out one value per match (alone deaths, deaths in a phase, deaths to one hero, quick deaths, a stat's percentile, the lane gap), so the example is just the highest or lowest of those, and no new analysis was needed. Trends have none: they compare two halves of your matches, not one match. Hovering a finding says which match it opens.
+- **A death on the map opens its match:** the map is one picture, so a click goes to the top dot within 6 px of the mouse; hovering shows the date, hero, killer and game time. The map label has no border or padding, so mouse positions are picture pixels.
+- **No new height:** the rows themselves are clickable (hand cursor) and the hint is in the status line, so both views still fit the 1196×999 window. Checked in a test window with Tk's own events (never the real mouse): the dot's tooltip, the cursor, and the right match opening, from both views.
+
 ## 5. Testing
 
 `python -m unittest discover -s tests -v` runs the tests in a few seconds (the smoke test only in CI or with `SMOKE=1`):

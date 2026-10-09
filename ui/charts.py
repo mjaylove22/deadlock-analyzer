@@ -346,22 +346,48 @@ def percentile_bar(parent, good: Optional[float], percentile: float, bg: str = "
     return canvas
 
 
-def death_map(parent, image, radius: float, points: List[Tuple[float, float, bool]], size: int = 280,
-              bg: str = "card") -> tk.Label:
+def death_map(parent, image, radius: float, deaths: List[Dict[str, Any]], size: int = 280, bg: str = "card",
+              on_click: Optional[Callable[[Dict[str, Any]], None]] = None,
+              tip: Callable[[Dict[str, Any]], str] = lambda death: "") -> tk.Label:
     """The minimap recoloured for the app's theme (its grey streets on a card, buildings left out), with a
-    dot per death: red when no teammate was near, amber when one was. points: (world x, world y, alone)."""
+    dot per death: red when no teammate was near, amber when one was. deaths: dicts with world "x", "y" and
+    "alone". With on_click, hovering a dot shows tip(death) and clicking it calls on_click(death)."""
     shade, alpha = image.convert("LA").split()
     streets = ImageChops.multiply(shade.point(lambda v: 255 if v < 150 else 0), alpha)  # dark and not transparent
     picture = Image.new("RGB", image.size, COLORS[bg])
     picture.paste(Image.new("RGB", image.size, COLORS["map_streets"]), mask=streets)
     picture = picture.resize((size, size), Image.LANCZOS)
     draw = ImageDraw.Draw(picture)
-    for x, y, alone in sorted(points, key=lambda p: p[2]):  # alone last, so red dots stay on top
-        px, py = (x + radius) / (2 * radius) * size, (1 - (y + radius) / (2 * radius)) * size
-        draw.ellipse((px - 4, py - 4, px + 4, py + 4), fill=COLORS["loss"] if alone else "#f5b942", outline=COLORS[bg])
+    spots = []  # (x, y in pixels, death), drawn order: the last is on top
+    for d in sorted(deaths, key=lambda d: d["alone"]):  # alone last, so red dots stay on top
+        px, py = (d["x"] + radius) / (2 * radius) * size, (1 - (d["y"] + radius) / (2 * radius)) * size
+        draw.ellipse((px - 4, py - 4, px + 4, py + 4), fill=COLORS["loss"] if d["alone"] else "#f5b942", outline=COLORS[bg])
+        spots.append((px, py, d))
     photo = ImageTk.PhotoImage(picture)
-    widget = tk.Label(parent, image=photo, bg=COLORS[bg])
+    # No border or padding, so mouse positions are picture pixels
+    widget = tk.Label(parent, image=photo, bg=COLORS[bg], bd=0, padx=0, pady=0, highlightthickness=0)
     widget.image = photo  # tkinter forgets images nobody holds
+    if on_click:
+        def under(event) -> Optional[Dict[str, Any]]:  # the top dot within 6 px of the mouse
+            near = [d for px, py, d in spots if (px - event.x) ** 2 + (py - event.y) ** 2 <= 36]
+            return near[-1] if near else None
+
+        def motion(event):
+            death = under(event)
+            widget.configure(cursor="hand2" if death else "")
+            if death:
+                show_tooltip(widget, tip(death), event.x_root, event.y_root)
+            else:
+                hide_tooltip()
+
+        def click(event):
+            death = under(event)
+            if death:
+                hide_tooltip(now=True)
+                on_click(death)
+        widget.bind("<Motion>", motion)
+        widget.bind("<Leave>", lambda event: hide_tooltip())
+        widget.bind("<Button-1>", click)
     return widget
 
 

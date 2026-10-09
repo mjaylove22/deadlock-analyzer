@@ -1740,7 +1740,22 @@ class CoachPage(Page):
             label(self.body, f"Only {report['games']} matches{' on ' + hero if hero else ''}: findings are early signs at most.",
                   size=10, color="note").pack(anchor="w", pady=(0, 6))
         (self.show_deaths if self.view == "Deaths" else self.show_summary)(report, data)
-        self.app.set_status(f"Coach · {report['games']} matches · hover a finding's EARLY SIGN / LIKELY / CONSISTENT for what it means")
+        self.app.set_status(f"Coach · {report['games']} matches · click a finding or a death on the map to open that match")
+
+    def link_example(self, widget, text_part, f):
+        """A finding opens the match where it showed most, to see it happen (trends have none: they compare halves)."""
+        shown_in = f.get("example")
+        if not shown_in:
+            return
+        bind_click(widget, lambda: self.app.open_match(shown_in["match_id"]))
+        tooltip(text_part, f"Click to open the match where this showed most: {when(shown_in['start_time'])} on {shown_in['hero']}")
+
+    @staticmethod
+    def death_tip(d) -> str:
+        m = d["match"]
+        killer = f" by {d['killer']}" if d.get("killer") else ""
+        return (f"{when(m['start_time'])} on {m['hero']} · killed{killer} at {d['t'] // 60}:{d['t'] % 60:02d}\n"
+                f"{'No teammate near' if d['alone'] else 'With your team'} · click to open the match")
 
     def finding_row(self, parent, f, wrap: int):
         """One finding: whether to work on it or keep it up, how sure it is, what was seen and what to do."""
@@ -1758,6 +1773,7 @@ class CoachPage(Page):
         label(text, f["text"], bg="card", justify="left", anchor="w", wraplength=wrap).pack(anchor="w")
         if f["tip"]:
             label(text, f["tip"], size=10, color="dim", bg="card", justify="left", anchor="w", wraplength=wrap).pack(anchor="w")
+        self.link_example(row, text, f)
 
     def headline(self, parent, title: str, f, none_text: str):
         outer, box = section(parent, title)
@@ -1774,6 +1790,7 @@ class CoachPage(Page):
         label(box, f["text"], size=10, bg="card", justify="left", wraplength=480).pack(anchor="w", pady=(4, 0))
         if f["tip"]:
             label(box, f["tip"], size=10, color="dim", bg="card", justify="left", wraplength=480).pack(anchor="w", pady=(2, 0))
+        self.link_example(outer, box, f)
         return outer
 
     def show_summary(self, report, data):
@@ -1836,7 +1853,8 @@ class CoachPage(Page):
         if data.get("map"):
             outer, box = section(middle, "Where you die")
             outer.pack(side="left", fill="y", padx=(0, 10))
-            death_map(box, data["map"]["image"], data["map"]["radius"], d["points"], size=300).pack()
+            death_map(box, data["map"]["image"], data["map"]["radius"], d["points"], size=300,
+                      on_click=lambda death: self.app.open_match(death["match"]["match_id"]), tip=self.death_tip).pack()
             legend = tk.Frame(box, bg=COLORS["card"])
             legend.pack(anchor="w", pady=(6, 0))
             label(legend, "●", color=COLORS["loss"], bg="card").pack(side="left")
