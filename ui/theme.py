@@ -4,6 +4,8 @@ Rounded shapes come from CustomTkinter (cards, pills, buttons, toggles). Plain t
 tk labels, which are much faster to create than CustomTkinter's canvas-drawn widgets.
 """
 
+import ctypes
+import ctypes.wintypes
 import tkinter as tk
 from tkinter import ttk
 from typing import Callable, Sequence
@@ -148,18 +150,41 @@ def is_light() -> bool:
 
 
 TEXT_SIZES = {"normal": 1.0, "large": 1.15}
-text_scale = 1.0  # set once at start-up by choose_text_size
+text_scale = 1.0  # set once at start-up by choose_text_size: the chosen size, Normal or Large
+DESIGN_HEIGHT = 1000  # the window's outer height at 100% display scaling: every page is made to fit it
+
+
+def fit_factor(room: int, dpi: float) -> float:
+    """How much to shrink so the window fits room (the screen's work area, in pixels) when Windows display
+    scaling (dpi, 1.25 for 125%) would make it taller: 1 when it fits as it is."""
+    return min(1.0, room / (DESIGN_HEIGHT * dpi))
+
+
+def work_area_height() -> int:
+    """The primary screen's height minus the taskbar, in pixels. ponytail: the primary screen only; a
+    second screen of another size would need MonitorFromWindow."""
+    rect = ctypes.wintypes.RECT()
+    ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(rect), 0)  # SPI_GETWORKAREA
+    return rect.bottom - rect.top
 
 
 def choose_text_size(root, name: str) -> None:
     """"normal" (the default) or "large": every font grows by the same factor, tk's (sized in points, so they
     follow tk scaling) and CustomTkinter's (sized in pixels, following its widget scaling). Like the theme,
-    only at start-up. Pixel sizes (images, gaps, wrap widths) stay, so large text wraps a little sooner."""
+    only at start-up. Pixel sizes (images, gaps, wrap widths) stay, so large text wraps a little sooner.
+    And on a screen too short for the window at its display scaling (a 1080p laptop at 150%: the window
+    was 1,179 px tall, its bottom under the taskbar), everything, window included, shrinks until it fits."""
     global text_scale
     text_scale = TEXT_SIZES.get(name, 1.0)
-    if text_scale != 1.0:
-        root.tk.call("tk", "scaling", float(root.tk.call("tk", "scaling")) * text_scale)
-        ctk.set_widget_scaling(text_scale)
+    try:
+        fit = fit_factor(work_area_height(), ctk.ScalingTracker.get_window_dpi_scaling(root))
+    except (OSError, AttributeError, ValueError):  # not on Windows, or no answer: leave it as it is
+        fit = 1.0
+    if text_scale * fit != 1.0:
+        root.tk.call("tk", "scaling", float(root.tk.call("tk", "scaling")) * text_scale * fit)
+        ctk.set_widget_scaling(text_scale * fit)
+    if fit < 1.0:
+        ctk.set_window_scaling(fit)
 
 
 def setup_styles(root) -> None:

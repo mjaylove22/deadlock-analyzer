@@ -43,5 +43,14 @@ class ThemeContrastTest(unittest.TestCase):
                         self.assertGreaterEqual(contrast(images.readable(hero_color), card), 4.5)
 
 
+class FitToScreenTest(unittest.TestCase):
+    def test_the_window_shrinks_only_when_display_scaling_makes_it_taller_than_the_screen(self):
+        from ui.theme import fit_factor
+        self.assertEqual(fit_factor(1032, 1.0), 1.0)  # 1080p at 100% (the author's screens): unchanged
+        self.assertAlmostEqual(fit_factor(1032, 1.5) * 1000 * 1.5, 1032)  # 1080p laptop at 150%: exactly fits
+        self.assertAlmostEqual(fit_factor(728, 1.0), 0.728)  # 1366x768 at 100%
+        self.assertEqual(fit_factor(1392, 1.25), 1.0)  # 1440p at 125%: fits as it is
+
+
 if __name__ == "__main__":
     unittest.main()
