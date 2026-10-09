@@ -448,6 +448,10 @@ From the author's next list (export/share was dropped: Win+Shift+S already captu
 - **What the text compares, drawn:** souls per minute in the 40 normal matches Your form compares, oldest left: a dot per match (green win, red loss), the older and newer 20's averages as two lines, a divider between them. Hover a dot for its date, hero, result and souls/min; click to open the match. The numbers stay in the text; the chart shows whether a change is steady or one or two outliers.
 - **No new height:** it's packed first on the right of the card, beside both text lines (My Stats stays 923 px at Normal and 949 at Large). Built from the match history already loaded for the page, so no extra request.
 
+### 4.56 Evidence behind every label
+- **Checked rather than assumed:** every badge a card can show already explained itself on hover with the player's numbers (games and win rate on the hero, your record with them, how an account was identified and from what), and every Coach finding says how sure it is and from how many matches. The one label without hover text was the **rank pill**, the label people trust most.
+- **Rank pills now say how current they are:** the rank API already sent when each player's last ranked match started; it's kept (`as_of`) and the hover says "Oracle 5: their rank after their last recorded ranked match (3d ago), from the public stats site", plus that a match it hasn't recorded yet isn't counted. Unranked says what that means (no ranked matches yet, or still in placements). On every rank pill: lobby cards and tiles, the matchup page and player pages.
+
 ## 5. Testing
 
 `python -m unittest discover -s tests -v` runs the tests in a few seconds (the smoke test only in CI or with `SMOKE=1`):

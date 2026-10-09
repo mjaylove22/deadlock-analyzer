@@ -402,7 +402,8 @@ HERO_LEAD_GAMES = 5  # the real calls seen: 25 vs 7 and 74 vs 12 right and sure;
 
 
 def fetch_ranks(account_ids: List[int]) -> Dict[int, Dict[str, Any]]:
-    """{account_id: {"name", "color", "badge"}} from one batch request ({} if it fails)."""
+    """{account_id: {"name", "color", "badge", "as_of"}} from one batch request ({} if it fails). as_of: when
+    their last ranked match started (the rank is the one after it), or None."""
     if not account_ids:
         return {}
     try:
@@ -418,7 +419,8 @@ def fetch_ranks(account_ids: List[int]) -> Dict[int, Dict[str, Any]]:
             # Tier 0 (Obscurus) means no recent ranked games. "badge" (tier * 10 + subrank) lets ranks be compared
             name = "Unranked" if entry["rank"] == 0 else f"{tier['name']} {entry['subrank']}"
             ranks[entry["account_id"]] = {"name": name, "color": tier["color"],
-                                          "badge": entry["rank"] * 10 + entry["subrank"]}
+                                          "badge": entry["rank"] * 10 + entry["subrank"],
+                                          "as_of": (entry.get("last_match") or {}).get("start_time")}
     return ranks
 
 

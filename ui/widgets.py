@@ -12,6 +12,7 @@ import customtkinter as ctk
 
 from report import (THREAT_HERO_GAMES, badge_labels, badge_tip, hero_stats_text, history_labels, matchup_kind,
                     matchup_text, most_played_text)
+from profiles import when
 from ui import images
 from ui.theme import BADGE_COLORS, COLORS, FONT, ITEM_SLOT_COLORS, MATCHUP_COLORS, card, label, pill
 
@@ -154,7 +155,18 @@ def rank_pill(parent, rank: Optional[Dict[str, Any]], size: int = 9) -> Optional
     tier, subrank = divmod(rank.get("badge", 0), 10)
     emblem = images.rank_emblem(tier, subrank, 18)
     text_color = images.readable(rank["color"]) if tier else COLORS["dim"]
-    return pill(parent, rank["name"], COLORS["surface"], size=size, image=emblem, text_color=text_color)
+    widget = pill(parent, rank["name"], COLORS["surface"], size=size, image=emblem, text_color=text_color)
+    tooltip(widget, rank_tip(rank))
+    return widget
+
+
+def rank_tip(rank: Dict[str, Any]) -> str:
+    """Where a rank comes from and how current it is: the rank after their last recorded ranked match."""
+    if not rank.get("badge"):
+        return "No rank: no recorded ranked matches yet, or still in placement matches."
+    when_set = f" ({when(rank['as_of'])})" if rank.get("as_of") else ""
+    return (f"{rank['name']}: their rank after their last recorded ranked match{when_set}, from the public stats site.\n"
+            "A ranked match it hasn't recorded yet (usually a few hours old) isn't counted.")
 
 
 def hero_label(parent, hero: str, bg: str, size: int = 22, font_size: int = 10, color: str = None) -> tk.Label:

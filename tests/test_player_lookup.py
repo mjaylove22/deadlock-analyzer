@@ -30,8 +30,11 @@ def stat(account_id, hero_id, matches, wins=0):
 RANK_TIERS = {0: {"name": "Obscurus", "color": "#333333"}, 7: {"name": "Emissary", "color": "#B47FEB"}}
 
 
+RANKED_AT = 1789946847  # when each fake player's last ranked match started
+
+
 def rank(account_id, tier, subrank):
-    return {"account_id": account_id, "rank": tier, "subrank": subrank}
+    return {"account_id": account_id, "rank": tier, "subrank": subrank, "last_match": {"start_time": RANKED_AT}}
 
 
 def record(player, hero, team="friendly"):
@@ -125,7 +128,7 @@ class LookupLobbyTests(unittest.TestCase):
         stats = [stat(2, PARADOX, 25, wins=20), stat(2, GRAVES, 5)]
         results, _, _ = self.run_lookup([record("Solo", "Paradox")], {"Solo": [profile(2, "Solo")]}, stats)
         r = results[0]
-        self.assertEqual(r["rank"], {"name": "Emissary 2", "color": "#B47FEB", "badge": 72})
+        self.assertEqual(r["rank"], {"name": "Emissary 2", "color": "#B47FEB", "badge": 72, "as_of": RANKED_AT})  # as_of: for its hover text
         self.assertEqual(r["hero_stats"]["games"], 25)
         self.assertIn(("HIGH WR", "good"), r["badges"])
         self.assertTrue(r["confident"])
