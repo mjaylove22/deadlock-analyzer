@@ -149,14 +149,24 @@ class TeamForRowTests(unittest.TestCase):
 
 class NoConsoleTests(unittest.TestCase):
     @unittest.skipUnless(sys.platform == "win32", "Windows only")
-    def test_tesseract_runs_without_a_console_window(self):
-        # Regression: with only "hidden window", Windows still made a console for every OCR run,
-        # which Windows Terminal could turn into a window that took focus from the game
+    def test_every_tesseract_process_runs_without_a_console_window(self):
+        # Regression: with only "hidden window", Windows still made a console for every OCR run, which Windows
+        # Terminal could turn into a window that took focus from the game. Fixed for OCR runs first, but
+        # pytesseract's version check (once per run, on the first OCR) still made one: the first capture of
+        # every session tabbed out.
         import subprocess
+        from unittest.mock import patch
         import pytesseract
         import scoreboard_ocr  # noqa: F401  (installs the change)
-        flags = pytesseract.pytesseract.subprocess_args().get("creationflags", 0)
-        self.assertTrue(flags & subprocess.CREATE_NO_WINDOW)
+        check_version = pytesseract.pytesseract.get_tesseract_version
+        cached = check_version._result
+        self.addCleanup(setattr, check_version, "_result", cached)
+        with patch.object(subprocess, "check_output", return_value=b"tesseract 5.5.0\n") as check, \
+                patch.object(subprocess, "Popen") as popen:
+            check_version()  # not cached: runs tesseract --version
+            pytesseract.pytesseract.subprocess.Popen(["tesseract", "in.png", "out"])  # how an OCR run starts it
+        self.assertTrue(check.call_args.kwargs["creationflags"] & subprocess.CREATE_NO_WINDOW)
+        self.assertTrue(popen.call_args.kwargs["creationflags"] & subprocess.CREATE_NO_WINDOW)
 
 
 class MatchIdTests(unittest.TestCase):

@@ -12,6 +12,7 @@ import re
 import shutil
 import subprocess
 import sys
+import types
 import unicodedata
 from typing import Dict, List, Optional, Tuple
 
@@ -47,19 +48,21 @@ def find_tesseract() -> Optional[str]:
 
 find_tesseract()
 
-# Run tesseract with no console at all. pytesseract only asks for a hidden window, so from a
-# windowless app (no console of its own) Windows still creates a console for every OCR run, and on
-# Windows 11 that console can be handed to Windows Terminal, which can take keyboard focus: the
-# game tabbed out on every capture.
+# Run tesseract with no console at all. From a windowless app (no console of its own) Windows creates
+# a console for every console program it starts, and on Windows 11 that console can be handed to
+# Windows Terminal, which takes keyboard focus: the game tabbed out. pytesseract only asks for a hidden
+# window (not enough), and its version check (once per run, on the first OCR) asks for nothing, so the
+# first capture of every session still tabbed out. So pytesseract gets its own view of the subprocess
+# module in which every process it starts, now or in a later version, has no console.
 if sys.platform == "win32":
-    _pytesseract_subprocess_args = pytesseract.pytesseract.subprocess_args
+    def _without_console(name):
+        def start(*args, **kwargs):
+            kwargs["creationflags"] = kwargs.get("creationflags", 0) | subprocess.CREATE_NO_WINDOW
+            return getattr(subprocess, name)(*args, **kwargs)
+        return start
 
-    def _without_console(include_stdout=True):
-        kwargs = _pytesseract_subprocess_args(include_stdout)
-        kwargs["creationflags"] = kwargs.get("creationflags", 0) | subprocess.CREATE_NO_WINDOW
-        return kwargs
-
-    pytesseract.pytesseract.subprocess_args = _without_console
+    pytesseract.pytesseract.subprocess = types.SimpleNamespace(**{
+        **vars(subprocess), **{name: _without_console(name) for name in ("Popen", "run", "call", "check_call", "check_output")}})
 
 # Scoreboard geometry, measured on 1920x1080 screenshots of the Esc menu's PLAYERS tab.
 # Other screen sizes are located with layout.py and scaled back to this size before reading.
