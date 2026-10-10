@@ -56,6 +56,11 @@ def focused_window_title() -> str:
     return _title(_user32.GetForegroundWindow())
 
 
+def focused_program() -> str:
+    """The program owning the window that has keyboard focus, e.g. "steam.exe" (for the log: who took it?)."""
+    return _exe_of(_user32.GetForegroundWindow())
+
+
 def window_under_mouse() -> str:
     """The title of the top-level window under the mouse pointer (for the log: was it a click?)."""
     point = wintypes.POINT()
