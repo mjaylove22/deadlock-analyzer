@@ -62,7 +62,9 @@ class WordingTests(unittest.TestCase):
         self.assertEqual(badge_labels(result("D", "Lash", "enemy")), [])
         fixed = result("E", "Lash", "enemy", confident=False)
         fixed["corrected_from"] = "Or. E"
-        self.assertEqual(badge_labels(fixed), [("NAME FIXED", "info"), ("ID UNSURE", "warn")])
+        # One pill, not NAME FIXED plus ID UNSURE: a cut-off name with both made a 6v6 lobby taller than the window
+        self.assertEqual(badge_labels(fixed), [("NAME FIXED", "warn")])
+        self.assertEqual(badge_labels(dict(fixed, confident=True)), [("NAME FIXED", "info")])  # confirmed, e.g. live match
 
 
 

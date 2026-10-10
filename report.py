@@ -55,10 +55,12 @@ def badge_labels(r: Dict[str, Any]) -> List[Tuple[str, str]]:
     if r.get("is_me"):
         labels.insert(0, ("YOU", "you"))
     if r.get("corrected_from"):
-        labels.append(("NAME FIXED", "info"))
+        # A guessed name is a guessed account: one pill says both, in warning colour until something confirms it
+        labels.append(("NAME FIXED", "info" if r["confident"] else "warn"))
     if r["status"] == "found":
         if not r["confident"]:
-            labels.append(("ID UNSURE", "warn"))
+            if not r.get("corrected_from"):
+                labels.append(("ID UNSURE", "warn"))
         elif r["note"].startswith("friends with"):
             labels.append(("ID VIA FRIENDS", "info"))
     return labels
@@ -73,7 +75,8 @@ def badge_tip(label: str, r: Dict[str, Any]) -> str:
     if label.startswith("PARTY"):
         return "Queued together as a party: their avatars have the same ring colour."
     if label in ("NAME FIXED", "ID UNSURE", "ID VIA FRIENDS"):
-        why = {"NAME FIXED": "The name was misread from the screen and corrected.",
+        why = {"NAME FIXED": "The name was misread or cut off on screen; this is the full Steam name"
+                             + ("." if r["confident"] else ", a guess, so these stats may be someone else's."),
                "ID UNSURE": "Several accounts have this name, so these stats may be someone else's.",
                "ID VIA FRIENDS": "Several accounts have this name; this one is a Steam friend of others in the lobby."}[label]
         return f"{why}\n{identity_text(r)}".strip()

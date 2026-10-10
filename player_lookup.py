@@ -133,11 +133,25 @@ def find_candidates(name: str) -> Tuple[List[Dict[str, Any]], str]:
     misread = next((c["personaname"] for c in results if looks_like_misread(name, c["personaname"])), None)
     if misread:
         return corrected(results, misread), ""
+    # Cut off by the scoreboard: the full name starts with what's on screen (it was the "closest name")
+    start = visible_start(name)
+    full = start and next((c["personaname"] for c in results if squash(c["personaname"]).startswith(squash(start))), None)
+    if full:
+        return corrected(results, full), ""
     # Not among the results: search the likely misreadings themselves
     lookalike = find_lookalike(name)
     if lookalike:
         return lookalike, ""
     return [], f"closest name: {results[0]['personaname']!r}" if results else "no similar names"
+
+
+TRUNCATED_MIN_LENGTH = 16  # the scoreboard only cuts off names too wide for the row: long ones
+
+
+def visible_start(name: str) -> Optional[str]:
+    """What's on screen of a name the scoreboard cut off with "..." (OCR reads one to three dots), or None."""
+    start = name.rstrip(".… ")
+    return start if start != name and len(squash(start)) >= TRUNCATED_MIN_LENGTH else None
 
 
 def same_name(a: str, b: str) -> bool:

@@ -98,6 +98,17 @@ class LookupLobbyTests(unittest.TestCase):
         self.assertEqual(r["corrected_from"], "Or. Night Owl")
         self.assertFalse(r["confident"])
 
+    def test_a_name_the_scoreboard_cut_off_is_matched_by_its_start_and_flagged(self):
+        # Real case (Oct 2026): a name too long for its row was drawn ending in "...", read with one dot, and
+        # shown only as the "closest name". A short name ending in a dot isn't treated as cut off.
+        cut, full = "Grey Mirage the Unstoppab.", "Grey Mirage the Unstoppable"
+        profiles = {cut: [profile(9, "Grey Mirage"), profile(1, full)], "moondog.": [profile(2, "moondog the great")]}
+        results, _, _ = self.run_lookup([record(cut, "Paradox"), record("moondog.", "Graves")], profiles)
+        r = results[0]
+        self.assertEqual((r["status"], r["account_id"], r["player"], r["corrected_from"]), ("found", 1, full, cut))
+        self.assertFalse(r["confident"])  # NAME FIXED in warning colour: the full name is a guess
+        self.assertEqual(results[1]["status"], "not found")
+
     def test_found_player_gets_top_heroes_sorted_by_matches(self):
         stats = [stat(2, PARADOX, 8, wins=4), stat(2, GRAVES, 20, wins=14)]
         results, _, _ = self.run_lookup([record("Grey Mirage", "Paradox")],

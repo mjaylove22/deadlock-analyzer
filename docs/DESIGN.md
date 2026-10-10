@@ -460,6 +460,11 @@ From the author's next list (export/share was dropped: Win+Shift+S already captu
 - **Found on the way:** guides skipped heroes still flagged "in development", so Baba, who is in matches with that flag, never had one; they now use the same rule as the hero list.
 - **Checked against the live API:** a background read picked up Solomon (41 heroes) and his guide (4 abilities). A live test (SMOKE=1) checks that no current hero's name is one OCR slip from another's, which the hero-name matching relies on.
 
+### 4.58 Names the scoreboard cut off
+- **Found in a real lobby (Oct 9):** a name too wide for its row was drawn ending in "...", OCR kept one dot, and no account has that name, so the card said not found; the right account was only the "closest name" in the log.
+- **The rule:** when no account has the exact name, a name ending in dots whose visible part is at least 16 characters (only long names reach the end of the row) goes to the first search result that starts with it. The card shows the full Steam name, flagged like an OCR misread: unsure until friends or the live match confirm it. On that lobby: 12 of 12 found, from 11.
+- **One pill, not two:** a corrected name carried NAME FIXED and ID UNSURE, and ID UNSURE's hover text (several accounts share the name) didn't fit it. NAME FIXED now says both, in warning colour until something confirms it. With both pills, that lobby's long name (3 lines at Large text) made the window 2 px too tall; now 935 of 960 at Large, and the 6v6 check lobby stays at 838 in both themes.
+
 ## 5. Testing
 
 `python -m unittest discover -s tests -v` runs the tests in a few seconds (the smoke test only in CI or with `SMOKE=1`):
