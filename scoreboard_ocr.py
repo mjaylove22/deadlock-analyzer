@@ -100,13 +100,14 @@ SMALL_SCREEN_SHARPEN = ImageFilter.UnsharpMask(radius=2, percent=150, threshold=
 # words scored 60+, so low-confidence words are dropped from the end of each line.
 TRAILING_JUNK_CONFIDENCE = 50
 
-# Used only when the API is unreachable. Verified against the API on 2026-10-06.
+# Used only when the API is unreachable and no hero list was ever saved (new heroes come from the API).
+# Verified against the API on 2026-10-09.
 FALLBACK_HERO_NAMES = [
     "Abrams", "Apollo", "Baba", "Bebop", "Billy", "Calico", "Celeste", "Drifter",
     "Dynamo", "Graves", "Grey Talon", "Haze", "Holliday", "Infernus",
     "Ivy", "Kelvin", "Lady Geist", "Lash", "McGinnis", "Mina", "Mirage",
     "Mo & Krill", "Paige", "Paradox", "Pocket", "Rat King", "Rem", "Seven",
-    "Shiv", "Silver", "Sinclair", "The Doorman", "Venator", "Victor",
+    "Shiv", "Silver", "Sinclair", "Solomon", "The Doorman", "Venator", "Victor",
     "Vindicta", "Viscous", "Vyper", "Warden", "Wraith", "Yamato",
 ]
 
@@ -176,9 +177,9 @@ def read_ocr_lines(image: Image.Image, layout: layout_module.Layout = None) -> L
 # "corrected" correctly read names ("Kovas" -> "Kovmas"): misreads swap characters, they don't add or
 # drop them. Short names have too many one-letter neighbours to guess safely, hence a minimum length.
 MISREAD_MIN_LENGTH = 6
-HERO_MISREAD_MIN_LENGTH = 5  # only 39 hero names to confuse, so a slightly shorter minimum is safe
+HERO_MISREAD_MIN_LENGTH = 5  # only ~40 hero names to confuse, so a slightly shorter minimum is safe
 # Letters OCR swaps in the game's font, made equal before comparing hero names. A real end screen read
-# "Ivy" as "luy", two letters off in a 3-letter name. Checked: no two of the 39 heroes then look alike,
+# "Ivy" as "luy", two letters off in a 3-letter name. Checked: no two of the 41 heroes (Oct 2026) then look alike,
 # none is inside another, and none appears inside "Level".
 LOOKALIKES = str.maketrans("l1|u", "iiiv")
 

@@ -453,6 +453,12 @@ From the author's next list (export/share was dropped: Win+Shift+S already captu
 - **Checked rather than assumed:** every badge a card can show already explained itself on hover with the player's numbers (games and win rate on the hero, your record with them, how an account was identified and from what), and every Coach finding says how sure it is and from how many matches. The one label without hover text was the **rank pill**, the label people trust most.
 - **Rank pills now say how current they are:** the rank API already sent when each player's last ranked match started; it's kept (`as_of`) and the hover says "Oracle 5: their rank after their last recorded ranked match (3d ago), from the public stats site", plus that a match it hasn't recorded yet isn't counted. Unranked says what that means (no ranked matches yet, or still in placements). On every rank pill: lobby cards and tiles, the matchup page and player pages.
 
+### 4.57 A new hero shows up the day he's out
+- **Found when Solomon came out (Oct 9):** the API listed him (hero 85) while the app's list had 40 heroes. The list was saved for a day and then kept in memory until the app closed, so a hero released mid-session could stay missing for a day or more: his scoreboard row couldn't be read (rows are found by hero name), his games showed as "hero #85" in history, and the Heroes page had no guide for him.
+- **The rule:** background work (each scoreboard read, every page loading its data) uses the saved list only while it's under an hour old, the same hour the API caches it for; the download is 1.9 MB in about 0.25 s. The window itself always uses the memory copy, so a page never waits on the network. Hero guides are built again when the hero list has a hero they lack (at most hourly), and the session's tier lists are dropped when the list changes.
+- **Found on the way:** guides skipped heroes still flagged "in development", so Baba, who is in matches with that flag, never had one; they now use the same rule as the hero list.
+- **Checked against the live API:** a background read picked up Solomon (41 heroes) and his guide (4 abilities). A live test (SMOKE=1) checks that no current hero's name is one OCR slip from another's, which the hero-name matching relies on.
+
 ## 5. Testing
 
 `python -m unittest discover -s tests -v` runs the tests in a few seconds (the smoke test only in CI or with `SMOKE=1`):

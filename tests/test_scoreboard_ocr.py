@@ -4,6 +4,7 @@ Run from the project root:
     python -m unittest discover -s tests -v
 """
 
+import os
 import sys
 import unittest
 
@@ -190,6 +191,18 @@ class MatchIdTests(unittest.TestCase):
 
     def test_none_when_no_setting_reads_a_full_id(self):
         self.assertEqual(self.read("MATCH: 11203456", "", "12:51 AM"), (None, 3))
+
+
+@unittest.skipUnless(os.environ.get("SMOKE"), "uses the live API: set SMOKE=1")
+class LiveHeroNamesTest(unittest.TestCase):
+    def test_no_current_hero_can_be_read_as_another(self):
+        # The lookalike rules were checked on the heroes of the day; a new hero (Solomon, Oct 2026) is checked here
+        import deadlock_api
+        from scoreboard_ocr import HERO_MISREAD_MIN_LENGTH, LOOKALIKES, squash
+        names = [h["name"] for h in deadlock_api.fetch_heroes()]
+        key = {n: squash(n).translate(LOOKALIKES) for n in names + ["Level"]}
+        self.assertEqual([(a, b) for a in names for b in names + ["Level"] if a != b and
+                          (key[a] in key[b] or looks_like_misread(a, b, HERO_MISREAD_MIN_LENGTH))], [])
 
 
 if __name__ == "__main__":

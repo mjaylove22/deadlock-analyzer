@@ -353,7 +353,11 @@ class AnalyzerApp:
         threading.Thread(target=work, daemon=True).start()
 
     def hero_names_by_id(self) -> Dict[int, str]:
-        return {h["id"]: h["name"] for h in deadlock_api.fetch_heroes()}
+        names = {h["id"]: h["name"] for h in deadlock_api.fetch_heroes()}
+        if self.cache.get("heroes", names) != names:
+            self.cache.clear()  # a new hero: the session's tier lists were made without him
+        self.cache["heroes"] = names
+        return names
 
     def set_status(self, message: str):
         self.status.config(text=message)

@@ -2,7 +2,11 @@
 
 import io
 import json
+import os
+import tempfile
+import time
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch
 
 import deadlock_api
@@ -36,20 +40,55 @@ class FetchItemsTests(unittest.TestCase):
                          {1: ("a_art.webp", False), 2: ("b_art.png", False), 3: ("c_symbol.png", True), 4: (None, True)})
 
 
+HERO = {"player_selectable": True, "disabled": False, "in_development": False}
+
+
 class FetchHeroesTests(unittest.TestCase):
+    def setUp(self):
+        # The hero list is kept in memory: without a fresh one per test, fake heroes stayed the hero list for every
+        # later test in the run (the identity regression check then matched a random live match)
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.folder = folder.name
+        for name, value in (("DISK_CACHE_DIR", self.folder), ("_hero_assets", [])):
+            patcher = patch.object(deadlock_api, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
     def test_selectable_heroes_count_even_while_flagged_in_development(self):
-        hero = {"player_selectable": True, "disabled": False, "in_development": False}
-        raw = [dict(hero, id=1, name="Haze"),
-               dict(hero, id=88, name="Baba", in_development=True),       # in matches while still flagged
-               dict(hero, id=2, name="Bot", player_selectable=False),
-               dict(hero, id=3, name="Gone", disabled=True)]
-        # fetch_hero_assets is memoised for the session: without clearing it, these 2 fake heroes stayed the hero
-        # list for every later test in the run (the identity regression check then matched a random live match)
-        deadlock_api.fetch_hero_assets.cache_clear()
-        self.addCleanup(deadlock_api.fetch_hero_assets.cache_clear)
-        with patch.object(deadlock_api, "get_json", return_value=raw), \
-                patch.object(deadlock_api, "disk_cached", lambda name, build, max_age=0: build()):
+        raw = [dict(HERO, id=1, name="Haze"),
+               dict(HERO, id=88, name="Baba", in_development=True),       # in matches while still flagged
+               dict(HERO, id=2, name="Bot", player_selectable=False),
+               dict(HERO, id=3, name="Gone", disabled=True)]
+        with patch.object(deadlock_api, "get_json", return_value=raw):
             self.assertEqual([h["name"] for h in deadlock_api.fetch_heroes()], ["Haze", "Baba"])
+
+    def test_a_hero_released_while_the_app_is_open_shows_up_within_the_hour(self):
+        # Solomon came out mid-session: the app kept its hero list for the whole run, so his games showed as
+        # "hero #85" and the scoreboard couldn't read his row
+        before = [dict(HERO, id=1, name="Haze")]
+        names = lambda: [h["name"] for h in deadlock_api.fetch_heroes()]
+        in_background = lambda: ThreadPoolExecutor(1).submit(names).result()  # a scoreboard read or a page loading
+        with patch.object(deadlock_api, "get_json", return_value=before):
+            names()
+        with patch.object(deadlock_api, "get_json", return_value=before + [dict(HERO, id=85, name="Solomon")]):
+            self.assertEqual(in_background(), ["Haze"])  # saved under an hour ago: not fetched again
+            saved = os.path.join(self.folder, "playable_heroes.json")
+            os.utime(saved, (time.time() - 2 * 3600,) * 2)
+            self.assertEqual(names(), ["Haze"])  # the window never waits for a download
+            self.assertEqual(in_background(), ["Haze", "Solomon"])
+            self.assertEqual(names(), ["Haze", "Solomon"])  # and has him from then on
+
+    def test_every_playable_hero_gets_a_guide(self):
+        # Baba (playable, still flagged in development) had none, and a new hero waited up to 3 days for his
+        heroes = [dict(HERO, id=1, name="Haze"), dict(HERO, id=88, name="Baba", in_development=True),
+                  dict(HERO, id=85, name="Solomon")]
+        saved = os.path.join(self.folder, "hero_guides.json")
+        with open(saved, "w", encoding="utf-8") as f:
+            json.dump({"Haze": {}}, f)
+        os.utime(saved, (time.time() - 2 * 3600,) * 2)  # built 2 hours ago, before Solomon came out
+        with patch.object(deadlock_api, "get_json", side_effect=lambda path, **_: heroes if "heroes" in path else []):
+            self.assertEqual(sorted(deadlock_api.fetch_hero_guides()), ["Baba", "Haze", "Solomon"])
 
 
 class ResponseCacheTests(unittest.TestCase):

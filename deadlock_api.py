@@ -33,11 +33,14 @@ ANALYTICS_TIMEOUT_SECONDS = 30
 # Callers must treat returned data as read-only: the same object is handed out until it expires.
 CACHE_SECONDS = 300            # most answers: reused for 5 minutes
 ASSET_CACHE_SECONDS = 86400    # hero/rank/item lists change rarely: kept on disk for a day
+HERO_LIST_MAX_AGE = 3600       # but a new hero must show up the day he's out (the API itself refreshes hourly)
 MAX_CACHED = 300               # oldest entries are dropped beyond this, to keep memory small
 DISK_CACHE_DIR = paths.data("cache", "api")
 
 _memory: "OrderedDict[str, tuple]" = OrderedDict()  # url -> (time fetched, data)
 _lock = threading.Lock()
+_hero_assets: List[Dict[str, Any]] = []  # fetch_hero_assets' memory copy
+_hero_lock = threading.Lock()
 
 
 def _download(url: str, timeout: float = TIMEOUT_SECONDS) -> Any:
@@ -131,16 +134,16 @@ def _number(prop: Any) -> Optional[float]:
     return value or None
 
 
-@functools.lru_cache(maxsize=None)
 def fetch_hero_guides() -> Dict[str, Dict[str, Any]]:
     """Per hero name: {"type", "tags", "complexity", "gun", "health", "speed", "abilities": [{"name",
     "image", "text", "cooldown", "charges"}]}, from the game's hero and item lists. Those are 2 MB and
-    6 MB; ~60 KB is kept on disk for 3 days (abilities change only with patches)."""
+    6 MB; ~60 KB is kept on disk for 3 days (abilities change only with patches), and built again
+    sooner when the hero list has a hero they don't (a new one)."""
     def build():
         abilities = {i["class_name"]: i for i in get_json("/v1/assets/items", max_age=0) if i.get("type") == "ability"}
         guides = {}
         for h in get_json("/v1/assets/heroes", max_age=0):
-            if not h["player_selectable"] or h["disabled"] or h["in_development"]:
+            if not h["player_selectable"] or h["disabled"]:  # the same heroes as fetch_hero_assets (so Baba too)
                 continue
             stats = h.get("starting_stats") or {}
             kit = []
@@ -156,12 +159,19 @@ def fetch_hero_guides() -> Dict[str, Dict[str, Any]]:
                                  "gun": h.get("gun_tag"), "health": (stats.get("max_health") or {}).get("value"),
                                  "speed": (stats.get("max_move_speed") or {}).get("value"), "abilities": kit}
         return guides
-    return disk_cached("hero_guides", build, max_age=3 * 86400)
+    guides = disk_cached("hero_guides", build, max_age=3 * 86400)
+    if any(h["name"] not in guides for h in fetch_hero_assets()):
+        guides = disk_cached("hero_guides", build, max_age=HERO_LIST_MAX_AGE)  # hourly at most
+    return guides
 
 
-@functools.lru_cache(maxsize=None)
 def fetch_hero_assets() -> List[Dict[str, Any]]:
-    """Playable heroes: {"id", "name", "icon", "card", "color"} (image URLs and the hero's colour)."""
+    """Playable heroes: {"id", "name", "icon", "card", "color"} (image URLs and the hero's colour).
+
+    Kept in memory. Background work (a scoreboard read, a page loading) uses the saved list only while it's
+    under an hour old, so a hero released while the app is open is in the next lobby, his history and his
+    stats without a restart. The window itself never waits for the 2 MB download: it uses the memory copy."""
+    global _hero_assets
     def build():
         return [
             {"id": h["id"], "name": h["name"],
@@ -172,7 +182,12 @@ def fetch_hero_assets() -> List[Dict[str, Any]]:
             # not in_development: it lags behind the game (Baba was in matches while still flagged)
             if h["player_selectable"] and not h["disabled"]
         ]
-    return disk_cached("playable_heroes", build)  # renamed so a list cached by an older version isn't used
+    on_main = threading.current_thread() is threading.main_thread()
+    if not _hero_assets or not on_main:
+        with _hero_lock:  # one download when several lookups find the list expired at once
+            # renamed so a list cached by an older version isn't used
+            _hero_assets = disk_cached("playable_heroes", build, ASSET_CACHE_SECONDS if on_main else HERO_LIST_MAX_AGE)
+    return _hero_assets
 
 
 def fetch_heroes() -> List[Dict[str, Any]]:
