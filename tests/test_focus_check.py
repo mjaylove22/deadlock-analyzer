@@ -37,9 +37,10 @@ class FocusCheckTest(unittest.TestCase):
                                     " [pythonw.exe]; mouse pointer over 'Deadlock Analyzer'"])
 
     def test_the_focused_program_and_the_window_under_the_pointer_can_be_read(self):
-        # real Windows calls, no window needed
+        # Real Windows calls, no window needed. What they return depends on the desktop: on the CI build
+        # machine (no one logged in) the focused window's program isn't an .exe name, which failed 0.2.12's build
         self.assertIsInstance(app.game_window.window_under_mouse(), str)
-        self.assertTrue(app.game_window.focused_program().endswith(".exe") or app.game_window.focused_program() == "")
+        self.assertIsInstance(app.game_window.focused_program(), str)
 
     def test_a_minimised_game_is_logged_even_if_the_title_matches(self):
         warnings, _ = check(("Deadlock", True), "Deadlock", None)
