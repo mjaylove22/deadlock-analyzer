@@ -33,7 +33,7 @@ ANALYTICS_TIMEOUT_SECONDS = 30
 # Callers must treat returned data as read-only: the same object is handed out until it expires.
 CACHE_SECONDS = 300            # most answers: reused for 5 minutes
 ASSET_CACHE_SECONDS = 86400    # hero/rank/item lists change rarely: kept on disk for a day
-HERO_LIST_MAX_AGE = 3600       # but a new hero must show up the day he's out (the API itself refreshes hourly)
+HERO_LIST_MAX_AGE = 3600       # but a new hero must show up the day it's out (the API itself refreshes hourly)
 MAX_CACHED = 300               # oldest entries are dropped beyond this, to keep memory small
 DISK_CACHE_DIR = paths.data("cache", "api")
 
@@ -169,7 +169,7 @@ def fetch_hero_assets() -> List[Dict[str, Any]]:
     """Playable heroes: {"id", "name", "icon", "card", "color"} (image URLs and the hero's colour).
 
     Kept in memory. Background work (a scoreboard read, a page loading) uses the saved list only while it's
-    under an hour old, so a hero released while the app is open is in the next lobby, his history and his
+    under an hour old, so a hero released while the app is open is in the next lobby, history and
     stats without a restart. The window itself never waits for the 2 MB download: it uses the memory copy."""
     global _hero_assets
     def build():

@@ -355,7 +355,7 @@ class AnalyzerApp:
     def hero_names_by_id(self) -> Dict[int, str]:
         names = {h["id"]: h["name"] for h in deadlock_api.fetch_heroes()}
         if self.cache.get("heroes", names) != names:
-            self.cache.clear()  # a new hero: the session's tier lists were made without him
+            self.cache.clear()  # a new hero: the session's tier lists were made without it
         self.cache["heroes"] = names
         return names
 
