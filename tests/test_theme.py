@@ -70,6 +70,22 @@ class FitToScreenTest(unittest.TestCase):
         self.assertAlmostEqual(fit_factor(1920, 1032, 1.0, "200%"), 1.032)  # 1080p: only as big as fits
         self.assertEqual(fit_factor(3840, 2112, 1.0, "auto"), 2.0)
 
+    def test_tk_text_follows_the_apps_monitor_not_the_main_one(self):
+        # A friend: main screen 1440p at 100% (tk's scaling 1.33), the app on a 4K screen at 150%, Size 200%. Multiplying
+        # tk's own value left the text at 1.3x while CustomTkinter's widgets were at 2x
+        from unittest import mock
+        from ui import theme
+        calls = []
+        root = mock.Mock()
+        root.tk.call.side_effect = lambda *args: calls.append(args) or 96 / 72
+        with mock.patch.object(theme, "monitor_at", return_value=(3840, 2100, 1.5)), \
+                mock.patch.object(theme.ctk, "set_widget_scaling"), mock.patch.object(theme.ctk, "set_window_scaling"):
+            theme.choose_text_size(root, "normal", (4000, 100), "200%")
+        self.addCleanup(lambda: [setattr(theme, k, v) for k, v in
+                                 (("text_scale", 1.0), ("fit_scale", 1.0), ("pixel_scale", 1.0), ("screen", None))])
+        self.assertAlmostEqual(calls[-1][2], 96 / 72 * 2.0)  # 2x the 1080p text size, whatever tk read at start
+        self.assertAlmostEqual(theme.pixel_scale, 2.0)  # tk images, charts and table rows too
+
     def test_the_monitor_of_any_point_can_be_read(self):
         from ui.theme import monitor_at
         width, height, dpi = monitor_at(-100000, -100000)  # no screen there: the nearest one
