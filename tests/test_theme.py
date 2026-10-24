@@ -44,20 +44,28 @@ class ThemeContrastTest(unittest.TestCase):
 
 
 class FitToScreenTest(unittest.TestCase):
-    def test_the_window_shrinks_only_when_display_scaling_makes_it_taller_than_the_screen(self):
+    def test_the_window_shrinks_exactly_to_fit_a_smaller_screen(self):
         from ui.theme import fit_factor
-        self.assertEqual(fit_factor(1032, 1.0), 1.0)  # 1080p at 100% (the author's screens): unchanged
-        self.assertAlmostEqual(fit_factor(1032, 1.5) * 1000 * 1.5, 1032)  # 1080p laptop at 150%: exactly fits
-        self.assertAlmostEqual(fit_factor(728, 1.0), 0.728)  # 1366x768 at 100%
-        self.assertEqual(fit_factor(1392, 1.25), 1.0)  # 1440p at 125%: fits as it is
+        self.assertEqual(fit_factor(1920, 1032, 1.0), 1.0)  # 1080p at 100% (the author's screens): as designed
+        self.assertAlmostEqual(fit_factor(1920, 1032, 1.5) * 1000 * 1.5, 1032)  # 1080p laptop at 150%: exactly fits
+        self.assertAlmostEqual(fit_factor(1366, 728, 1.0), 0.728)  # 1366x768 at 100%
+        self.assertAlmostEqual(fit_factor(1080, 1872, 1.0), 0.9)  # 1080p monitor turned portrait: too narrow
+        self.assertEqual(fit_factor(1920, 1152, 1.0), 1.0)  # 1920x1200
 
-    def test_the_window_grows_on_a_4k_screen_at_low_display_scaling(self):
+    def test_the_window_grows_on_bigger_screens(self):
         # A friend's 4K screen at 100%: the app filled a quarter of it, the text unreadably small
         from ui.theme import fit_factor
-        self.assertEqual(fit_factor(2112, 1.0), 2.0)  # 4K at 100%: the size it has on 1080p
-        self.assertEqual(fit_factor(2112, 1.25), 1.5)
-        self.assertEqual(fit_factor(2112, 1.5), 1.0)  # 4K at 150% (Windows' default for 4K): as it was
-        self.assertEqual(fit_factor(1392, 1.0), 1.0)  # 1440p at 100%: as it was
+        self.assertEqual(fit_factor(3840, 2112, 1.0), 2.0)  # 4K at 100%: the share of the screen it has on 1080p
+        self.assertEqual(fit_factor(3840, 2112, 1.25), 1.5)
+        self.assertEqual(fit_factor(3840, 2112, 1.5), 1.25)  # 4K at 150%: like 1440p
+        self.assertEqual(fit_factor(2560, 1392, 1.0), 1.25)  # 1440p
+        self.assertEqual(fit_factor(3440, 1392, 1.0), 1.25)  # 1440p ultrawide: the height decides
+        self.assertEqual(fit_factor(2560, 1032, 1.0), 1.0)  # 1080p ultrawide
+
+    def test_the_monitor_of_any_point_can_be_read(self):
+        from ui.theme import monitor_at
+        width, height, dpi = monitor_at(-100000, -100000)  # no screen there: the nearest one
+        self.assertTrue(width > 0 and height > 0 and dpi >= 1)
 
 
 if __name__ == "__main__":

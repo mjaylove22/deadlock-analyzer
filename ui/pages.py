@@ -2034,8 +2034,9 @@ class SettingsPage(Page):
         game = game_window.find_window()
         prefs = get_preferences()
         setup = {
-            "Screen": f"{root.winfo_screenwidth()}x{root.winfo_screenheight()}, work area {theme.work_area_height()} px tall, "
-                      f"Windows display scaling {dpi:.0%}",
+            "Screen": f"{root.winfo_screenwidth()}x{root.winfo_screenheight()}"
+                      + (f", the app's screen has a {theme.screen[0]}x{theme.screen[1]} work area" if theme.screen else "")
+                      + f", Windows display scaling {dpi:.0%}",
             "Window": f"{root.winfo_width()}x{root.winfo_height()}, text {self.running['text_size']}"
                       + (f", sized to {theme.fit_scale:.0%} for the screen" if theme.fit_scale != 1 else "")
                       + f", theme {self.running['theme']}",

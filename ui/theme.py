@@ -151,41 +151,51 @@ def is_light() -> bool:
 
 TEXT_SIZES = {"normal": 1.0, "large": 1.15}
 text_scale = 1.0  # set once at start-up by choose_text_size: the chosen size, Normal or Large
-fit_scale = 1.0   # and how much everything shrank to fit the screen (below 1 only when it didn't)
-DESIGN_HEIGHT = 1000  # the window's outer height at 100% display scaling: every page is made to fit it
+fit_scale = 1.0   # and how much everything grew or shrank to suit the screen (1: as designed, on 1080p)
+# The window's outer size at 100% display scaling: every page is made to fit it (1180x960 plus the frame)
+DESIGN_WIDTH, DESIGN_HEIGHT = 1200, 1000
+screen = None  # (work area width, height, display scaling) of the monitor the window opened on, once known
 
 
-def fit_factor(room: int, dpi: float) -> float:
-    """How much to shrink so the window fits room (the screen's work area, in pixels) when Windows display
-    scaling (dpi, 1.25 for 125%) would make it taller. Or to grow, in quarter steps, on a screen with room
-    for 1.5 windows or more: a 4K screen at 100% showed the app a quarter of the screen, its text tiny.
-    1 otherwise (1080p and 1440p screens keep the size the pages were made for)."""
-    fit = room / (DESIGN_HEIGHT * dpi)
-    if fit < 1.0:
-        return fit
-    return int(fit * 4) / 4 if fit >= 1.5 else 1.0
+def fit_factor(width: int, height: int, dpi: float) -> float:
+    """How much to scale everything for a screen whose work area (minus the taskbar) is width x height pixels at
+    Windows display scaling dpi (1.25 for 125%). The window takes the share of the screen it has on 1080p:
+    smaller screens (a 1366x768 laptop, 1080p at 150%, a portrait monitor) shrink it exactly to fit, bigger
+    ones grow it in quarter steps, so text is never a quarter of the screen (4K at 100%: 2x; 1440p: 1.25x)."""
+    fit = min(width / (DESIGN_WIDTH * dpi), height / (DESIGN_HEIGHT * dpi))
+    return fit if fit < 1.0 else int(fit * 4) / 4
 
 
-def work_area_height() -> int:
-    """The primary screen's height minus the taskbar, in pixels. ponytail: the primary screen only; a
-    second screen of another size would need MonitorFromWindow."""
-    rect = ctypes.wintypes.RECT()
-    ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(rect), 0)  # SPI_GETWORKAREA
-    return rect.bottom - rect.top
+class _MonitorInfo(ctypes.Structure):
+    _fields_ = [("cbSize", ctypes.wintypes.DWORD), ("rcMonitor", ctypes.wintypes.RECT),
+                ("rcWork", ctypes.wintypes.RECT), ("dwFlags", ctypes.wintypes.DWORD)]
 
 
-def choose_text_size(root, name: str) -> None:
+def monitor_at(x: int, y: int) -> tuple:
+    """(work area width, height, display scaling) of the monitor at screen point x, y (the nearest one if
+    none is there): the window opens where it was last closed, maybe on a second screen of another size."""
+    monitor = ctypes.windll.user32.MonitorFromPoint(ctypes.wintypes.POINT(x, y), 2)  # MONITOR_DEFAULTTONEAREST
+    info = _MonitorInfo(cbSize=ctypes.sizeof(_MonitorInfo))
+    ctypes.windll.user32.GetMonitorInfoW(monitor, ctypes.byref(info))
+    dpi_x, dpi_y = ctypes.wintypes.UINT(), ctypes.wintypes.UINT()
+    ctypes.windll.shcore.GetDpiForMonitor(monitor, 0, ctypes.byref(dpi_x), ctypes.byref(dpi_y))  # effective DPI
+    work = info.rcWork
+    return work.right - work.left, work.bottom - work.top, dpi_x.value / 96
+
+
+def choose_text_size(root, name: str, at: tuple = (0, 0)) -> None:
     """"normal" (the default) or "large": every font grows by the same factor, tk's (sized in points, so they
     follow tk scaling) and CustomTkinter's (sized in pixels, following its widget scaling). Like the theme,
     only at start-up. Pixel sizes (images, gaps, wrap widths) stay, so large text wraps a little sooner.
-    And on a screen too short for the window at its display scaling (a 1080p laptop at 150%: the window
-    was 1,179 px tall, its bottom under the taskbar), everything, window included, shrinks until it fits;
-    on a very tall one (4K at 100%) it all grows the same way."""
+    And everything, window included, is scaled for the monitor at screen point at (where the window opens):
+    see fit_factor. ponytail: once, at start-up; moved to a screen of another size, it refits next start."""
     global text_scale, fit_scale
     text_scale = TEXT_SIZES.get(name, 1.0)
+    global screen
     try:
-        fit = fit_factor(work_area_height(), ctk.ScalingTracker.get_window_dpi_scaling(root))
-    except (OSError, AttributeError, ValueError):  # not on Windows, or no answer: leave it as it is
+        screen = monitor_at(*at)
+        fit = fit_factor(*screen)
+    except (OSError, AttributeError, ValueError, ZeroDivisionError):  # not on Windows, or no answer: as it is
         fit = 1.0
     fit_scale = fit
     if text_scale * fit != 1.0:

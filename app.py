@@ -16,11 +16,13 @@ import ctypes
 import logging
 import os
 import queue
+import re
 import subprocess
 import sys
 import threading
 import time
 import tkinter as tk
+from ctypes import wintypes
 from tkinter import filedialog
 from typing import Any, Callable, Dict
 
@@ -93,16 +95,24 @@ class AnalyzerApp:
 
         settings = load_settings()
         choose_theme(settings.get("theme", "dark"))
-        choose_text_size(root, settings.get("text_size", "normal"))
+        # Where the window was last closed (maybe a second screen), unless that screen is gone (a laptop off
+        # its dock): everything is sized for the monitor it opens on
+        saved = re.fullmatch(r"(\d+)x(\d+)\+(-?\d+)\+(-?\d+)", settings.get("geometry", ""))
+        at = (int(saved[3]) + 50, int(saved[4]) + 50) if saved else (0, 0)
+        if saved and not ctypes.windll.user32.MonitorFromPoint(wintypes.POINT(*at), 0):  # MONITOR_DEFAULTTONULL
+            saved, at = None, (0, 0)
+        choose_text_size(root, settings.get("text_size", "normal"), at)
         self.overlay =tk.BooleanVar(value=settings.get("overlay", False))
         self.auto_detect = tk.BooleanVar(value=settings.get("auto_detect", True))
         self.watching = self.auto_detect.get()  # plain copy for the watcher thread (tk variables are main-thread only)
 
         root.title("Deadlock Analyzer")
-        geometry = settings.get("geometry", "1180x960")  # a full 6v6 lobby needs ~950 px
-        width, height = (int(n) for n in geometry.split("+")[0].split("x"))
-        if width * theme.fit_scale > root.winfo_screenwidth() or height * theme.fit_scale > root.winfo_screenheight():
-            geometry = "1180x960"  # saved maximised before the app grew for a 4K screen: twice the screen now
+        geometry = saved[0] if saved else "1180x960"  # a full 6v6 lobby needs ~950 px
+        if saved and theme.screen:
+            room_width, room_height, dpi = theme.screen
+            scale = dpi * theme.fit_scale  # how CustomTkinter turns the saved size into pixels
+            if int(saved[1]) * scale > room_width or int(saved[2]) * scale > room_height:
+                geometry = f"1180x960+{saved[3]}+{saved[4]}"  # saved maximised, or on a bigger screen: too big now
         root.geometry(geometry)
         root.minsize(1100, 760)
         if isinstance(root, ctk.CTk):
