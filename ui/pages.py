@@ -2037,7 +2037,7 @@ class SettingsPage(Page):
             "Screen": f"{root.winfo_screenwidth()}x{root.winfo_screenheight()}, work area {theme.work_area_height()} px tall, "
                       f"Windows display scaling {dpi:.0%}",
             "Window": f"{root.winfo_width()}x{root.winfo_height()}, text {self.running['text_size']}"
-                      + (f", shrunk to {theme.fit_scale:.0%} to fit the screen" if theme.fit_scale < 1 else "")
+                      + (f", sized to {theme.fit_scale:.0%} for the screen" if theme.fit_scale != 1 else "")
                       + f", theme {self.running['theme']}",
             "Deadlock": f"running, window {game[2] - game[0]}x{game[3] - game[1]}" if game else "not running",
             "Account set": "yes" if get_me() else "no",

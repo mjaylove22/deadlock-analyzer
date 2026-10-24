@@ -157,8 +157,13 @@ DESIGN_HEIGHT = 1000  # the window's outer height at 100% display scaling: every
 
 def fit_factor(room: int, dpi: float) -> float:
     """How much to shrink so the window fits room (the screen's work area, in pixels) when Windows display
-    scaling (dpi, 1.25 for 125%) would make it taller: 1 when it fits as it is."""
-    return min(1.0, room / (DESIGN_HEIGHT * dpi))
+    scaling (dpi, 1.25 for 125%) would make it taller. Or to grow, in quarter steps, on a screen with room
+    for 1.5 windows or more: a 4K screen at 100% showed the app a quarter of the screen, its text tiny.
+    1 otherwise (1080p and 1440p screens keep the size the pages were made for)."""
+    fit = room / (DESIGN_HEIGHT * dpi)
+    if fit < 1.0:
+        return fit
+    return int(fit * 4) / 4 if fit >= 1.5 else 1.0
 
 
 def work_area_height() -> int:
@@ -174,7 +179,8 @@ def choose_text_size(root, name: str) -> None:
     follow tk scaling) and CustomTkinter's (sized in pixels, following its widget scaling). Like the theme,
     only at start-up. Pixel sizes (images, gaps, wrap widths) stay, so large text wraps a little sooner.
     And on a screen too short for the window at its display scaling (a 1080p laptop at 150%: the window
-    was 1,179 px tall, its bottom under the taskbar), everything, window included, shrinks until it fits."""
+    was 1,179 px tall, its bottom under the taskbar), everything, window included, shrinks until it fits;
+    on a very tall one (4K at 100%) it all grows the same way."""
     global text_scale, fit_scale
     text_scale = TEXT_SIZES.get(name, 1.0)
     try:
@@ -185,7 +191,7 @@ def choose_text_size(root, name: str) -> None:
     if text_scale * fit != 1.0:
         root.tk.call("tk", "scaling", float(root.tk.call("tk", "scaling")) * text_scale * fit)
         ctk.set_widget_scaling(text_scale * fit)
-    if fit < 1.0:
+    if fit != 1.0:
         ctk.set_window_scaling(fit)
 
 
@@ -194,7 +200,7 @@ def setup_styles(root) -> None:
     style = ttk.Style(root)
     style.theme_use("clam")  # the default Windows theme ignores most colour settings
     style.configure("Treeview", background=COLORS["card"], fieldbackground=COLORS["card"],
-                    foreground=COLORS["text"], rowheight=34, borderwidth=0, font=(FONT, 10),  # roomy enough for Large text
+                    foreground=COLORS["text"], rowheight=round(34 * fit_scale), borderwidth=0, font=(FONT, 10),  # roomy enough for Large text
                     bordercolor=COLORS["card"], lightcolor=COLORS["card"], darkcolor=COLORS["card"])  # no light outline
     style.map("Treeview", background=[("selected", COLORS["selected"])], foreground=[("selected", COLORS["text"])])
     style.configure("Treeview.Heading", background=COLORS["surface"], foreground=COLORS["dim"], relief="flat",

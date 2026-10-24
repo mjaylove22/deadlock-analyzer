@@ -99,7 +99,11 @@ class AnalyzerApp:
         self.watching = self.auto_detect.get()  # plain copy for the watcher thread (tk variables are main-thread only)
 
         root.title("Deadlock Analyzer")
-        root.geometry(settings.get("geometry", "1180x960"))  # a full 6v6 lobby needs ~950 px
+        geometry = settings.get("geometry", "1180x960")  # a full 6v6 lobby needs ~950 px
+        width, height = (int(n) for n in geometry.split("+")[0].split("x"))
+        if width * theme.fit_scale > root.winfo_screenwidth() or height * theme.fit_scale > root.winfo_screenheight():
+            geometry = "1180x960"  # saved maximised before the app grew for a 4K screen: twice the screen now
+        root.geometry(geometry)
         root.minsize(1100, 760)
         if isinstance(root, ctk.CTk):
             root.configure(fg_color=COLORS["bg"])

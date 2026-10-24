@@ -51,6 +51,14 @@ class FitToScreenTest(unittest.TestCase):
         self.assertAlmostEqual(fit_factor(728, 1.0), 0.728)  # 1366x768 at 100%
         self.assertEqual(fit_factor(1392, 1.25), 1.0)  # 1440p at 125%: fits as it is
 
+    def test_the_window_grows_on_a_4k_screen_at_low_display_scaling(self):
+        # A friend's 4K screen at 100%: the app filled a quarter of it, the text unreadably small
+        from ui.theme import fit_factor
+        self.assertEqual(fit_factor(2112, 1.0), 2.0)  # 4K at 100%: the size it has on 1080p
+        self.assertEqual(fit_factor(2112, 1.25), 1.5)
+        self.assertEqual(fit_factor(2112, 1.5), 1.0)  # 4K at 150% (Windows' default for 4K): as it was
+        self.assertEqual(fit_factor(1392, 1.0), 1.0)  # 1440p at 100%: as it was
+
 
 if __name__ == "__main__":
     unittest.main()
