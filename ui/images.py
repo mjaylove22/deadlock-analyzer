@@ -20,8 +20,9 @@ _hero_art: Dict[str, Dict[str, str]] = {}
 
 def _px(size: int) -> int:
     """A tk image's size for this screen: CustomTkinter's images follow its scaling, tk's are plain pixels, so
-    they grow and shrink here with everything else (theme.fit_scale: 2 on 4K at 100%, 0.73 on a 1366x768 laptop)."""
-    return max(1, round(size * theme.fit_scale))
+    they grow and shrink here with everything else (theme.pixel_scale: 2 on 4K at 100%, 0.73 on a 1366x768 laptop,
+    and the display scaling too: 1.5 on a 150% screen)."""
+    return max(1, round(size * theme.pixel_scale))
 
 
 def set_hero_art(art: Dict[str, Dict[str, str]]) -> None:

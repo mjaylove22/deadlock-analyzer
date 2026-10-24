@@ -159,7 +159,7 @@ class AnalyzerApp:
     # ---- top bar and navigation ------------------------------------------------------------
 
     def _build_top_bar(self):
-        gap = lambda n: round(n * theme.fit_scale)  # noqa: E731 - tk spacing is plain pixels: it follows the screen
+        gap = lambda n: round(n * theme.pixel_scale)  # noqa: E731 - tk spacing is plain pixels: it follows the screen
         bar = tk.Frame(self.root, bg=COLORS["surface"], padx=gap(12), pady=gap(10))
         bar.pack(fill="x")
         tk.Frame(self.root, bg=COLORS["card_border"], height=1).pack(fill="x")  # hairline under the bar

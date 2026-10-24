@@ -152,6 +152,7 @@ def is_light() -> bool:
 TEXT_SIZES = {"normal": 1.0, "large": 1.15}
 text_scale = 1.0  # set once at start-up by choose_text_size: the chosen size, Normal or Large
 fit_scale = 1.0   # and how much everything grew or shrank to suit the screen (1: as designed, on 1080p)
+pixel_scale = 1.0  # fit_scale times the app's monitor's display scaling: for anything drawn in plain pixels
 # The window's outer size at 100% display scaling: every page is made to fit it (1180x960 plus the frame)
 DESIGN_WIDTH, DESIGN_HEIGHT = 1200, 1000
 screen = None  # (work area width, height, display scaling) of the monitor the window opened on, once known
@@ -196,17 +197,22 @@ def choose_text_size(root, name: str, at: tuple = (0, 0), size: str = "auto") ->
     only at start-up. Pixel sizes (images, gaps, wrap widths) stay, so large text wraps a little sooner.
     And everything, window included, is scaled for the monitor at screen point at (where the window opens):
     see fit_factor. ponytail: once, at start-up; moved to a screen of another size, it refits next start."""
-    global text_scale, fit_scale
+    global text_scale, fit_scale, pixel_scale, screen
     text_scale = TEXT_SIZES.get(name, 1.0)
-    global screen
     try:
         screen = monitor_at(*at)
         fit = fit_factor(*screen, size)
     except (OSError, AttributeError, ValueError, ZeroDivisionError):  # not on Windows, or no answer: as it is
         fit = 1.0
     fit_scale = fit
-    if text_scale * fit != 1.0:
+    if screen:
+        # Set, not multiplied: tk reads the display scaling once, from the MAIN monitor. A friend's app on a second
+        # screen (4K at 150%, main 1440p at 100%) had CustomTkinter's widgets at 2x and all tk text at about 1.3x
+        pixel_scale = fit * screen[2]
+        root.tk.call("tk", "scaling", 96 / 72 * screen[2] * text_scale * fit)
+    elif text_scale * fit != 1.0:
         root.tk.call("tk", "scaling", float(root.tk.call("tk", "scaling")) * text_scale * fit)
+    if text_scale * fit != 1.0:
         ctk.set_widget_scaling(text_scale * fit)
     if fit != 1.0:
         ctk.set_window_scaling(fit)
@@ -217,7 +223,7 @@ def setup_styles(root) -> None:
     style = ttk.Style(root)
     style.theme_use("clam")  # the default Windows theme ignores most colour settings
     style.configure("Treeview", background=COLORS["card"], fieldbackground=COLORS["card"],
-                    foreground=COLORS["text"], rowheight=round(34 * fit_scale), borderwidth=0, font=(FONT, 10),  # roomy enough for Large text
+                    foreground=COLORS["text"], rowheight=round(34 * pixel_scale), borderwidth=0, font=(FONT, 10),  # roomy enough for Large text
                     bordercolor=COLORS["card"], lightcolor=COLORS["card"], darkcolor=COLORS["card"])  # no light outline
     style.map("Treeview", background=[("selected", COLORS["selected"])], foreground=[("selected", COLORS["text"])])
     style.configure("Treeview.Heading", background=COLORS["surface"], foreground=COLORS["dim"], relief="flat",
