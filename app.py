@@ -70,6 +70,7 @@ WATCH_INTERVAL_S = 1.0   # how often auto-detect checks for the scoreboard (one 
 SETTLE_S = 0.5           # after the scoreboard appears, wait for the menu animation before capturing
 END_CHECK_INTERVAL_S = 2.0  # how often the end-of-match screen is looked for (one check ~8 ms)
 LOBBY_MATCH_ID_MAX_AGE_S = 90 * 60  # a lobby's match ID stands in for an unreadable end screen this long
+UPDATE_CHECK_S = 3600      # how often a newer release is looked for while the app is open
 MATCHUP_AFTER_MS = 30_000  # a new lobby turns into the full matchup after this long, unless the user moved on
 NAV_TABS = [("lobby", "Lobby"), ("heroes", "Heroes"), ("items", "Items"), ("patches", "Patches"), ("mystats", "My Stats"), ("coach", "Coach"), ("settings", "Settings")]
 ICON_PATH = paths.resource("assets", "icon.ico")
@@ -127,8 +128,13 @@ class AnalyzerApp:
         except tk.TclError:
             pass
         self._build_top_bar()
-        self.status = label(root, color="dim", bg="surface", anchor="w", padx=14, pady=5)
-        self.status.pack(side="bottom", fill="x")
+        bottom = tk.Frame(root, bg=COLORS["surface"])
+        bottom.pack(side="bottom", fill="x")
+        self.status = label(bottom, color="dim", bg="surface", anchor="w", padx=14, pady=5)
+        self.status.pack(side="left", fill="x", expand=True)
+        # A new version, on every page: the notice on Home alone went unseen (the app jumps to the Lobby in game)
+        self.update_link = label(bottom, color="accent", bg="surface", padx=14, pady=5, cursor="hand2")
+        self.update_link.bind("<Button-1>", lambda event: self.navigate(HomePage))
         self.container = tk.Frame(root, bg=COLORS["bg"])
         self.container.pack(fill="both", expand=True, padx=16, pady=10)
 
@@ -153,7 +159,8 @@ class AnalyzerApp:
     # ---- top bar and navigation ------------------------------------------------------------
 
     def _build_top_bar(self):
-        bar = tk.Frame(self.root, bg=COLORS["surface"], padx=12, pady=10)
+        gap = lambda n: round(n * theme.fit_scale)  # noqa: E731 - tk spacing is plain pixels: it follows the screen
+        bar = tk.Frame(self.root, bg=COLORS["surface"], padx=gap(12), pady=gap(10))
         bar.pack(fill="x")
         tk.Frame(self.root, bg=COLORS["card_border"], height=1).pack(fill="x")  # hairline under the bar
         self.back_button = ctk.CTkButton(bar, text="\u2190", command=self.back, width=34, height=32, corner_radius=8,
@@ -164,7 +171,7 @@ class AnalyzerApp:
         # sizes are divided here and multiplied back by the Large scaling
         bar_size = lambda points: round(points / theme.text_scale)  # noqa: E731
         title = tk.Frame(bar, bg=COLORS["surface"], cursor="hand2")
-        title.pack(side="left", padx=(12, 6))
+        title.pack(side="left", padx=(gap(12), gap(6)))
         label(title, "DEADLOCK", size=bar_size(14), heading=True, bg="surface", cursor="hand2").pack(side="left")
         label(title, " ANALYZER", size=bar_size(14), heading=True, color="accent", bg="surface", cursor="hand2").pack(side="left")
         for widget in (title, *title.winfo_children()):
@@ -173,22 +180,22 @@ class AnalyzerApp:
         self.tabs = {}
         for key, text in NAV_TABS:
             holder = tk.Frame(bar, bg=COLORS["surface"])
-            holder.pack(side="left", padx=(14 if key == "lobby" else 2, 0))
-            tab = label(holder, text, size=bar_size(11), color="dim", bg="surface", cursor="hand2", padx=10, pady=4)
+            holder.pack(side="left", padx=(gap(14 if key == "lobby" else 2), 0))
+            tab = label(holder, text, size=bar_size(11), color="dim", bg="surface", cursor="hand2", padx=gap(10), pady=gap(4))
             tab.pack()
             underline = tk.Frame(holder, bg=COLORS["surface"], height=2)
-            underline.pack(fill="x", padx=8)
+            underline.pack(fill="x", padx=gap(8))
             tab.bind("<Button-1>", lambda event, k=key: self.open_tab(k))
             self.tabs[key] = (tab, underline)
 
         for text, variable, command in (("Overlay", self.overlay, self.toggle_overlay),
                                         ("Auto-detect", self.auto_detect, self.apply_auto_detect)):
-            switch(bar, text, variable, command).pack(side="right", padx=(10, 0))
+            switch(bar, text, variable, command).pack(side="right", padx=(gap(10), 0))
         self.search_box = ctk.CTkEntry(bar, width=240, height=32, corner_radius=8, border_width=1,
                                        placeholder_text="Player name or match ID", font=(FONT, 11),
                                        fg_color=COLORS["button"], border_color=COLORS["card_border"],
                                        text_color=COLORS["text"], placeholder_text_color=COLORS["faint"])
-        self.search_box.pack(side="right", padx=(0, 10))
+        self.search_box.pack(side="right", padx=(0, gap(10)))
         self.search_box.bind("<Return>", lambda event: self.search(self.search_box.get()))
 
     def navigate(self, page_class, push: bool = True, **options):
@@ -326,19 +333,24 @@ class AnalyzerApp:
         self.events.put(ready)
 
     def _check_for_update(self):
-        """Background: is there a newer release on GitHub? Its answer is kept on disk for 6 hours, so
-        this is one small request now and then (GitHub allows 60 an hour without an account)."""
-        try:
-            release = deadlock_api.disk_cached("latest_release_v2", updater.latest_release, max_age=6 * 3600)
-        except Exception as e:  # offline, or no release yet (404): nothing to say
-            logger.info(f"Couldn't check for updates ({e})")
-            return
-        if is_newer(release["tag"]):
-            logger.info(f"Update available: {release['tag']}")
-            self.events.put(lambda: self.show_update(release))
+        """Background, at start-up and every hour while the app is open: is there a newer release on GitHub?
+        One small request an hour (GitHub allows 60 without an account). It used to keep its answer for 6
+        hours and only look at start-up, so a friend saw no update for hours after one came out."""
+        while True:
+            try:
+                release = deadlock_api.disk_cached("latest_release_v2", updater.latest_release, max_age=UPDATE_CHECK_S)
+            except Exception as e:  # offline, or no release yet (404): say no more
+                logger.info(f"Couldn't check for updates ({e})")
+            else:
+                if is_newer(release["tag"]) and release["tag"] != self.update_tag:
+                    logger.info(f"Update available: {release['tag']}")
+                    self.events.put(lambda release=release: self.show_update(release))
+            time.sleep(UPDATE_CHECK_S)
 
     def show_update(self, release: Dict[str, Any]):
         self.update_tag, self.update_release = release["tag"], release
+        self.update_link.config(text=f"Version {release['tag'].lstrip('v')} is out: update  ›")
+        self.update_link.pack(side="right")
         if isinstance(self.page, HomePage):
             self.navigate(HomePage, push=False)
 

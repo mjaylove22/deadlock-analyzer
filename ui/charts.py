@@ -10,7 +10,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from PIL import Image, ImageChops, ImageDraw, ImageTk
 
-from ui import images
+from ui import images, theme
 from ui.theme import COLORS, FONT, card
 from ui.widgets import hide_tooltip, show_tooltip
 
@@ -352,6 +352,7 @@ def death_map(parent, image, radius: float, deaths: List[Dict[str, Any]], size: 
     """The minimap recoloured for the app's theme (its grey streets on a card, buildings left out), with a
     dot per death: red when no teammate was near, amber when one was. deaths: dicts with world "x", "y" and
     "alone". With on_click, hovering a dot shows tip(death) and clicking it calls on_click(death)."""
+    size = round(size * theme.fit_scale)  # a canvas is plain pixels: it grows and shrinks with the screen here
     shade, alpha = image.convert("LA").split()
     streets = ImageChops.multiply(shade.point(lambda v: 255 if v < 150 else 0), alpha)  # dark and not transparent
     picture = Image.new("RGB", image.size, COLORS[bg])
@@ -396,6 +397,7 @@ def form_chart(parent, series: List[Dict[str, Any]], recent: int, on_open: Calla
     """Souls per minute in the matches Your form compares, oldest left: a dot per match (green win, red loss),
     the average of the older and the newer `recent` as two lines (what the text compares) and a divider
     between them. Hovering a dot shows its match; clicking opens it."""
+    width, height = round(width * theme.fit_scale), round(height * theme.fit_scale)  # plain pixels: follow the screen
     canvas = tk.Canvas(parent, width=width, height=height, bg=COLORS[bg], highlightthickness=0, cursor="hand2")
     values = [s["souls_per_min"] for s in series]
     low, high, pad = min(values), max(values), 5

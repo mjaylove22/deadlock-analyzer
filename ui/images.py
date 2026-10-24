@@ -11,10 +11,17 @@ import customtkinter as ctk
 from PIL import Image, ImageDraw, ImageTk
 
 import assets
+from ui import theme
 from ui.theme import ITEM_SLOT_COLORS, is_light
 
 _cache: Dict[Tuple, object] = {}
 _hero_art: Dict[str, Dict[str, str]] = {}
+
+
+def _px(size: int) -> int:
+    """A tk image's size for this screen: CustomTkinter's images follow its scaling, tk's are plain pixels, so
+    they grow and shrink here with everything else (theme.fit_scale: 2 on 4K at 100%, 0.73 on a 1366x768 laptop)."""
+    return max(1, round(size * theme.fit_scale))
 
 
 def set_hero_art(art: Dict[str, Dict[str, str]]) -> None:
@@ -74,6 +81,7 @@ def hero_badge_pil(hero: str, size: int) -> Optional[Image.Image]:
 
 def hero_badge(hero: str, size: int, kind: str = "tk"):
     """kind "tk" -> ImageTk.PhotoImage (tk labels, tables); "ctk" -> CTkImage (CustomTkinter widgets)."""
+    size = _px(size) if kind == "tk" else size
     key = ("hero", hero, size, kind)
     if key not in _cache:
         pil = hero_badge_pil(hero, size)
@@ -85,6 +93,7 @@ def hero_badge(hero: str, size: int, kind: str = "tk"):
 
 def hero_card(hero: str, height: int):
     """The hero's portrait card (if downloaded), scaled to a height, as a PhotoImage."""
+    height = _px(height)
     key = ("card", hero, height)
     if key not in _cache:
         card = assets.get(_hero_art.get(hero, {}).get("card"))
@@ -124,6 +133,7 @@ def item_icon_pil(item: Dict, size: int) -> Image.Image:
 
 def item_icon(item: Dict, size: int, kind: str = "tk"):
     """kind "tk" -> ImageTk.PhotoImage (tk labels); "ctk" -> CTkImage (CustomTkinter widgets)."""
+    size = _px(size) if kind == "tk" else size
     key = ("item", item.get("image"), item.get("slot"), size, kind, assets.get(item.get("image")) is not None)
     if key not in _cache:
         pil = item_icon_pil(item, size)
@@ -133,6 +143,7 @@ def item_icon(item: Dict, size: int, kind: str = "tk"):
 
 def ability_icon(url: Optional[str], size: int, color: str):
     """An ability's icon on a rounded tile in a dark shade of the hero's colour, as a PhotoImage."""
+    size = _px(size)
     key = ("ability", url, size, color, assets.get(url) is not None)
     if key not in _cache:
         big = size * 4
@@ -152,6 +163,7 @@ def ability_icon(url: Optional[str], size: int, color: str):
 
 def avatar(data: Optional[bytes], size: int, ring: Optional[str] = None, placeholder: str = "#2a303c"):
     """A circular Steam avatar with an optional coloured ring, as a PhotoImage."""
+    size = _px(size)
     key = ("avatar", hash(data) if data else None, size, ring)
     if key not in _cache:
         canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))

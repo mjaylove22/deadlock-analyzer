@@ -52,5 +52,29 @@ class UpdaterTests(unittest.TestCase):
         self.assertEqual(updater.release_info(data), RELEASE)
 
 
+class UpdateCheckTests(unittest.TestCase):
+    def test_a_release_out_while_the_app_is_open_is_found_within_the_hour(self):
+        # A friend never saw Update now: the app looked once at start-up and kept that answer for 6 hours
+        import app
+        from types import SimpleNamespace
+        queued = []
+        fake = SimpleNamespace(update_tag=None, events=SimpleNamespace(put=queued.append))
+        answers = iter([{"tag": "v0.0.1"}, {"tag": "v9.9.9"}, {"tag": "v9.9.9"}])
+        sleeps = []
+
+        def sleep(seconds):
+            sleeps.append(seconds)
+            if len(sleeps) == 3:
+                raise StopIteration  # end the endless loop after three checks
+            fake.update_tag = "v9.9.9" if queued else None  # as show_update does on the main thread
+
+        with patch.object(app.deadlock_api, "disk_cached", side_effect=lambda *a, **k: next(answers)), \
+                patch.object(app.time, "sleep", side_effect=sleep):
+            with self.assertRaises(StopIteration):
+                app.AnalyzerApp._check_for_update(fake)
+        self.assertEqual(sleeps, [3600] * 3)
+        self.assertEqual(len(queued), 1)  # shown once, at the second hourly check, not again at the third
+
+
 if __name__ == "__main__":
     unittest.main()
