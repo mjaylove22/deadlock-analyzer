@@ -62,6 +62,14 @@ class FitToScreenTest(unittest.TestCase):
         self.assertEqual(fit_factor(3440, 1392, 1.0), 1.25)  # 1440p ultrawide: the height decides
         self.assertEqual(fit_factor(2560, 1032, 1.0), 1.0)  # 1080p ultrawide
 
+    def test_a_chosen_size_wins_but_never_past_the_screen(self):
+        # Auto left a friend's 4K screen hard to read: Settings -> Size picks it by hand
+        from ui.theme import fit_factor
+        self.assertEqual(fit_factor(3840, 2112, 1.5, "200%") * 1.5, 2.0)  # 4K at 150%: twice the 1080p size
+        self.assertEqual(fit_factor(3840, 2112, 1.0, "150%"), 1.5)
+        self.assertAlmostEqual(fit_factor(1920, 1032, 1.0, "200%"), 1.032)  # 1080p: only as big as fits
+        self.assertEqual(fit_factor(3840, 2112, 1.0, "auto"), 2.0)
+
     def test_the_monitor_of_any_point_can_be_read(self):
         from ui.theme import monitor_at
         width, height, dpi = monitor_at(-100000, -100000)  # no screen there: the nearest one

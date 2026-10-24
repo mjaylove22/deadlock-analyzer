@@ -157,12 +157,19 @@ DESIGN_WIDTH, DESIGN_HEIGHT = 1200, 1000
 screen = None  # (work area width, height, display scaling) of the monitor the window opened on, once known
 
 
-def fit_factor(width: int, height: int, dpi: float) -> float:
+APP_SIZES = ["Auto", "100%", "125%", "150%", "175%", "200%"]  # Settings -> Size: Auto, or chosen by the user
+
+
+def fit_factor(width: int, height: int, dpi: float, size: str = "auto") -> float:
     """How much to scale everything for a screen whose work area (minus the taskbar) is width x height pixels at
     Windows display scaling dpi (1.25 for 125%). The window takes the share of the screen it has on 1080p:
     smaller screens (a 1366x768 laptop, 1080p at 150%, a portrait monitor) shrink it exactly to fit, bigger
-    ones grow it in quarter steps, so text is never a quarter of the screen (4K at 100%: 2x; 1440p: 1.25x)."""
+    ones grow it in quarter steps, so text is never a quarter of the screen (4K at 100%: 2x; 1440p: 1.25x).
+    size, from Settings: "auto", or the app's size against its 1080p size ("150%") whatever the display scaling,
+    for when Auto isn't what someone wants (a friend's 4K screen still read small); never past the screen."""
     fit = min(width / (DESIGN_WIDTH * dpi), height / (DESIGN_HEIGHT * dpi))
+    if size and size.endswith("%"):
+        return min(int(size[:-1]) / 100 / dpi, fit)
     return fit if fit < 1.0 else int(fit * 4) / 4
 
 
@@ -183,7 +190,7 @@ def monitor_at(x: int, y: int) -> tuple:
     return work.right - work.left, work.bottom - work.top, dpi_x.value / 96
 
 
-def choose_text_size(root, name: str, at: tuple = (0, 0)) -> None:
+def choose_text_size(root, name: str, at: tuple = (0, 0), size: str = "auto") -> None:
     """"normal" (the default) or "large": every font grows by the same factor, tk's (sized in points, so they
     follow tk scaling) and CustomTkinter's (sized in pixels, following its widget scaling). Like the theme,
     only at start-up. Pixel sizes (images, gaps, wrap widths) stay, so large text wraps a little sooner.
@@ -194,7 +201,7 @@ def choose_text_size(root, name: str, at: tuple = (0, 0)) -> None:
     global screen
     try:
         screen = monitor_at(*at)
-        fit = fit_factor(*screen)
+        fit = fit_factor(*screen, size)
     except (OSError, AttributeError, ValueError, ZeroDivisionError):  # not on Windows, or no answer: as it is
         fit = 1.0
     fit_scale = fit

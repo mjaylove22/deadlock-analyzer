@@ -102,7 +102,7 @@ class AnalyzerApp:
         at = (int(saved[3]) + 50, int(saved[4]) + 50) if saved else (0, 0)
         if saved and not ctypes.windll.user32.MonitorFromPoint(wintypes.POINT(*at), 0):  # MONITOR_DEFAULTTONULL
             saved, at = None, (0, 0)
-        choose_text_size(root, settings.get("text_size", "normal"), at)
+        choose_text_size(root, settings.get("text_size", "normal"), at, settings.get("app_size", "auto"))
         self.overlay =tk.BooleanVar(value=settings.get("overlay", False))
         self.auto_detect = tk.BooleanVar(value=settings.get("auto_detect", True))
         self.watching = self.auto_detect.get()  # plain copy for the watcher thread (tk variables are main-thread only)

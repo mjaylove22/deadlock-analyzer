@@ -1984,8 +1984,16 @@ class SettingsPage(Page):
     def build(self):
         top = self.heading("Settings", "saved on this PC · changes apply right away")
         # Theme and text size apply at start-up (every widget reads them when it's made): one shared note says so
-        self.running = {"theme": "Light" if is_light() else "Dark", "text_size": "Large" if theme.text_scale != 1 else "Normal"}
+        self.running = {"theme": "Light" if is_light() else "Dark", "text_size": "Large" if theme.text_scale != 1 else "Normal",
+                        "app_size": load_settings().get("app_size", "auto").title()}
         self.chosen = dict(self.running)
+        size = dropdown(top, theme.APP_SIZES, self.running["app_size"], lambda v: self.choose_look("app_size", v))
+        size.configure(width=round(95 * theme.text_scale))
+        size.pack(side="right")
+        label(top, "Size", color="dim").pack(side="right", padx=(16, 8))
+        tooltip(size, "How big the whole app is. Auto suits it to your screen (now "
+                      f"{round(theme.fit_scale * (theme.screen[2] if theme.screen else 1) * 100)}% of its size on a 1080p screen); "
+                      "pick a size to make it bigger or smaller. It never gets bigger than your screen.")
         segmented(top, ["Normal", "Large"], self.running["text_size"], lambda v: self.choose_look("text_size", v)).pack(side="right")
         label(top, "Text", color="dim").pack(side="right", padx=(16, 8))
         segmented(top, ["Dark", "Light"], self.running["theme"], lambda v: self.choose_look("theme", v)).pack(side="right")
@@ -2037,7 +2045,7 @@ class SettingsPage(Page):
             "Screen": f"{root.winfo_screenwidth()}x{root.winfo_screenheight()}"
                       + (f", the app's screen has a {theme.screen[0]}x{theme.screen[1]} work area" if theme.screen else "")
                       + f", Windows display scaling {dpi:.0%}",
-            "Window": f"{root.winfo_width()}x{root.winfo_height()}, text {self.running['text_size']}"
+            "Window": f"{root.winfo_width()}x{root.winfo_height()}, size {self.running['app_size']}, text {self.running['text_size']}"
                       + (f", sized to {theme.fit_scale:.0%} for the screen" if theme.fit_scale != 1 else "")
                       + f", theme {self.running['theme']}",
             "Deadlock": f"running, window {game[2] - game[0]}x{game[3] - game[1]}" if game else "not running",
