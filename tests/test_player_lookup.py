@@ -269,6 +269,20 @@ class LookupLobbyTests(unittest.TestCase):
 
 
 
+class RefreshMyNameTests(unittest.TestCase):
+    def run_refresh(self, saved_name, steam_name):
+        with patch.object(player_lookup, "get_me", return_value={"name": saved_name, "account_id": 7}), \
+                patch.object(player_lookup.deadlock_api, "get_profiles", return_value=[profile(7, steam_name)]), \
+                patch.object(player_lookup, "set_me") as set_me:
+            player_lookup.refresh_my_name()
+        return set_me
+
+    def test_a_renamed_account_is_saved_under_its_new_name(self):
+        # The author renamed on Steam: their own row (YOU, the matchup) was then found nowhere
+        self.run_refresh("Grey Mirage", "moondog").assert_called_once_with("moondog", 7)
+        self.run_refresh("moondog", "moondog").assert_not_called()
+
+
 class SearchPlayerTests(unittest.TestCase):
     def setUp(self):
         guard = patch.object(player_lookup.deadlock_api, "get_json",

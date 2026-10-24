@@ -35,7 +35,7 @@ import paths
 import updater
 from version import __version__, is_newer
 from matchups import build_matchup
-from player_lookup import analyze_records, read_lobby
+from player_lookup import analyze_records, read_lobby, refresh_my_name
 from scoreboard_ocr import TESSERACT_INSTALL, find_tesseract, read_match_id_file
 import end_screen
 from match_review import MatchUnavailable, get_summary
@@ -130,6 +130,7 @@ class AnalyzerApp:
         delete_old_screenshots()
         threading.Thread(target=self._watch, daemon=True).start()
         threading.Thread(target=self._preload_images, daemon=True).start()
+        threading.Thread(target=refresh_my_name, daemon=True).start()
         if paths.INSTALLED:  # from source, updating is a git pull, not an installer
             threading.Thread(target=self._check_for_update, daemon=True).start()
 

@@ -19,7 +19,7 @@ from identity import find_parties, resolve_lobby
 from insights import compute_badges, hero_summary
 from matchups import build_matchup
 from report import build_report, items_text, matchup_text
-from settings import get_me
+from settings import get_me, set_me
 from scoreboard_ocr import FALLBACK_HERO_NAMES, looks_like_misread, read_scoreboard, squash
 from screenshot_manager import get_screenshot_path
 from utils.logger import setup_logger
@@ -396,6 +396,23 @@ def search_player(name: str, hero_names_by_id: Dict[int, str], progress: Progres
                                     "recent": c.get("matches_played_last_30d")}))
     apply_ranks(results, ranks)
     return results
+
+
+def refresh_my_name() -> None:
+    """Background, at start-up: save the user's current Steam name if they renamed since setting their account.
+    Their own row is found by that name (YOU and the matchup in a lobby, their row on the end screen); after a
+    rename it was found nowhere."""
+    me = get_me()
+    if not me:
+        return
+    try:
+        profiles = deadlock_api.get_profiles([me["account_id"]])
+    except Exception as e:
+        logger.info(f"Couldn't check your Steam name ({e})")
+        return
+    if profiles and profiles[0]["personaname"] != me["name"]:
+        logger.info("Your Steam name changed since you set your account: saved the new one")
+        set_me(profiles[0]["personaname"], me["account_id"])
 
 
 def my_candidate(me: Dict[str, Any]) -> List[Dict[str, Any]]:

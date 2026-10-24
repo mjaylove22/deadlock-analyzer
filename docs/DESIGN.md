@@ -466,6 +466,10 @@ From the author's next list (export/share was dropped: Win+Shift+S already captu
 - **The rule:** when no account has the exact name, a name ending in dots whose visible part is at least 16 characters (only long names reach the end of the row) goes to the first search result that starts with it. The card shows the full Steam name, flagged like an OCR misread: unsure until friends or the live match confirm it. On that lobby: 12 of 12 found, from 11.
 - **One pill, not two:** a corrected name carried NAME FIXED and ID UNSURE, and ID UNSURE's hover text (several accounts share the name) didn't fit it. NAME FIXED now says both, in warning colour until something confirms it. With both pills, that lobby's long name (3 lines at Large text) made the window 2 px too tall; now 935 of 960 at Large, and the 6v6 check lobby stays at 838 in both themes.
 
+### 4.59 A renamed account is still you
+- **Found by the identity check (Oct 23):** it failed on 4 lobbies, all the author's row: the author had renamed on Steam, the old name now belonged only to 6 strangers, and the check picked one of them, sure of it. Live, the scoreboard shows the new name, so the check's data was stale; but the account saved in settings still had the old name, and the user's own row is found by that name (YOU and the matchup in a lobby, their row on the end screen). After a rename it was found nowhere.
+- **The fix:** at start-up, in the background, the saved account's name is refreshed from its Steam profile (one request). The identity check now skips rows whose account goes by another name today; all 10 of its rows were the author's, so it has no rows to check until lobbies under the new name are added.
+
 ## 5. Testing
 
 `python -m unittest discover -s tests -v` runs the tests in a few seconds (the smoke test only in CI or with `SMOKE=1`):
