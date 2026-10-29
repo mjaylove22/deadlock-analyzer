@@ -105,6 +105,7 @@ class AnalyzerApp:
             saved, at = None, (0, 0)
         choose_text_size(root, settings.get("text_size", "normal"), at, settings.get("app_size", "auto"))
         self.overlay =tk.BooleanVar(value=settings.get("overlay", False))
+        self.pop_up_tip_shown = False
         self.auto_detect = tk.BooleanVar(value=settings.get("auto_detect", True))
         self.watching = self.auto_detect.get()  # plain copy for the watcher thread (tk variables are main-thread only)
 
@@ -648,10 +649,18 @@ class AnalyzerApp:
 
     def pop_up(self):
         """Bring the window above the others without taking keyboard focus from the game (a window
-        that grabs focus can minimise a fullscreen game). Keeps it on top only in overlay mode."""
+        that grabs focus can minimise a fullscreen game). Keeps it on top only in overlay mode. Only
+        where it won't cover the game: in practice, from another monitor."""
         try:
             user32 = ctypes.windll.user32
             hwnd = user32.GetParent(self.root.winfo_id())
+            if game_window.covers_game(hwnd):
+                # Once a run, where it would help: how to have it come forward (a status line: no page grows)
+                if not self.overlay.get() and not self.pop_up_tip_shown and user32.GetSystemMetrics(80) > 1:  # SM_CMONITORS
+                    self.pop_up_tip_shown = True
+                    self.set_status("Tip: move this window to your other monitor and it comes to the front by itself, "
+                                    "without taking you out of the game")
+                return
             if user32.IsIconic(hwnd):
                 user32.ShowWindow(hwnd, SW_SHOWNOACTIVATE)  # un-minimise without activating
             flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE

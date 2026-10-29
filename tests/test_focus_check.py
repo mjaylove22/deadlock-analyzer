@@ -60,7 +60,8 @@ class FocusCheckTest(unittest.TestCase):
         root.withdraw()
         root.update_idletasks()  # makes Windows' outer window, still hidden
         try:
-            app.AnalyzerApp.pop_up(SimpleNamespace(root=root, overlay=SimpleNamespace(get=lambda: True)))
+            with mock.patch.object(app.game_window, "covers_game", return_value=False):
+                app.AnalyzerApp.pop_up(SimpleNamespace(root=root, overlay=SimpleNamespace(get=lambda: True)))
             hwnd = app.ctypes.windll.user32.GetParent(root.winfo_id())
             self.assertTrue(app.ctypes.windll.user32.GetWindowLongW(hwnd, -20) & 0x8)  # GWL_EXSTYLE, WS_EX_TOPMOST
         finally:
@@ -70,6 +71,29 @@ class FocusCheckTest(unittest.TestCase):
         _, left = check(("Deadlock", True), "Deadlock Analyzer", GAME_BOX, last=False)
         self.assertIsNone(left)  # the second check then has nothing to compare with
         self.assertEqual(check(left, "Deadlock Analyzer", GAME_BOX), ([], None))
+
+
+def covers(app_box, game_box=GAME_BOX, minimised=False, same_monitor=False):
+    """game_window.covers_game for an app window at app_box (the game is on the main monitor, 0..1920)."""
+    with mock.patch.object(app.game_window, "find_window", return_value=game_box), \
+            mock.patch.object(app.game_window, "client_area", return_value=app_box), \
+            mock.patch.object(app.game_window, "_user32") as user32:
+        user32.IsIconic.return_value = minimised
+        user32.MonitorFromWindow.return_value = 1
+        user32.MonitorFromPoint.return_value = 1 if same_monitor else 2
+        return app.game_window.covers_game(123)
+
+
+class CoversGameTest(unittest.TestCase):
+    """Bring to front only where the window won't cover the game."""
+
+    def test_only_a_window_clear_of_the_game_comes_forward(self):
+        self.assertFalse(covers((-1920, 0, 0, 1040)))  # maximised on the other monitor: the edges only touch
+        self.assertTrue(covers((-1400, 0, 520, 1000)))  # mostly on the other monitor, but hanging over the game
+        self.assertTrue(covers((300, 100, 1100, 900)))  # on the game's monitor
+        self.assertFalse(covers((300, 100, 1100, 900), game_box=None))  # no game (or it's minimised)
+        self.assertFalse(covers((-32000, -32000, -32000, -32000), minimised=True))  # minimised on the other monitor
+        self.assertTrue(covers((-32000, -32000, -32000, -32000), minimised=True, same_monitor=True))
 
 
 if __name__ == "__main__":

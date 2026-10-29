@@ -1955,8 +1955,8 @@ class SettingsPage(Page):
     nav = "settings"
     WHEN_OPEN = [
         ("pop_up", "Bring the app to the front",
-         "Puts the window above others without taking keyboard focus from the game. Best with the app "
-         "on a second monitor: on the game's monitor it covers the game."),
+         "Puts the window above others without taking keyboard focus from the game, only where it won't "
+         "cover the game: keep the app on another monitor."),
         ("sound", "Play a sound when the lobby is ready", ""),
         ("reshow_same_lobby", "Show the lobby again when nothing changed",
          "Reopening the scoreboard in the same lobby (mid-match, or in Street Brawl, where heroes are "

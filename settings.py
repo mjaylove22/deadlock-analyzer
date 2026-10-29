@@ -40,7 +40,7 @@ def save_settings(changes: Dict[str, Any]) -> None:
 # Choices on the Settings page, with their defaults. Stored under "preferences", so new choices can be
 # added later without touching old settings files.
 PREFERENCES = {
-    "pop_up": False,             # bring the window to the front when a lobby is captured in game
+    "pop_up": True,              # bring the window to the front in game (lobby read, match over), if it won't cover the game
     "sound": True,               # a sound when the lobby is ready
     "reshow_same_lobby": True,   # reopening the scoreboard in the same lobby shows the lobby again
     "post_game_review": True,    # the end-of-match screen opens that match's review

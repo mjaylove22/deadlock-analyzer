@@ -81,3 +81,17 @@ def find_window(exe: str = GAME_EXE) -> Optional[Box]:
 
     _user32.EnumWindows(_WNDENUMPROC(check), 0)
     return max(found, key=lambda b: (b[2] - b[0]) * (b[3] - b[1])) if found else None
+
+
+def covers_game(hwnd) -> bool:
+    """Whether window hwnd, brought to the front, would cover any part of the game (and could knock a fullscreen
+    game out). A minimised window counts by the monitor it was on. ponytail: one that hung over the edge of the
+    game's monitor would then restore over the game; its pre-minimise rectangle (GetWindowPlacement) would tell."""
+    game = find_window()
+    if not game:
+        return False  # no game, or it's minimised: no game to cover
+    if _user32.IsIconic(hwnd):
+        centre = wintypes.POINT((game[0] + game[2]) // 2, (game[1] + game[3]) // 2)
+        return _user32.MonitorFromWindow(hwnd, 2) == _user32.MonitorFromPoint(centre, 2)  # MONITOR_DEFAULTTONEAREST
+    box = client_area(hwnd)
+    return box[0] < game[2] and game[0] < box[2] and box[1] < game[3] and game[1] < box[3]

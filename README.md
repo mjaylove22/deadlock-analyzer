@@ -38,7 +38,8 @@ can't be turned back on without resetting Windows.
    account that's yours (check the picture and the number of games), then click **Set as my account**.
    The app then recognises you in every lobby and shows your matchup. (Skipped this? After two matches Home
    asks **Is this you?** about the player who was in every lobby: check the picture and click **That's me**.)
-2. **Play.** Leave the app open (a second monitor is ideal). During a match, press **Esc** and open the
+2. **Play.** Leave the app open, ideally on a second monitor: it then comes to the front by itself when a
+   lobby is read and when a match ends, without taking you out of the game. During a match, press **Esc** and open the
    **PLAYERS** tab. The app notices, reads the scoreboard and shows the lobby a few seconds later, with a sound.
    You can close the menu straight away.
 3. **After the match**, the end-of-match scoreboard opens a review of how everyone played.
@@ -110,7 +111,7 @@ The app has pages, with a **Back** button (or Alt+Left) and the title as a link 
 | **Home** | Your account, the last lobby, the strongest heroes right now, and your recent matches with a summary of your last session (record, K/D/A, souls per minute, rank change in ranked). Matches appear as soon as their end screen is read |
 | **Lobby** | Each team as a row of player tiles, with your matchup at the bottom. Hover a pill for what it means; click a player to open their page. **Review this match** opens the match once it's over |
 | **Matchup** | Your hero against this team: with each teammate's hero, and a card per enemy (toughest first) with the player's record on their hero, your win rate against that hero, your K/D/A against them and the items that help most |
-| **Settings** | What happens when the scoreboard opens in game (bring the app to the front without taking focus from the game, a sound, open the review when a match ends) and what the lobby cards show (Simple or Full, or switch each part), a dark or light theme, and Normal or Large text |
+| **Settings** | What happens when the scoreboard opens in game (bring the app to the front without taking focus from the game, when it isn't over the game, a sound, open the review when a match ends) and what the lobby cards show (Simple or Full, or switch each part), a dark or light theme, and Normal or Large text |
 | **Heroes** | Every hero's win rate, pick rate, ban share, games and KDA, by mode and rank, with a 12-week trend line per hero |
 | **Items** | Every shop item: how often it's bought, win rate, tier, cost and typical purchase time, with a 14-day trend |
 | **Patches** | Deadlock's update notes and announcements in full, newest first, from Steam. Pick a hero to see only the updates that changed them, and only those lines |
