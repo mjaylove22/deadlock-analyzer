@@ -53,6 +53,19 @@ class FocusCheckTest(unittest.TestCase):
     def test_first_check_keeps_watching_until_the_result_is_shown(self):
         self.assertEqual(check(("Deadlock", True), "Deadlock", GAME_BOX, last=False), ([], ("Deadlock", True)))
 
+    def test_pop_up_really_puts_the_window_on_top(self):
+        # It never did before Oct 2026 (HWND_TOPMOST passed as a 32-bit -1). A hidden window: no window shows or takes focus
+        import tkinter as tk
+        root = tk.Tk()
+        root.withdraw()
+        root.update_idletasks()  # makes Windows' outer window, still hidden
+        try:
+            app.AnalyzerApp.pop_up(SimpleNamespace(root=root, overlay=SimpleNamespace(get=lambda: True)))
+            hwnd = app.ctypes.windll.user32.GetParent(root.winfo_id())
+            self.assertTrue(app.ctypes.windll.user32.GetWindowLongW(hwnd, -20) & 0x8)  # GWL_EXSTYLE, WS_EX_TOPMOST
+        finally:
+            root.destroy()
+
     def test_warns_once_per_capture(self):
         _, left = check(("Deadlock", True), "Deadlock Analyzer", GAME_BOX, last=False)
         self.assertIsNone(left)  # the second check then has nothing to compare with

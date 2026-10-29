@@ -62,7 +62,8 @@ CAPTURE_DELAY_MS = 150   # time for Windows to repaint after the window turns in
 CAPTURE_HIDE_MS = 50     # time for Windows to apply "hide from capture" before the app's own screenshot
 WDA_NONE, WDA_EXCLUDEFROMCAPTURE = 0x0, 0x11  # SetWindowDisplayAffinity modes
 # For pop_up(): window positions that change the stacking order without moving, resizing or activating
-HWND_TOPMOST, HWND_NOTOPMOST = -1, -2
+# Typed as handles: ctypes passes a bare -1 as a 32-bit int, which 64-bit Windows read as another value and ignored
+HWND_TOPMOST, HWND_NOTOPMOST = wintypes.HWND(-1), wintypes.HWND(-2)
 SWP_NOSIZE, SWP_NOMOVE, SWP_NOACTIVATE = 0x1, 0x2, 0x10
 SW_SHOWNOACTIVATE = 4
 OVERLAY_ALPHA = 0.9
